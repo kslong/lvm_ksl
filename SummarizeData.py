@@ -63,7 +63,7 @@ from astropy.table import vstack
 import numpy as np
 import timeit
 
-ef get_files2use(directory='60202'):
+def get_files2use(directory='60202'):
     xfiles=glob('%s/*gz' % directory)
     exposures=[]
     for one_file in xfiles:
@@ -72,12 +72,10 @@ ef get_files2use(directory='60202'):
     xtab=Table([xfiles,exposures],names=['Filename','ExpNo'])
     xtab.sort(['ExpNo','Filename'])
 
-    print('A')
     
     exp_no,no_spec=np.unique(xtab['ExpNo'],return_counts=True)
     ytab=Table([exp_no,no_spec],names=['ExpNo','NSpec'])
     
-    print('B')
     file2use=[]
     for one_row in ytab:
         qtab=xtab[xtab['ExpNo']==one_row['ExpNo']]
@@ -87,7 +85,6 @@ ef get_files2use(directory='60202'):
             file2use.append(qtab['Filename'][0])
             
     ytab['File2Use']=file2use
-    print('C')
     return ytab
 
 def do_summary(directory='60202'):
@@ -95,6 +92,7 @@ def do_summary(directory='60202'):
     ytab=get_files2use(directory)
 
     xfiles=ytab['File2Use']
+    nspec=ytab['NSpec']
     # print(xfiles)
     name=[]
     xobject=[]
@@ -109,8 +107,12 @@ def do_summary(directory='60202'):
     ra_w=[]
     dec_w=[]
     xtype=[]
+
+    pa_sci=[]
+    pa_e=[]
+    pa_w=[]
     for one_file in xfiles:
-        print(one_file)
+        # print(one_file)
         x=fits.open(one_file)
         head=x[0].header
         try:
@@ -185,13 +187,33 @@ def do_summary(directory='60202'):
             except:
                 ra_w.append(-99.0)
                 dec_w.append(-99.0)        
+
+        
+
+        try:
+            pa_sci.append(head['POSCIPA'])
+        except:
+            pa_sci.append('Unknown')
+
+        
+        try:
+            pa_e.append(head['POSKYEPA'])
+        except:
+            pa_e.append('Unknown')
+
+
+        try:
+            pa_w.append(head['POSKYWPA'])
+        except:
+            pa_w.append('Unknown')
+
         
         
     
-    xtab=Table([exposure,xtype,name,mjd,xtime,ra,dec,ra_e,dec_e,ra_w,dec_w, exptime,xobject],
-               names=['Exposure','Type','File','MJD','Time','RA','Dec','RA_E', 'Dec_E','RA_W','Dec_W','Exptime','Object'])
+    xtab=Table([exposure,nspec,xtype,name,mjd,xtime,ra,dec,pa_sci,ra_e,dec_e,pa_e,ra_w,dec_w, pa_w,exptime,xobject],
+               names=['Exposure','NSpec','Type','FileUsed','MJD','Time','RA','Dec','PA','RA_E', 'Dec_E','PA_E','RA_W','Dec_W','PA_W','Exptime','Object'])
     
-    xtab.sort(['Exposure','File'])
+    xtab.sort(['Exposure'])
     
     words=directory.split('/')
     

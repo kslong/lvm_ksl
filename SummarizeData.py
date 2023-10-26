@@ -244,6 +244,12 @@ def stack():
             print('Could not stack %s' % files[i])
         i+=1
 
+    x['RA'].format='.6f'
+    x['Dec'].format='.6f'
+    x['RA_E'].format='.6f'
+    x['Dec_E'].format='.6f'
+    x['RA_W'].format='.6f'
+    x['Dec_W'].format='.6f'
     x.sort('Exposure')
     x.write('All_Data.txt',format='ascii.fixed_width_two_line',overwrite=True)
     return

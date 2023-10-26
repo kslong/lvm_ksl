@@ -63,8 +63,14 @@ from astropy.table import vstack
 import numpy as np
 import timeit
 
+LVM_DATA_S=os.environ.get('LVM_DATA_S')
+
 def get_files2use(directory='60202'):
-    xfiles=glob('%s/*gz' % directory)
+    if LVM_DATA_S==None:
+        xfiles=glob('%s/*gz' % directory)
+    else:
+        xfiles=glob('%s/%s/*gz' % (LVM_DATA_S,directory))
+
     exposures=[]
     for one_file in xfiles:
         words=one_file.split('-')
@@ -249,6 +255,7 @@ def steer(argv):
     xdays=[]
     xall=False
     redo=False
+    xxrange=False
 
 
     i=1
@@ -260,6 +267,8 @@ def steer(argv):
             xall=True
         elif argv[i]=='-redo':
             redo=True
+        elif argv[i]=='-range':
+            xxrange=True
         elif argv[i][0]=='-':
             print('Error: Unknown switch %s ' % argv[i])
             return
@@ -267,14 +276,33 @@ def steer(argv):
             xdays.append(argv[i])
         i+=1
 
+    if xxrange:
+        # convert to integers
+        xxint=[]
+        for one in xdays:
+            xxint.append(int(one))
+        xday_min=np.min(xxint)
+        xday_max=np.max(xxint)
+        print('Work on days %d to %d' % (xday_min,xday_max))
+        xdays=[]
+        qday=xday_min
+        while qday<=xday_max:
+            xdays.append('%d' % qday)
+            qday+=1
+        print(xdays)
+
     if xall:
-        xx=glob('*/*fits*')
+        if LVM_DATA_S==None:
+            xx=glob('*/*fits*')
+        else:
+            xx=glob('%s/*/*fits*' % LVM_DATA_S)
+
         xdir=[]
         for one in xx:
             word=one.split('/')
-            xdir.append(word[0])
+            xdir.append(word[-2])
         xxdays=np.unique(xdir)
-        # print(xxdays)
+        print(xxdays)
 
         if redo==False:
             for one in xxdays:
@@ -287,7 +315,9 @@ def steer(argv):
 
     good_days=[]
     for one in xdays:
-        if os.path.isdir(one):
+        if LVM_DATA_S==None and os.path.isdir(one):
+            good_days.append(one)
+        elif os.path.isdir('%s/%s' % (LVM_DATA_S,one)): 
             good_days.append(one)
         else:
             print('Sorry: %s does not appear to be a valid directory' % one)

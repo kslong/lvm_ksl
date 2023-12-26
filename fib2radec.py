@@ -112,6 +112,7 @@ def get_ra_dec(filename,guider_file,outname=''):
         pa = agcam_hdr['PAMEAS'] - 180.
 #        print(pa)
         agcam_hdu.close()
+        xguide=True
     else:
         if guider_file=='':
             print('No guider file provided, using science header')
@@ -120,6 +121,8 @@ def get_ra_dec(filename,guider_file,outname=''):
         racen = hdr['TESCIRA']
         deccen = hdr['TESCIDE']
         pa = hdr['POSCIPA']# *(-1.)
+        xguide=False
+    
     ra_fib, dec_fib = make_radec(tab['xpmm'], tab['ypmm'], racen, deccen, pa)
 
     outtab=Table([tab['fiberid'],ra_fib,dec_fib], names=['fiberid','RA','Dec'])
@@ -132,7 +135,7 @@ def get_ra_dec(filename,guider_file,outname=''):
         outname=words[-1].replace('.fits','.txt')
         outname=outname.replace('lvmCFrame','Fib2radec')
     outtab.write(outname,format='ascii.fixed_width_two_line',overwrite=True)
-    return outtab
+    return xguide,racen,deccen,pa,outtab
 
 
 

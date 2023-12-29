@@ -129,7 +129,7 @@ def get_moon_info_las_campanas(datetime_utc,verbose=False):
 
 def doit(filename='lvmCFrame-00006162.fits',outfile=''):
     '''
-    Add fiberpostions, best astometery, and fiber positions
+    Add fiber postions, best astometry, and fiber positions
     to calibrated science data
     '''
     xcal=fib2radec.locate_file(filename)

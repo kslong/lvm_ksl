@@ -43,6 +43,7 @@ import astropy.units as u
 import matplotlib.pyplot as plt
 from astropy.wcs import WCS
 from scipy.interpolate import griddata
+from lvm_ksl import fib2radec
 
 
 
@@ -52,13 +53,13 @@ RSS_DIR='./data'
 
 
 
-
 def doit(filename,wrange=[6560,6566], out_label='',
          crange=None,do_astrom=True,cube=False,do_mask=True,interpolate=False):
     
     
     # Read RSS QL file
-    xname='%s/%s' % (RSS_DIR,filename)
+    # xname='%s/%s' % (RSS_DIR,filename)
+    xname=fib2radec.locate_file(filename)
     print('\nReading file',xname)
     try:
         rss=fits.open(xname)
@@ -67,15 +68,52 @@ def doit(filename,wrange=[6560,6566], out_label='',
         return
     mjd=rss['PRIMARY'].header['MJD']
     expnum=rss['PRIMARY'].header['EXPOSURE']
+
+
+    posang=0
+    RAobs=0
+    DECobs=0
+
+    try:
+        best=rss['PRIMARY'].header['Best']
+        print('Found Best astrometry')
+        posang=rss['PRIMARY'].header['BESTPA']
+        RAobs=rss['PRIMARY'].header['BESTRA']
+        DECobs=rss['PRIMARY'].header['BESTDEC']
+        do_astrom=False
+
+    except:
+        print('The is no pre-existing astrometry')
+
     if do_astrom:
         LVMAGCAM_DIR = os.environ.get('LVMAGCAM_DIR')
         procscifile = f"{LVMAGCAM_DIR}/{mjd}/coadds/lvm.sci.coadd_s{expnum:0>8}.fits"
-        if not os.path.exists(procscifile):
-            print(f'{procscifile} does not exist, skipping astrometry')
-            do_astrom = False
-        else:
+        if os.path.exists(procscifile):
             print('Found astrometry file')
             
+            # Read WCS info from coadd
+            agfile    = os.path.basename(procscifile)
+            mfheader  = fits.getheader(procscifile, 1)
+            outw      = WCS(mfheader)
+            CDmatrix  = outw.pixel_scale_matrix
+            posangrad = -1*np.arctan(CDmatrix[1,0]/CDmatrix[0,0])
+            posang    = posangrad*180/np.pi
+            IFUcen    = outw.pixel_to_world(2500,1000)
+            RAobs     = IFUcen.ra.value
+            DECobs    = IFUcen.dec.value
+            print(f'Using center and PA of {RAobs:.6f}, {DECobs:.6f}, {posang:.6f} from {agfile}')
+            # For recent data, the header keywords should be correct
+            altRAobs  = mfheader['RAMEAS']
+            altDECobs = mfheader['DECMEAS']
+            altposang = mfheader['PAMEAS'] - 180.
+            print(f'Header values are {altRAobs:.6f} and {altDECobs:.6f} with PA {altposang:.6f}')
+        else:
+            print(f'{procscifile} does not exist, skipping astrometry')
+            do_astrom = False
+            RAobs  = mfheader['RAMEAS']
+            DECobs = mfheader['DECMEAS']
+            posang = mfheader['POSCIPA']
+    
     # Read fibermap and get x,y coordinates of fibers
     slittab = rss['SLITMAP'].data
     targettype=slittab['targettype']
@@ -100,7 +138,7 @@ def doit(filename,wrange=[6560,6566], out_label='',
     print('Requested wavelength range is',wrange[0],'to',wrange[1])
     print(f'Actual wavelength range is {wave[selwave][0]} to {wave[selwave][-1]}')
     if crange:
-        print('CRequested ontinuum wavelength range is',crange[0],'to',crange[1])
+        print('Requested ontinuum wavelength range is',crange[0],'to',crange[1])
         cselwave=(wave>=crange[0])*(wave<=crange[1])
         print('Continuum wavelength range is',crange[0],'to',crange[1])
 
@@ -120,28 +158,6 @@ def doit(filename,wrange=[6560,6566], out_label='',
         crval3 = wave[selwave.argmax()]
         cdelt3 = rss['FLUX'].header['CDELT1'] * 1e10  # Angstroms
 
-    if not do_astrom:
-        posang=0
-        RAobs=0
-        DECobs=0
-    else:
-        # Read WCS info from coadd
-        agfile    = os.path.basename(procscifile)
-        mfheader  = fits.getheader(procscifile, 1)
-        outw      = WCS(mfheader)
-        CDmatrix  = outw.pixel_scale_matrix
-        posangrad = -1*np.arctan(CDmatrix[1,0]/CDmatrix[0,0])
-        posang    = posangrad*180/np.pi
-        IFUcen    = outw.pixel_to_world(2500,1000)
-        RAobs     = IFUcen.ra.value
-        DECobs    = IFUcen.dec.value
-        print(f'Using center and PA of {RAobs:.6f}, {DECobs:.6f}, {posang:.6f} from {agfile}')
-        # For recent data, the header keywords should be correct
-        altRAobs  = mfheader['RAMEAS']
-        altDECobs = mfheader['DECMEAS']
-        altposang = mfheader['PAMEAS'] - 180.
-        print(f'Header values are {altRAobs:.6f} and {altDECobs:.6f} with PA {altposang:.6f}')
-    
     # Calculate image geometry
     platescale=112.36748321030637 # Focal plane platescale in "/mm
     print("Using Fiducial Platescale = ", platescale)

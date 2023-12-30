@@ -109,7 +109,8 @@ def get_ra_dec(filename,guider_file,outname=''):
         cen = w.pixel_to_world(2500,1000)
         racen = cen.ra.deg  #agcam_hdr['RAMEAS']
         deccen = cen.dec.deg #agcam_hdr['DECMEAS']
-        pa = agcam_hdr['PAMEAS'] - 180.
+        print('hello ', agcam_hdr['PAMEAS'])
+        pa = 180 - agcam_hdr['PAMEAS'] 
 #        print(pa)
         agcam_hdu.close()
         xguide=True
@@ -140,6 +141,12 @@ def get_ra_dec(filename,guider_file,outname=''):
 
 
 def locate_file(file_name):
+
+    if len(file_name)==0:
+        print('Error: cannot look for file without a name')
+        return None
+
+    print('Looking for file_name %s' % file_name)
     # Check if the file exists in the current directory
     current_directory = os.getcwd()
     current_file_path = os.path.join(current_directory, file_name)

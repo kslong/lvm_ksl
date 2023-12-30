@@ -10,13 +10,15 @@ Create an image or cube from a LVM exposure
 
 Command line usage (if any):
 
-    usage: kslmap.py [-image_type filter] filename
+    usage: kslmap.py [-no_back]  [-image_type filter] filename
 
     where image_type indicates a predefined filter to plot.  The
     currenly allowed bands are 
 
     * ha
     * sii
+
+    -no_back means not to subtract background from the image
 
 Description:  
 
@@ -234,6 +236,9 @@ def doit(filename,wrange=[6560,6566], out_label='',
         else:
             outfile='c%05d_%0s.fits' % (expnum,out_label)
 
+    if crange==None:
+        outfile=outfile.replace('.fits','_no_back.fits')
+
     hdul.writeto(outfile, overwrite=True)
     hdul.info()
 
@@ -244,37 +249,47 @@ def steer(argv):
     '''
     image_type='ha'
     xfits=''
+    sub_back=True
 
     i=1
     while i<len(argv):
+        print(argv[i])
         if argv[i]=='-h':
             print(__doc__)
             return
         elif argv[i]=='-band':
             i+=1
             image_type=argv[i]
+        elif argv[i]=='-no_back':
+            sub_back=False
         elif argv[i][0]=='-':
             print('Error: Unknown switch %s ' % argv[i])
             return
         elif xfits=='':
             xfits=argv[i]
-        else:
-            print('Error: Could not parse inputs ',argv)
-
+        print(argv[i])
         i+=1
 
-        xha=['ha',[6560,6566],[6590,6630]]
-        xs2=['sii',[6710,6735],[6740,6760]]
 
-        xbands=[xha,xs2]
+    xha=['ha',[6560,6566],[6590,6630]]
+    xs2=['sii',[6710,6735],[6740,6760]]
 
-        good=False
-        for one_band in xbands:
-            if image_type==one_band[0]:
-                print(one_band[1],one_band[2],image_type)
+    if xfits=='':
+        print('Error: not enough arguments: ', argv)
+        return
+
+    xbands=[xha,xs2]
+
+    good=False
+    for one_band in xbands:
+        if image_type==one_band[0]:
+            print(one_band[1],one_band[2],image_type)
+            if sub_back:
                 doit(xfits,wrange=one_band[1],crange=one_band[2],out_label=image_type)
-                good=True
-                break
+            else:
+                doit(xfits,wrange=one_band[1],crange=None,out_label=image_type)
+            good=True
+            break
         if good==False:
             print('Error: The filter %s did not match a known band' % image_type)
             print(__doc__)

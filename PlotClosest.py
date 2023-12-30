@@ -11,9 +11,13 @@ fiber number of and RA and dec
 
 Command line usage (if any):
 
-    usage: PlotClosest.py exp_no ra dec
+    usage: PlotClosest.py [-h] exp_no ra dec
 
 Description:  
+
+    where exp_no is the exposure
+    and ra and dec are the desrired right ascension, written
+        either in degrees or in h:m:s d:m:s
 
 Primary routines:
 
@@ -51,12 +55,15 @@ n103b_dec=-68.72674
 def get_closest(fiber_pos,xra=n103b_ra,xdec=n103b_dec):
     xdistance=[]
     pos1=SkyCoord(ra=xra * u.deg, dec=xdec * u.deg, frame='icrs')
+
     
     xsep=[]
+    i=0
     for one in fiber_pos:
         pos2= SkyCoord(ra=one['RA']* u.deg, dec=one['Dec'] * u.deg, frame='icrs')
         angular_distance = pos1.separation(pos2).arcsec
         xsep.append(angular_distance)
+        i+=1
         
     fiber_pos['Sep']=xsep
     fiber_pos.sort(['Sep'])
@@ -118,7 +125,25 @@ def steer(argv):
     This is just a steering routine
     '''
 
-    exposure=eval(argv[1])
+    exposure=-99
+    ra=None
+    dec=None
+
+    i=1
+    while i<len(argv):
+        if argv[i]=='-h' or len(argv)<4:
+            print(__doc__)
+            return 
+        elif exposure<0:
+            exposure=eval(argv[i])
+        elif ra==None:
+            ra=argv[i]
+        elif dec==None:
+            dec=argv[i]
+
+        i+=1
+        
+
     ra,dec=radec2deg(argv[2],argv[3])
 
     print(ra,dec)
@@ -135,7 +160,9 @@ def steer(argv):
     if xguide==None:
         print('Could not locate guider file: %s' % guider_file)
         xguide=''
-    xtab=fib2radec.get_ra_dec(xcal,xguide,outname='xfib.txt')
+
+    xguide,racen,decen,pa,xtab=fib2radec.get_ra_dec(xcal,xguide,outname='xfib.txt')
+
 
     fib_no=get_closest(fiber_pos=xtab,xra=ra,xdec=dec)
 

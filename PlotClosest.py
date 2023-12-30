@@ -42,9 +42,54 @@ import astropy.units as u
 import matplotlib.pyplot as plt
 
 import fib2radec
-from ksl.astro import radec2deg
 
 
+def radec2deg(ra='05:13:06.2',dec='-10:13:14.2'):
+    '''
+
+    Convert an ra dec string to degrees.  The string can already
+    be in degrees in which case all that happens is a conversion to
+    a float
+
+    If what is transferred is a float, the routine assumes it has been
+    given ra and dec in degrees and just returns ra,dec
+
+    170914  ksl Fix error associated with small negative declinations
+
+    '''
+
+    # print 'Before',ra,dec
+    try:
+        r=ra.split(':')
+        d=dec.split(':')
+    except AttributeError:
+        return ra,dec
+
+
+    # print 'After',ra,dec
+
+    rr=float(r[0])
+    if len(r)>1:
+        rr=rr+float(r[1])/60.
+    if len(r)>2:
+        rr=rr+float(r[2])/3600.
+    if len(r)>1:
+        rr=15.*rr  # Since we assume ra was in hms
+
+    sign=d[0].count('-')
+    dd=abs(float(d[0]))
+    x=0
+    if len(d)>1:
+        x=x+float(d[1])/60.
+    if len(d)>2:
+        x=x+float(d[2])/3600.
+
+    dd=dd+x
+    if sign:
+        dd= -dd
+
+
+    return rr,dd
 
 
 n103b_ra=77.251042

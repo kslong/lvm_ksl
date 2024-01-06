@@ -5,8 +5,9 @@
 
 Synopsis:  
 
-Make a plot of a fiber in a RRS file given either a 
-fiber number of and RA and dec
+Get a spectrum from a fiber or fibers in an RSS  file given an 
+RA and DEC and a size 
+
 
 
 Command line usage (if any):
@@ -16,7 +17,7 @@ Command line usage (if any):
 Description:  
 
     where exp_no is the exposure
-    and ra and dec are the desrired right ascension, written
+    and ra and dec are the desired right ascension, written
         either in degrees or in h:m:s d:m:s
 
 Primary routines:
@@ -115,54 +116,17 @@ def get_closest(fiber_pos,xra=n103b_ra,xdec=n103b_dec):
     return fiber_pos
 
 
-def limit_wavelengths(xspec,wmin,wmax):
-    xspec=xspec[xspec['WAVE']>wmin]
-    xspec=xspec[xspec['WAVE']<wmax]
-    xmed=np.median(xspec['FLUX'])
-    xmax=np.max(xspec['FLUX'])
-    xdelt=xmax-xmed
-    xmin=xmed-0.05*xdelt  
-    xmax=xmax+0.05*xdelt
-    return xmin,xmax,xspec
+def get_spec(filename,xfib,nfib=1):
 
-def do_plot_all(filename='reduced/lvmCFrame-00007824.fits',fiber_id=770):
     x=fits.open(filename)
     wave=x['WAVE'].data
-    flux=x['FLUX'].data[fiber_id-1]
-    xtab=Table([wave,flux],names=['WAVE','FLUX'])
-
-    
-    plt.figure(1,(8,6))
-    plt.clf()
-    plt.subplot(2,2,1)
-    wmin=3650
-    wmax=3820
-    ymin,ymax,xspec=limit_wavelengths(xtab,wmin,wmax)
-    plt.plot(xspec['WAVE'],xspec['FLUX'])
-    plt.xlim(wmin,wmax)
-    plt.ylim(ymin,ymax)
-    plt.subplot(2,2,2)
-    wmin=4825
-    wmax=5050
-    ymin,ymax,xspec=limit_wavelengths(xtab,wmin,wmax)    
-    plt.plot(xspec['WAVE'],xspec['FLUX'])
-    plt.xlim(wmin,wmax)
-    plt.ylim(ymin,ymax)   
-    plt.subplot(2,2,3)
-    wmin=6200
-    wmax=6490
-    ymin,ymax,xspec=limit_wavelengths(xtab,wmin,wmax)
-    plt.plot(xspec['WAVE'],xspec['FLUX'])
-    plt.xlim(wmin,wmax)
-    plt.ylim(ymin,ymax)
-    plt.subplot(2,2,4)
-    wmin=6500
-    wmax=6800
-    ymin,ymax,xspec=limit_wavelengths(xtab,wmin,wmax)    
-    plt.plot(xspec['WAVE'],xspec['FLUX'])
-    plt.xlim(wmin,wmax)
-    plt.ylim(ymin,ymax)   
-    return
+    xxfib=xfib[0:nfib]
+    flux=x['FLUX'].data[xxfib['fiberid']-1]
+    print(flux.shape)
+    xflux=np.average(flux,axis=0)
+    print(xflux.shape)
+    xspec=Table([wave,xflux],names=['WAVE','FLUX'])
+    return xspec
 
 
 def steer(argv):
@@ -173,12 +137,23 @@ def steer(argv):
     exposure=-99
     ra=None
     dec=None
+    size=0
+    root='Spec'
 
     i=1
     while i<len(argv):
-        if argv[i]=='-h' or len(argv)<4:
+        if argv[i]=='-h':
             print(__doc__)
             return 
+        elif argv[i]=='-size':
+            i+=1
+            size=eval(argv[i])
+        elif argv[i]=='-root':
+            i+=1
+            root=argv[i]
+        elif ra==None and argv[i][0]=='-':
+            print('Error: Incorrect Command line: ',argv)
+            return
         elif exposure<0:
             exposure=eval(argv[i])
         elif ra==None:
@@ -187,9 +162,11 @@ def steer(argv):
             dec=argv[i]
 
         i+=1
+
+
         
 
-    ra,dec=radec2deg(argv[2],argv[3])
+    ra,dec=radec2deg(ra,dec)
 
     print(ra,dec)
 
@@ -222,13 +199,30 @@ def steer(argv):
 
 
     fib_no=get_closest(fiber_pos=xtab,xra=ra,xdec=dec)
+    xfib=fib_no[fib_no['Sep']<=size]
+    nfib=len(xfib)
+    if nfib==0:
+        nfib=1
 
-    print('Plotting fiber %d' % fib_no['fiberid'][0])
+    print('test ',nfib, size)
+    print(xfib)
+
+    xspec=get_spec(filename=xcal,xfib=fib_no,nfib=nfib)
+
+    outname='%s_%05d_%.2f_%.2f_%02d.txt' % (root,exposure,ra,dec,nfib)
+
+    xspec.write(outname,format='ascii.fixed_width_two_line',overwrite=True)
 
 
 
-    do_plot_all(filename=xcal,fiber_id=fib_no['fiberid'][0])
-    plt.savefig('spec%05d_%.2f_%.2f.png' % (exposure,ra,dec) )
+
+
+
+
+
+
+
+
 
     
 

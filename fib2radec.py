@@ -71,7 +71,7 @@ def rotate(xx,yy,angle):
     return xx1, yy1
 
 def make_radec(xx0,yy0,ra,dec,pa):
-    xx, yy = rotate(xx0,yy0,pa)
+    xx, yy = rotate(xx0,yy0,-pa)
     ra_fib = ra + xx*PLATESCALE/3600./np.cos(dec*np.pi/180.) 
     dec_fib = dec - yy*PLATESCALE/3600. 
     return ra_fib, dec_fib

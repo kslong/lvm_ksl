@@ -5,18 +5,23 @@
 
 Synopsis:  
 
-Get a spectrum from a fiber or fibers in an RSS  file given an 
+Get a spectrum from a fiber or fibers in an RSSfile given an 
 RA and DEC and a size 
 
 
 
 Command line usage (if any):
 
-    usage: PlotClosest.py [-h] exp_no ra dec
+    usage: PlotClosest.py [-h] [-size xx]  exp_no ra dec
 
 Description:  
 
-    where exp_no is the exposure
+
+    where 
+    -h prints out this help
+    -size xx defines a separation in arc seconsds of fibers to
+        incluce in the output spectrum.
+    exp_no is the exposure
     and ra and dec are the desired right ascension, written
         either in degrees or in h:m:s d:m:s
 
@@ -25,6 +30,9 @@ Primary routines:
     doit
 
 Notes:
+
+    The routine also produces a regiong file that shows
+    what fibers were used.
                                        
 History:
 
@@ -99,6 +107,11 @@ n103b_dec=-68.72674
 
 
 def get_closest(fiber_pos,xra=n103b_ra,xdec=n103b_dec):
+    '''
+    Sort a slit table with RA's and DEC's in order
+    of the separattion from a given RA and Dec
+    '''
+
     xdistance=[]
     pos1=SkyCoord(ra=xra * u.deg, dec=xdec * u.deg, frame='icrs')
 
@@ -117,6 +130,10 @@ def get_closest(fiber_pos,xra=n103b_ra,xdec=n103b_dec):
 
 
 def get_spec(filename,xfib,nfib=1):
+    '''
+    Retrive the spectra from the first
+    nfib fibers in the xfib table
+    '''
 
     x=fits.open(filename)
     wave=x['WAVE'].data
@@ -128,10 +145,32 @@ def get_spec(filename,xfib,nfib=1):
     xspec=Table([wave,xflux],names=['WAVE','FLUX'])
     return xspec
 
+header='''
+# Region file format: DS9 version 4.1
+# Filename: lmc_snr.txt.reg
+global color=yellow width=3 font="helvetica 14 bold" select=1 highlite=1 dash=0 fixed=0 edit=1 move=1 delete=1 include=1 source=1
+fk5
+'''
+def write_reg(filename,xtab):
+    g=open(filename,'w')
+    g.write(header)
+    for one in xtab:
+        g.write('circle(%f,%f,5.")  # text={%d}\n' % (one['RA'],one['Dec'],one['fiberid']))
+    g.close()
+
+
 
 def steer(argv):
     '''
-    This is just a steering routine
+    This routine parses the command line
+
+    and then oversees the rest of the proces
+
+
+    In future it would be better to split these
+    acitvites apart so the routine can be called
+    from a Jupyter script, but that is not
+    the way things are at present
     '''
 
     exposure=-99
@@ -166,9 +205,9 @@ def steer(argv):
 
         
 
-    ra,dec=radec2deg(ra,dec)
+    # Having parsed the command line, do the work
 
-    print(ra,dec)
+    ra,dec=radec2deg(ra,dec)
 
 
     xcal_file='XCFrame-%08d.fits' % exposure
@@ -178,6 +217,7 @@ def steer(argv):
         x=fits.open(xcal)
         xtab=Table(x['SLITMAP'].data)
         xtab=xtab[xtab['RA']>0.0]
+        xtab=xtab[xtab['fibstatus']==0]
     else:
         print('Could not locate %s' % xcal_file)
     
@@ -199,19 +239,40 @@ def steer(argv):
 
 
     fib_no=get_closest(fiber_pos=xtab,xra=ra,xdec=dec)
+
+    xlist=['fiberid',   'targettype',    'telescope',    'ringnum', 'fibstatus',   'RA', 'Dec', 'Sep']
+    print('Closest fibers\n',fib_no[xlist][0:10])
+
+
     xfib=fib_no[fib_no['Sep']<=size]
+
     nfib=len(xfib)
     if nfib==0:
         nfib=1
 
-    print('test ',nfib, size)
-    print(xfib)
+
+    if nfib==1 and fib_no['Sep'][0]>70:
+        print('Error: This RA and Dec (%.5f %.5f) does not appear to be in the field' % (ra,dec))
+        return
+
+    print('Taking spectra from\n',fib_no[xlist][0:nfib])
+
+    
+
 
     xspec=get_spec(filename=xcal,xfib=fib_no,nfib=nfib)
 
-    outname='%s_%05d_%.2f_%.2f_%02d.txt' % (root,exposure,ra,dec,nfib)
+    if root=='Spec':
+        outname='%s_%05d_%.2f_%.2f_%02d.txt' % (root,exposure,ra,dec,nfib)
+    else:
+        outname='%s_%05d_%02d.txt' % (root,exposure,nfib)
+
+    regname=outname.replace('.txt','.reg')
+    write_reg(regname,fib_no[xlist][0:nfib])
 
     xspec.write(outname,format='ascii.fixed_width_two_line',overwrite=True)
+
+    print('The output file is %s' % (outname))
 
 
 

@@ -101,24 +101,34 @@ def get_ra_dec(filename,guider_file,outname=''):
 
 
     # get ra/dec measured from coadd guiders?
+    # 240301 - Add code to handle case where
+    # guider file exists, but an astometric position
+    # was not obtained.
     agcam_coadd =guider_file 
+
+    xguide=False
     if os.path.isfile(agcam_coadd):
         agcam_hdu = fits.open(agcam_coadd)
         agcam_hdr = agcam_hdu[1].header
-        w = WCS(agcam_hdr)
-        cen = w.pixel_to_world(2500,1000)
-        racen = cen.ra.deg  #agcam_hdr['RAMEAS']
-        deccen = cen.dec.deg #agcam_hdr['DECMEAS']
-        print('hello ', agcam_hdr['PAMEAS'])
-        pa = 180 - agcam_hdr['PAMEAS'] 
-#        print(pa)
+        try:
+            w = WCS(agcam_hdr)
+            cen = w.pixel_to_world(2500,1000)
+            print('Got Here :',cen)
+            racen = cen.ra.deg  #agcam_hdr['RAMEAS']
+            deccen = cen.dec.deg #agcam_hdr['DECMEAS']
+            print('hello ', agcam_hdr['PAMEAS'])
+            pa = 180 - agcam_hdr['PAMEAS'] 
+            xguide=True
+        except:
+            print('The guider file existed, but the WCS was faulty')
         agcam_hdu.close()
-        xguide=True
     else:
         if guider_file=='':
             print('No guider file provided, using science header')
         else:
             print('No guider file present at %s, using science header' % guider_file)
+
+    if xguide==False:
         racen = hdr['TESCIRA']
         deccen = hdr['TESCIDE']
         pa = hdr['POSCIPA']# *(-1.)

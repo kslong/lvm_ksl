@@ -33,6 +33,8 @@ Notes:
 History:
 
 231216 ksl Coding begun
+w40303 ksl Added redshift corrections if RA and DEC are near the LMC or
+    SMC
 
 '''
 
@@ -51,7 +53,51 @@ from lvm_ksl import fib2radec
 
 
 RSS_DIR='./data'
+RADIAN=57.29578
 
+def distance(r1,d1,r2,d2):
+    '''
+    distance(r1,d1,r2,d2)
+    Return the angular offset between two ra,dec positions
+    All variables are expected to be in degrees.
+    Output is in degrees
+
+    Note - This routine could easily be made more general
+    '''
+#    print 'distance',r1,d1,r2,d2
+    r1=r1/RADIAN
+    d1=d1/RADIAN
+    r2=r2/RADIAN
+    d2=d2/RADIAN
+    xlambda=np.sin(d1)*np.sin(d2)+np.cos(d1)*np.cos(d2)*np.cos(r1-r2)
+#    print 'xlambda ',xlambda
+    if xlambda>=1.0:
+        xlambda=0.0
+    else:
+        xlambda=np.arccos(xlambda)
+
+    xlambda=xlambda*RADIAN
+#    print 'angle ',xlambda
+    return xlambda
+
+def get_redshift(r,d):
+    '''
+    Get a redshift correction if the object is close to the 
+    SMC or LMC
+    '''
+
+    lmc=[80.8942,-69.7561,6.,262.]
+    smc=[13.1583,-72.8003,3.,146]
+
+    if distance(r,d,lmc[0],lmc[1])<lmc[2]:
+        print('Field is in the LMC')
+        return lmc[3]/3e5
+    elif distance(r,d,smc[0],smc[1])<smc[2]:
+        print('Field is in the SMC')
+        return smc[3]/3e5
+    
+    print('No redshift correct applied')
+    return 0.0
 
 
 
@@ -133,6 +179,14 @@ def doit(filename,wrange=[6560,6566], out_label='',
     
     
     # select wavelength range of interest
+    z=get_redshift(RAobs,DECobs)
+    wrange[0]*=(1+z)
+    wrange[1]*=(1+z)
+    if crange!=None:
+        crange[0]*=(1+z)
+        wrange[1]*=(1+z)
+
+
     nfibers,nchans = rss['FLUX'].data.shape
     wcsrss=WCS(rss['FLUX'].header)
     wave=np.array(wcsrss.pixel_to_world(np.arange(nchans),0)[0]*1e10)
@@ -151,14 +205,22 @@ def doit(filename,wrange=[6560,6566], out_label='',
     if not cube:
         flux = np.nanmean(sciflux*selwave, axis=1)
         print(flux)
+        print('Averages',np.nanmean(flux),np.nanmedian(flux))
         # Optional continuum subtraction
         if crange:
             cflux = np.nanmean(sciflux*cselwave,axis=1)
+            print('Cont Averages',np.nanmean(cflux),np.nanmedian(cflux))
             flux  = flux - cflux
+            print('Final Averages',np.nanmean(flux),np.nanmedian(flux))
     else:  # In my version, never reduce the number of channels
         flux = sciflux[:,selwave]
         crval3 = wave[selwave.argmax()]
         cdelt3 = rss['FLUX'].header['CDELT1'] * 1e10  # Angstroms
+
+    xmean=np.nanmean(flux)
+    xmed=np.nanmedian(flux)
+    xstd=np.nanstd(flux)
+    print('Final stats %.2e %.2e %.2e ' % (xmean,xmed,xstd))
 
     # Calculate image geometry
     platescale=112.36748321030637 # Focal plane platescale in "/mm
@@ -240,7 +302,11 @@ def doit(filename,wrange=[6560,6566], out_label='',
         outfile=outfile.replace('.fits','_no_back.fits')
 
     hdul.writeto(outfile, overwrite=True)
+
     hdul.info()
+
+    print('Suggested LoadFrame commdand')
+    print('LoadFreme %s 1 %.2e %.2e' % (outfile,xmed-xstd,xmed+3*xstd))
 
 def steer(argv):
     '''

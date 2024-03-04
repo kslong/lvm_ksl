@@ -14,7 +14,6 @@ Command line usage (if any):
 
     usage: PlotClosest.py [-h] [-size xx]  exp_no ra dec
 
-Description:  
 
 
     where 
@@ -25,9 +24,25 @@ Description:
     and ra and dec are the desired right ascension, written
         either in degrees or in h:m:s d:m:s
 
+Description:  
+
+    The routine looks for a file where the RA's and Dec's have
+    been assigned to fibers (by xcal.py) and finds the
+    fiber or fibers that are closest to this position 
+    and extract the spectral information from for this.
+
+    If multiple fibers are selected the resulting spectrum
+    the routine generally returns the average flux in
+    the fibers, rather than the sum.  The routine
+    also return an average or median of various other
+    quantities.
+
+    The errors are the errors for one fiber, not something
+    that has been reduced by the number of fibers.
 Primary routines:
 
-    doit
+    steer - unlike most of ksl's routines, at present
+    the steering routine manages the entire process.
 
 Notes:
 
@@ -139,10 +154,36 @@ def get_spec(filename,xfib,nfib=1):
     wave=x['WAVE'].data
     xxfib=xfib[0:nfib]
     flux=x['FLUX'].data[xxfib['fiberid']-1]
-    print(flux.shape)
+    error=x['ERROR'].data[xxfib['fiberid']-1]
+    mask=x['MASK'].data[xxfib['fiberid']-1]
+    sky=x['SKY'].data[xxfib['fiberid']-1]
+    sky_error=x['SKY_ERROR'].data[xxfib['fiberid']-1]
+    fwhm=x['FWHM'].data[xxfib['fiberid']-1]
+    # print(flux.shape)
     xflux=np.average(flux,axis=0)
-    print(xflux.shape)
-    xspec=Table([wave,xflux],names=['WAVE','FLUX'])
+    xsky=np.average(sky,axis=0)
+    xmask=np.sum(mask,axis=0)
+    
+    xfwhm=np.median(fwhm,axis=0)
+
+    xerr=error*error
+    # print('z',xerr.shape)
+    xerr=np.sum(xerr,axis=0)
+    # print(xerr.shape)
+    xerr=np.sqrt(xerr)
+    # print(xflux.shape)
+    # print(xsky.shape)
+    # print(xmask.shape)
+    xsky_error=sky_error*sky_error
+    xsky_error=np.sum(xsky_error,axis=0)
+    xsky_error=np.sqrt(xsky_error)
+    xspec=Table([wave,xflux,xerr,xsky,xsky_error,xmask,xfwhm],names=['WAVE','FLUX','ERROR','SKY','SKY_ERROR','MASK','FWHM'])
+    xspec['WAVE'].format='.1f'
+    xspec['FLUX'].format='.3e'
+    xspec['ERROR'].format='.3e'
+    xspec['SKY'].format='.3e'
+    xspec['SKY_ERROR'].format='.3e'
+    xspec['FWHM'].format='.2f'
     return xspec
 
 header='''
@@ -269,6 +310,9 @@ def steer(argv):
 
     regname=outname.replace('.txt','.reg')
     write_reg(regname,fib_no[xlist][0:nfib])
+
+    xspec.meta['comments']=['Filename %s' % xcal,'RA %.5f' % ra, 'Dec %.5f' % dec]
+    print(xspec)
 
     xspec.write(outname,format='ascii.fixed_width_two_line',overwrite=True)
 

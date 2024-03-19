@@ -7,17 +7,19 @@
 Synopsis:
 
 Locate and if desired retrieve calibrated LMV data
-form series of LVM exposures
+from series of LVM exposures
 
 
 Command line usage (if any):
 
-    usage: LocatDate.py [-h][-cp] exp_min exp_max
+    usage: LocatDate.py [-h][-cp] -dir whatever exp_min exp_max
 
     where exp_min and exp_max are LVM exposure numbers that one wishes to locate  and
 
     -h prints out this help file
     -cp means not only to locate the files but to copy them to local data directory
+    -dir whatever gives an alternative place to copy the data.  Not that -dir implies -cp
+         even if it is not given
 
 Description:
 
@@ -116,19 +118,22 @@ def find_em(exp_start=3596,exp_stop=3599):
 
     return xtab
 
-def get_em(xtab):
+def get_em(xtab,destination=''):
     '''
     Move data that has been found either into the local directory 
     or a data directory
     '''
 
-    destination='data'
+    if destination=='':
+        destination='data'
+
     if os.path.isdir(destination)==False:
         os.mkdir(destination)
         
             
     for one in xtab:
         if one['Location']!='Unknown':        
+            print('Copying %s to %s' % (one['Location'],destination))
             try:
                 shutil.copy(one['Location'], destination)
             except:
@@ -142,6 +147,7 @@ def steer(argv):
     exp_start=0
     exp_stop=0
     xcp=False
+    destination=''
 
     i=1
     while i<len(argv):
@@ -150,6 +156,10 @@ def steer(argv):
                return
         elif argv[i]=='-cp':
             xcp=True
+        elif argv[i]=='-dir':
+            xcp=True
+            i+=1
+            destination=argv[i]
         elif argv[i][0]=='-':
             print('Error: Unknown switch',argv)
             return
@@ -172,7 +182,7 @@ def steer(argv):
     print(locate)
     
     if xcp:
-        get_em(locate)    
+        get_em(locate,destination)    
 
     return
         

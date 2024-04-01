@@ -117,6 +117,8 @@ def do_summary(directory='60202'):
     pa_sci=[]
     pa_e=[]
     pa_w=[]
+    nstandards=[]
+
     for one_file in xfiles:
         # print(one_file)
         x=fits.open(one_file)
@@ -127,7 +129,10 @@ def do_summary(directory='60202'):
             name.append('Unknown')
             
         try:
-            xobject.append(head['OBJECT'])
+            obj=head['OBJECT']
+            if obj=='':
+                obj='Unknown'
+            xobject.append(obj)
         except:
             xobject.append('Unknown')
             
@@ -154,7 +159,8 @@ def do_summary(directory='60202'):
         try:
             exposure.append(head['EXPOSURE'])
         except:
-            exposure.append('Unknown')
+            # exposure.append('Unknown')
+            exposure.append(-99.0 )
             
         try:
             ra.append(head['TESCIRA'])
@@ -199,25 +205,42 @@ def do_summary(directory='60202'):
         try:
             pa_sci.append(head['POSCIPA'])
         except:
-            pa_sci.append('Unknown')
+            # pa_sci.append('Unknown')
+            pa_sci.append(-999.)
 
         
         try:
             pa_e.append(head['POSKYEPA'])
         except:
-            pa_e.append('Unknown')
+            # pa_e.append('Unknown')
+            pa_e.append(-999.)
 
 
         try:
             pa_w.append(head['POSKYWPA'])
         except:
-            pa_w.append('Unknown')
+            # pa_w.append('Unknown')
+            pa_w.append(-999. )
+
+        
+        keys=list(head.keys())
+        n=0
+        for one_key in keys:
+          if one_key.count('STD') and one_key.count('EXP') and  head[one_key]>0.0:
+               # if one_key.count('STD') and one_key.count['EXP'] and head[one_key]>0.0:
+               # print('gotcha')
+               n+=1
+        nstandards.append(n)
+
+
+
+        
 
         
         
     
-    xtab=Table([exposure,nspec,xtype,name,mjd,xtime,ra,dec,pa_sci,ra_e,dec_e,pa_e,ra_w,dec_w, pa_w,exptime,xobject],
-               names=['Exposure','NSpec','Type','FileUsed','MJD','Time','RA','Dec','PA','RA_E', 'Dec_E','PA_E','RA_W','Dec_W','PA_W','Exptime','Object'])
+    xtab=Table([exposure,nspec,xtype,name,mjd,xtime,ra,dec,pa_sci,ra_e,dec_e,pa_e,ra_w,dec_w, pa_w,nstandards,exptime,xobject],
+               names=['Exposure','NSpec','Type','FileUsed','MJD','Time','RA','Dec','PA','RA_E', 'Dec_E','PA_E','RA_W','Dec_W','PA_W','NStandards','Exptime','Object'])
     
     xtab.sort(['Exposure'])
     

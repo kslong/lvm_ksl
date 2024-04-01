@@ -79,6 +79,8 @@ def compare_with_gaia(filename='lvmCFrame-00005059.fits',outroot=''):
         print('Error: could not open ',filename)
         return
     header=x[0].header
+    exposure=header['EXPOSURE']
+    mjd=header['MJD']
     i=1
     good=[]
     obsmag=[]
@@ -112,9 +114,12 @@ def compare_with_gaia(filename='lvmCFrame-00005059.fits',outroot=''):
         j+=1
 
     plt.xlim(3500,9500)
+    plt.title('MJD %d Exposure %d' % (mjd,exposure))
+    # plt.legend()
     print(plt.ylim())
     ylm=plt.ylim()
     plt.ylim(1e-13,ylm[1])
+    plt.tight_layout()
 
     if outroot=='':
         word=filename.split('/')

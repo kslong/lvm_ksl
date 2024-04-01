@@ -83,7 +83,7 @@ def get_masked(filename='/Users/long/Projects/lvm_science/N103b/XCFrame-00007755
 
 
 
-def eval_qual(filename='/Users/long/Projects/lvm_science/N103b/XCFrame-00007755.fits',ymin=-0.1e-13,ymax=1e-13,xmin=3600,xmax=9500,outroot=''):
+def eval_qual(filename='/Users/long/Projects/lvm_science/N103b/XCFrame-00007755.fits',ymin=-0.2e-13,ymax=1e-13,xmin=3600,xmax=9500,outroot=''):
     '''
     Provide a standard plot for looking at how well the sky subtraction has worked overall
     '''
@@ -125,6 +125,8 @@ def eval_qual(filename='/Users/long/Projects/lvm_science/N103b/XCFrame-00007755.
     # plt.plot(wav,med_tot,label='Flux+Sky')
 
     xmed=np.median(med_flux)
+    ymin=ymin+xmed
+    ymax=ymax+xmed
 
     #plt.plot(wav,med_sky,label='Sky')
     plt.plot(wav,med_flux,'k',label='Flux')

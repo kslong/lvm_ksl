@@ -62,6 +62,7 @@ from glob import glob
 from astropy.table import vstack
 import numpy as np
 import timeit
+from lvm_ksl.xcal import get_moon_info_las_campanas
 
 LVM_DATA_S=os.environ.get('LVM_DATA_S')
 
@@ -119,6 +120,10 @@ def do_summary(directory='60202'):
     pa_w=[]
     nstandards=[]
 
+    moon_alt=[]
+    moon_phase=[]
+
+
     for one_file in xfiles:
         # print(one_file)
         x=fits.open(one_file)
@@ -147,7 +152,8 @@ def do_summary(directory='60202'):
             mjd.append(-99)
             
         try:
-            xtime.append(head['OBSTIME'])
+            obstime=head['OBSTIME']
+            xtime.append(obstime)
         except:
             xtime.append('Unknown')
             
@@ -234,13 +240,21 @@ def do_summary(directory='60202'):
 
 
 
-        
+        try: 
+            moon_info=get_moon_info_las_campanas(obstime)
+            print(moon_info)
+            print(moon_info['MoonRA'])
+            moon_alt.append(moon_info['MoonAlt'])
+            moon_phase.append(moon_info['MoonPhas'])
+        except:
+            moon_alt.append(-99.0)
+            moon_phase.append(-99.0)
 
         
         
     
-    xtab=Table([exposure,nspec,xtype,name,mjd,xtime,ra,dec,pa_sci,ra_e,dec_e,pa_e,ra_w,dec_w, pa_w,nstandards,exptime,xobject],
-               names=['Exposure','NSpec','Type','FileUsed','MJD','Time','RA','Dec','PA','RA_E', 'Dec_E','PA_E','RA_W','Dec_W','PA_W','NStandards','Exptime','Object'])
+    xtab=Table([exposure,nspec,xtype,name,mjd,xtime,ra,dec,pa_sci,ra_e,dec_e,pa_e,ra_w,dec_w, pa_w,nstandards,moon_alt,moon_phase,exptime,xobject],
+               names=['Exposure','NSpec','Type','FileUsed','MJD','Time','RA','Dec','PA','RA_E', 'Dec_E','PA_E','RA_W','Dec_W','PA_W','NStandards','MoonAlt','MoonPhas','Exptime','Object'])
     
     xtab.sort(['Exposure'])
     
@@ -273,6 +287,8 @@ def stack():
     x['Dec_E'].format='.6f'
     x['RA_W'].format='.6f'
     x['Dec_W'].format='.6f'
+    x['MoonAlt'].format='.2f'
+    x['MoonPhas'].format='.2f'
     x.sort('Exposure')
     x.write('All_Data.txt',format='ascii.fixed_width_two_line',overwrite=True)
     return

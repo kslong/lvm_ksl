@@ -242,8 +242,8 @@ def do_summary(directory='60202'):
 
         try: 
             moon_info=get_moon_info_las_campanas(obstime)
-            print(moon_info)
-            print(moon_info['MoonRA'])
+            # print(moon_info)
+            # print(moon_info['MoonRA'])
             moon_alt.append(moon_info['MoonAlt'])
             moon_phase.append(moon_info['MoonPhas'])
         except:
@@ -259,8 +259,11 @@ def do_summary(directory='60202'):
     xtab.sort(['Exposure'])
     
     words=directory.split('/')
+
+    if not os.path.isdir('./SumObs'):
+        os.mkdir('./SumObs')
     
-    xtab.write('Sum_%s.txt' % words[-1],format='ascii.fixed_width_two_line',overwrite=True)
+    xtab.write('SumObs/Sum_%s.txt' % words[-1],format='ascii.fixed_width_two_line',overwrite=True)
     
     return xtab
                     
@@ -269,7 +272,7 @@ def stack():
     Stack all of the Sum files into a single table 
     '''
 
-    files=glob('Sum*.txt')
+    files=glob('SumObs/Sum*.txt')
 
     x=ascii.read(files[0])
     i=1
@@ -351,7 +354,7 @@ def steer(argv):
 
         if redo==False:
             for one in xxdays:
-                if os.path.isfile('Sum_%s.txt' % one):
+                if os.path.isfile('SumObs/Sum_%s.txt' % one):
                     print('Omitting %s because Sum_%s.txt exists' % (one,one))
                 else:
                     xdays.append(one)

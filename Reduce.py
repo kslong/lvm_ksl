@@ -171,7 +171,6 @@ def steer(argv):
         
     if first_exp>0 and last_exp < 0:
         last_exp=first_exp
-    scani = int(sys.argv[2])
 
     doit(mjd,first_exp,last_exp,sky_sub,xcopy,clean)
 

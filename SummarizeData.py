@@ -169,38 +169,46 @@ def do_summary(directory='60202'):
             exposure.append(-99.0 )
             
         try:
-            ra.append(head['TESCIRA'])
+            xra=eval(head['TESCIRA'])
+            ra.append(ra)
         except:
             try:
-                ra.append(head['SCIRA'])
+                xra=eval(head['SCIRA'])
+                ra.append(xra)
             except:
                 ra.append(-99.0)
             
         try:
-            dec.append(head['TESCIDE'])
+            xdec=eval(head['TESCIDE'])
+            dec.append(xdec)
         except:
             try:
-                dec.append(head['SCIDEC'])
+                xdec=eval(head['SCIDEC'])
+                dec.append(xdec)
             except:
                 dec.append(-99.0)  
             
         try:
-            ra_e.append(head['TESKYERA'])
+            xra=eval(head['TESKYERA'])
+            ra_e.append(xra)
             dec_e.append(head['TESKYEDE'])
         except:
             try:
-                ra_e.append(head['SKYERA'])
+                xra=eval(head['SKYERA'])
+                ra_e.append(xra)
                 dec_e.append(head['SKYEDEC'])
             except:
                 ra_e.append(-99.0)
                 dec_e.append(-99.0)
             
         try:
-            ra_w.append(head['TESKYWRA'])
+            xra=eval(head['TESKYWRA'])
+            ra_w.append(xra)
             dec_w.append(head['TESKYWDE'])
         except:
             try:
-                ra_w.append(head['SKYWRA'])
+                xra=eval(head['SKYWRA'])
+                ra_w.append(xra)
                 dec_w.append(head['SKYWDEC'])
             except:
                 ra_w.append(-99.0)
@@ -209,21 +217,24 @@ def do_summary(directory='60202'):
         
 
         try:
-            pa_sci.append(head['POSCIPA'])
+            pa=eval(head['POSCIPA'])
+            pa_sci.append(pa)
         except:
             # pa_sci.append('Unknown')
             pa_sci.append(-999.)
 
         
         try:
-            pa_e.append(head['POSKYEPA'])
+            pa=eval(head['POSKYEPA'])
+            pa_e.append(pa)
         except:
             # pa_e.append('Unknown')
             pa_e.append(-999.)
 
 
         try:
-            pa_w.append(head['POSKYWPA'])
+            pa=eval(head['POSKYWPA'])
+            pa_w.append(pa)
         except:
             # pa_w.append('Unknown')
             pa_w.append(-999. )

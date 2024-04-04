@@ -62,6 +62,7 @@ from glob import glob
 from astropy.table import vstack
 import numpy as np
 import timeit
+from lvm_ksl.xcal import get_moon_info_las_campanas
 
 LVM_DATA_S=os.environ.get('LVM_DATA_S')
 
@@ -117,6 +118,12 @@ def do_summary(directory='60202'):
     pa_sci=[]
     pa_e=[]
     pa_w=[]
+    nstandards=[]
+
+    moon_alt=[]
+    moon_phase=[]
+
+
     for one_file in xfiles:
         # print(one_file)
         x=fits.open(one_file)
@@ -127,7 +134,10 @@ def do_summary(directory='60202'):
             name.append('Unknown')
             
         try:
-            xobject.append(head['OBJECT'])
+            obj=head['OBJECT']
+            if obj=='':
+                obj='Unknown'
+            xobject.append(obj)
         except:
             xobject.append('Unknown')
             
@@ -142,7 +152,8 @@ def do_summary(directory='60202'):
             mjd.append(-99)
             
         try:
-            xtime.append(head['OBSTIME'])
+            obstime=head['OBSTIME']
+            xtime.append(obstime)
         except:
             xtime.append('Unknown')
             
@@ -154,41 +165,50 @@ def do_summary(directory='60202'):
         try:
             exposure.append(head['EXPOSURE'])
         except:
-            exposure.append('Unknown')
+            # exposure.append('Unknown')
+            exposure.append(-99.0 )
             
         try:
-            ra.append(head['TESCIRA'])
+            xra=eval(head['TESCIRA'])
+            ra.append(ra)
         except:
             try:
-                ra.append(head['SCIRA'])
+                xra=eval(head['SCIRA'])
+                ra.append(xra)
             except:
                 ra.append(-99.0)
             
         try:
-            dec.append(head['TESCIDE'])
+            xdec=eval(head['TESCIDE'])
+            dec.append(xdec)
         except:
             try:
-                dec.append(head['SCIDEC'])
+                xdec=eval(head['SCIDEC'])
+                dec.append(xdec)
             except:
                 dec.append(-99.0)  
             
         try:
-            ra_e.append(head['TESKYERA'])
+            xra=eval(head['TESKYERA'])
+            ra_e.append(xra)
             dec_e.append(head['TESKYEDE'])
         except:
             try:
-                ra_e.append(head['SKYERA'])
+                xra=eval(head['SKYERA'])
+                ra_e.append(xra)
                 dec_e.append(head['SKYEDEC'])
             except:
                 ra_e.append(-99.0)
                 dec_e.append(-99.0)
             
         try:
-            ra_w.append(head['TESKYWRA'])
+            xra=eval(head['TESKYWRA'])
+            ra_w.append(xra)
             dec_w.append(head['TESKYWDE'])
         except:
             try:
-                ra_w.append(head['SKYWRA'])
+                xra=eval(head['SKYWRA'])
+                ra_w.append(xra)
                 dec_w.append(head['SKYWDEC'])
             except:
                 ra_w.append(-99.0)
@@ -197,33 +217,64 @@ def do_summary(directory='60202'):
         
 
         try:
-            pa_sci.append(head['POSCIPA'])
+            pa=eval(head['POSCIPA'])
+            pa_sci.append(pa)
         except:
-            pa_sci.append('Unknown')
+            # pa_sci.append('Unknown')
+            pa_sci.append(-999.)
 
         
         try:
-            pa_e.append(head['POSKYEPA'])
+            pa=eval(head['POSKYEPA'])
+            pa_e.append(pa)
         except:
-            pa_e.append('Unknown')
+            # pa_e.append('Unknown')
+            pa_e.append(-999.)
 
 
         try:
-            pa_w.append(head['POSKYWPA'])
+            pa=eval(head['POSKYWPA'])
+            pa_w.append(pa)
         except:
-            pa_w.append('Unknown')
+            # pa_w.append('Unknown')
+            pa_w.append(-999. )
+
+        
+        keys=list(head.keys())
+        n=0
+        for one_key in keys:
+          if one_key.count('STD') and one_key.count('EXP') and  head[one_key]>0.0:
+               # if one_key.count('STD') and one_key.count['EXP'] and head[one_key]>0.0:
+               # print('gotcha')
+               n+=1
+        nstandards.append(n)
+
+
+
+        try: 
+            moon_info=get_moon_info_las_campanas(obstime)
+            # print(moon_info)
+            # print(moon_info['MoonRA'])
+            moon_alt.append(moon_info['MoonAlt'])
+            moon_phase.append(moon_info['MoonPhas'])
+        except:
+            moon_alt.append(-99.0)
+            moon_phase.append(-99.0)
 
         
         
     
-    xtab=Table([exposure,nspec,xtype,name,mjd,xtime,ra,dec,pa_sci,ra_e,dec_e,pa_e,ra_w,dec_w, pa_w,exptime,xobject],
-               names=['Exposure','NSpec','Type','FileUsed','MJD','Time','RA','Dec','PA','RA_E', 'Dec_E','PA_E','RA_W','Dec_W','PA_W','Exptime','Object'])
+    xtab=Table([exposure,nspec,xtype,name,mjd,xtime,ra,dec,pa_sci,ra_e,dec_e,pa_e,ra_w,dec_w, pa_w,nstandards,moon_alt,moon_phase,exptime,xobject],
+               names=['Exposure','NSpec','Type','FileUsed','MJD','Time','RA','Dec','PA','RA_E', 'Dec_E','PA_E','RA_W','Dec_W','PA_W','NStandards','MoonAlt','MoonPhas','Exptime','Object'])
     
     xtab.sort(['Exposure'])
     
     words=directory.split('/')
+
+    if not os.path.isdir('./SumObs'):
+        os.mkdir('./SumObs')
     
-    xtab.write('Sum_%s.txt' % words[-1],format='ascii.fixed_width_two_line',overwrite=True)
+    xtab.write('SumObs/Sum_%s.txt' % words[-1],format='ascii.fixed_width_two_line',overwrite=True)
     
     return xtab
                     
@@ -232,7 +283,7 @@ def stack():
     Stack all of the Sum files into a single table 
     '''
 
-    files=glob('Sum*.txt')
+    files=glob('SumObs/Sum*.txt')
 
     x=ascii.read(files[0])
     i=1
@@ -250,6 +301,8 @@ def stack():
     x['Dec_E'].format='.6f'
     x['RA_W'].format='.6f'
     x['Dec_W'].format='.6f'
+    x['MoonAlt'].format='.2f'
+    x['MoonPhas'].format='.2f'
     x.sort('Exposure')
     x.write('All_Data.txt',format='ascii.fixed_width_two_line',overwrite=True)
     return
@@ -312,7 +365,7 @@ def steer(argv):
 
         if redo==False:
             for one in xxdays:
-                if os.path.isfile('Sum_%s.txt' % one):
+                if os.path.isfile('SumObs/Sum_%s.txt' % one):
                     print('Omitting %s because Sum_%s.txt exists' % (one,one))
                 else:
                     xdays.append(one)

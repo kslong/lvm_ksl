@@ -66,7 +66,7 @@ import numpy as np
 from astropy.io import fits
 from astropy.table import Table
 import fib2radec
-from astropy.coordinates import get_body, solar_system_ephemeris, get_sun, AltAz, EarthLocation
+from astropy.coordinates import get_body, solar_system_ephemeris, get_sun, AltAz, EarthLocation, get_moon
 from astropy.time import Time
 import astropy.units as u
 import numpy as np
@@ -93,18 +93,37 @@ def get_moon_info_las_campanas(datetime_utc,verbose=False):
 
     # Calculate the phase angle (angle between the Sun, Moon, and observer)
     phase_angle = moon_coords.separation(sun_coords).radian
-    # print('separation',phase_angle,phase_angle*57.29578)
 
     # Calculate the illuminated fraction of the Moon
     illumination_fraction = (1 - np.cos(phase_angle))/2
+    # print('separation',phase_angle,phase_angle*57.29578,illumination_fraction)
+    moon_sun_longitude_diff = (moon_coords.ra - sun_coords.ra).wrap_at(360 * u.deg).value
+    if moon_sun_longitude_diff>0:
+        moon_phase=illumination_fraction/2.
+    else:
+        moon_phase=1-illumination_fraction/2.
+
+    illumination_fraction*=100.
 
     # Calculate the Altitude and Azimuth of the Moon from Las Campanas Observatory
     altaz_frame = AltAz(obstime=obs_time, location=observatory_location)
     moon_altaz = moon_coords.transform_to(altaz_frame)
     sun_altaz=sun_coords.transform_to(altaz_frame)
 
-    # Calculate the phase of the Moon in degrees
-    moon_phase = illumination_fraction * 100
+
+
+    # Calculate the difference in ecliptic longitudes between the moon and the sun
+    delta_longitude = (moon_coords.spherical.lon - sun_coords.spherical.lon).to_value('deg')
+    # print('delta_long',delta_longitude)
+
+    # Normalize the difference in ecliptic longitudes to get the moon's phase
+
+
+
+    # Print the moon's phase
+    # print("Moon's phase:", moon_phase)
+
+
 
     xreturn={
         'SunRA':sun_coords.ra.deg,
@@ -118,6 +137,8 @@ def get_moon_info_las_campanas(datetime_utc,verbose=False):
         'MoonPhas': moon_phase,
         'MoonIll': illumination_fraction
     }
+
+    # print(xreturn)
 
     if verbose:
         for key, value in xreturn.items():

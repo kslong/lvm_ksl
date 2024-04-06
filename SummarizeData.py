@@ -50,6 +50,7 @@ Notes:
 History:
 
 231003 ksl Coding begun
+240406 ksl Reworked to add more info, and hopefully be more robust
 
 '''
 
@@ -92,7 +93,27 @@ def get_files2use(directory='60202'):
             file2use.append(qtab['Filename'][0])
             
     ytab['File2Use']=file2use
-    return ytab
+    return ytab# 
+
+def get_header_value(header, key, default_value=None, verbose=False):
+    '''
+    Robust way to get a header value if it exists
+    '''
+
+    try:
+        value = header[key]
+        if isinstance(value, str):
+            try:
+                value = float(value)  # or int(value) if it's an integer
+            except ValueError as e:
+                if verbose:
+                    print(f"Failed to convert '{value}' to a number for key '{key}': {e}")
+                value = default_value
+    except KeyError as e:
+        if verbose:
+            print(f"Key '{key}' not found in header: {e}")
+        value = default_value
+    return value
 
 def do_summary(directory='60202'):
 
@@ -120,8 +141,11 @@ def do_summary(directory='60202'):
     pa_w=[]
     nstandards=[]
 
+    moon_ra=[]
+    moon_dec=[]
     moon_alt=[]
     moon_phase=[]
+    moon_ill=[]
 
 
     for one_file in xfiles:
@@ -168,76 +192,51 @@ def do_summary(directory='60202'):
             # exposure.append('Unknown')
             exposure.append(-99.0 )
             
-        try:
-            xra=eval(head['TESCIRA'])
-            ra.append(ra)
-        except:
-            try:
-                xra=eval(head['SCIRA'])
-                ra.append(xra)
-            except:
-                ra.append(-99.0)
+
+        value=get_header_value(head, 'TESCIRA',-99.0)
+        if value==-99.:
+            value=get_header_value(head,'SCIRA',-99.0)
+        ra.append(value)
             
-        try:
-            xdec=eval(head['TESCIDE'])
-            dec.append(xdec)
-        except:
-            try:
-                xdec=eval(head['SCIDEC'])
-                dec.append(xdec)
-            except:
-                dec.append(-99.0)  
+        value=get_header_value(head,'TESCIDE',-99.)
+        if value==-99.:
+            value=get_header_value(head,'SCIDEC',-99.)
+        dec.append(value)
             
-        try:
-            xra=eval(head['TESKYERA'])
-            ra_e.append(xra)
-            dec_e.append(head['TESKYEDE'])
-        except:
-            try:
-                xra=eval(head['SKYERA'])
-                ra_e.append(xra)
-                dec_e.append(head['SKYEDEC'])
-            except:
-                ra_e.append(-99.0)
-                dec_e.append(-99.0)
+        value=get_header_value(head,'TESKYERA',-99.)
+        if value==-99.:
+            value=get_header_value(head,'SKYERA',-99.)
+        ra_e.append(value)
             
-        try:
-            xra=eval(head['TESKYWRA'])
-            ra_w.append(xra)
-            dec_w.append(head['TESKYWDE'])
-        except:
-            try:
-                xra=eval(head['SKYWRA'])
-                ra_w.append(xra)
-                dec_w.append(head['SKYWDEC'])
-            except:
-                ra_w.append(-99.0)
-                dec_w.append(-99.0)        
+        value=get_header_value(head,'TESKYEDE',-99.)
+        if value==-99.:
+            value=get_header_value(head,'SKYEDEC',-99.)
+        dec_e.append(value)
+
+            
+        value=get_header_value(head,'TESKYWRA',-99.)
+        if value==-99.:
+            value=get_header_value(head,'SKYWRA',-99.)
+        ra_w.append(value)
+            
+        value=get_header_value(head,'TESKYWDE',-99.)
+        if value==-99.:
+            value=get_header_value(head,'SKYWDEC',-99.)
+        dec_w.append(value)
 
         
+        value=get_header_value(head,'POSCIPA',-999.)
+        pa_sci.append(-999.)
 
-        try:
-            pa=eval(head['POSCIPA'])
-            pa_sci.append(pa)
-        except:
-            # pa_sci.append('Unknown')
-            pa_sci.append(-999.)
 
         
-        try:
-            pa=eval(head['POSKYEPA'])
-            pa_e.append(pa)
-        except:
-            # pa_e.append('Unknown')
-            pa_e.append(-999.)
+        value=get_header_value(head,'POSKYEPA',-999.)
+        pa_e.append(-999.)
 
 
-        try:
-            pa=eval(head['POSKYWPA'])
-            pa_w.append(pa)
-        except:
-            # pa_w.append('Unknown')
-            pa_w.append(-999. )
+        value=get_header_value(head,'POSKYWPA',-999.)
+        pa_w.append(-999.)
+
 
         
         keys=list(head.keys())
@@ -253,19 +252,25 @@ def do_summary(directory='60202'):
 
         try: 
             moon_info=get_moon_info_las_campanas(obstime)
-            # print(moon_info)
-            # print(moon_info['MoonRA'])
             moon_alt.append(moon_info['MoonAlt'])
             moon_phase.append(moon_info['MoonPhas'])
-        except:
+            moon_ill.append(moon_info['MoonIll'])
+            moon_ra.append(moon_info['MoonRA'])
+            moon_dec.append(moon_info['MoonDec'])
+        except Exception as e:
+            print(e)
             moon_alt.append(-99.0)
             moon_phase.append(-99.0)
+            moon_ill.append(-99.)
+            moon_ra.append(-99.0)
+            moon_dec.append(-99.0)
 
         
-        
+    # xtab=Table([exposure,nspec,xtype,name,mjd,xtime,ra,dec,pa_sci,ra_e,dec_e,pa_e,ra_w,dec_w, pa_w,nstandards,moon_alt,moon_phase,exptime,xobject],
+    #            names=['Exposure','NSpec','Type','FileUsed','MJD','Time','RA','Dec','PA','RA_E', 'Dec_E','PA_E','RA_W','Dec_W','PA_W','NStandards','MoonAlt','MoonPhas','Exptime','Object'])
     
-    xtab=Table([exposure,nspec,xtype,name,mjd,xtime,ra,dec,pa_sci,ra_e,dec_e,pa_e,ra_w,dec_w, pa_w,nstandards,moon_alt,moon_phase,exptime,xobject],
-               names=['Exposure','NSpec','Type','FileUsed','MJD','Time','RA','Dec','PA','RA_E', 'Dec_E','PA_E','RA_W','Dec_W','PA_W','NStandards','MoonAlt','MoonPhas','Exptime','Object'])
+    xtab=Table([exposure,mjd,nspec,xtype,name,xtime,ra,dec,pa_sci,ra_e,dec_e,pa_e,ra_w,dec_w, pa_w,nstandards,moon_ra,moon_dec,moon_alt,moon_phase,moon_ill,exptime,xobject],
+                names=['Exposure','MJD','NSpec','Type','FileUsed','Time','RA','Dec','PA','RA_E', 'Dec_E','PA_E','RA_W','Dec_W','PA_W','NStandards','MoonRA','MoonDec','MoonAlt','MoonPhas','MoonIll','Exptime','Object'])
     
     xtab.sort(['Exposure'])
     
@@ -301,8 +306,11 @@ def stack():
     x['Dec_E'].format='.6f'
     x['RA_W'].format='.6f'
     x['Dec_W'].format='.6f'
+    x['MoonRA'].format='.6f'
+    x['MoonDec'].format='.6f'
     x['MoonAlt'].format='.2f'
     x['MoonPhas'].format='.2f'
+    x['MoonIll'].format='.2f'
     x.sort('Exposure')
     x.write('All_Data.txt',format='ascii.fixed_width_two_line',overwrite=True)
     return

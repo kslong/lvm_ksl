@@ -95,14 +95,16 @@ def get_files2use(directory='60202'):
     ytab['File2Use']=file2use
     return ytab# 
 
-def get_header_value(header, key, default_value=None, verbose=False):
+def get_header_value(header, key, default_value=-999.0, verbose=False):
     '''
     Robust way to get a header value if it exists
     '''
 
     try:
         value = header[key]
-        if isinstance(value, str):
+        if value==None:
+            value=default_value
+        elif isinstance(value, str):
             try:
                 value = float(value)  # or int(value) if it's an integer
             except ValueError as e:
@@ -234,7 +236,7 @@ def do_summary(directory='60202'):
         pa_e.append(value)
 
 
-        value=get_header_value(head,'POSKYWPA',-999.)
+        value=get_header_value(head,'POSKYWPA',-999.,verbose=True)
         pa_w.append(value)
 
 

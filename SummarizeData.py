@@ -226,16 +226,16 @@ def do_summary(directory='60202'):
 
         
         value=get_header_value(head,'POSCIPA',-999.)
-        pa_sci.append(-999.)
+        pa_sci.append(value)
 
 
         
         value=get_header_value(head,'POSKYEPA',-999.)
-        pa_e.append(-999.)
+        pa_e.append(value)
 
 
         value=get_header_value(head,'POSKYWPA',-999.)
-        pa_w.append(-999.)
+        pa_w.append(value)
 
 
         

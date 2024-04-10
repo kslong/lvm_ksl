@@ -77,12 +77,14 @@ def process_one(mjd,i,sky_sub):
         if reduction_process.returncode == 0:
             print(f"Reduction for {i} completed successfully.")
         else:
-            print(f"Failed to complete reduction for {i}.")
+            print(f"FAILED to complete reduction for {i} on {mjd}, check log for errors.")
 
         print("Finished reduction of", i)
 
         # Clean up
         # os.remove(os.path.join(os.environ["LVMDATA_DIR"], mjd, "ancillary", "*.fits"))
+
+        return  reduction_process.returncode
 
 # Function to run rsync command with ignore-existing and dry-run options
 def run_forced_dry_rsync(mjd,xnumb,verbose=False):
@@ -127,11 +129,11 @@ def get_data(mjd,i):
         print('All is OK with %s so proceeding' % mjd)
         qmjd=mjd
     elif run_forced_dry_rsync(xmjd,xnumb)==0:
-        print('Failed on orginal %s, but succeded with  %s' % (mjd,xmjd))
+        print('Failed on orginal %s, but succeeded with  %s' % (mjd,xmjd))
         qmjd=xmjd
     else:
-        print('Failed with both %s and %s so returning')
-        return
+        print('Failed with both %s and %s so returning' % (mjd,xmjd))
+        return 1
 
 
 
@@ -150,12 +152,17 @@ def get_data(mjd,i):
     else:
         print(f"Failed to download coadd for {xnumb}.")
 
+    return 0
+
 
 def doit(mjd,first_exp,last_exp,sky_sub=False,xcopy=False,clean=True):
     '''
     Process a consecutive sequence of exposures from the same MJD
     with our without sky subtraction.
     '''
+
+    if int(mjd) < 60177:
+        print('WARNING: THESE DATA ARE UNLIKELY BE CALIBRATABLE WITHOUT SPECIAL EFFORT, AS THEY WERE OBTAINED BEFORE MJD 60177')
 
     mjd='%s' % mjd
     scani=first_exp
@@ -169,7 +176,11 @@ def doit(mjd,first_exp,last_exp,sky_sub=False,xcopy=False,clean=True):
     # Get the necessary FITS files
     for i in range(scani, scanf + 1):
 
-        get_data(mjd,i)
+        xret=get_data(mjd,i)
+
+        if xret:
+            print('FILES were not found, so next step is unlikely to succeed')
+
         process_one(mjd,i,sky_sub)
     
     if xcopy:

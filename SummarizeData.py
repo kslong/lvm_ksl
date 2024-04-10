@@ -118,6 +118,12 @@ def get_header_value(header, key, default_value=-999.0, verbose=False):
     return value
 
 def do_summary(directory='60202'):
+    '''
+    Create a summary for a single directory
+
+    240409 - Added SMJD, which is the simply the directory where
+    the data is stored
+    '''
 
     ytab=get_files2use(directory)
 
@@ -148,9 +154,11 @@ def do_summary(directory='60202'):
     moon_alt=[]
     moon_phase=[]
     moon_ill=[]
+    smjd=[]
 
 
     for one_file in xfiles:
+        smjd.append(directory)
         # print(one_file)
         x=fits.open(one_file)
         head=x[0].header
@@ -236,7 +244,7 @@ def do_summary(directory='60202'):
         pa_e.append(value)
 
 
-        value=get_header_value(head,'POSKYWPA',-999.,verbose=True)
+        value=get_header_value(head,'POSKYWPA',-999.)
         pa_w.append(value)
 
 
@@ -271,8 +279,8 @@ def do_summary(directory='60202'):
     # xtab=Table([exposure,nspec,xtype,name,mjd,xtime,ra,dec,pa_sci,ra_e,dec_e,pa_e,ra_w,dec_w, pa_w,nstandards,moon_alt,moon_phase,exptime,xobject],
     #            names=['Exposure','NSpec','Type','FileUsed','MJD','Time','RA','Dec','PA','RA_E', 'Dec_E','PA_E','RA_W','Dec_W','PA_W','NStandards','MoonAlt','MoonPhas','Exptime','Object'])
     
-    xtab=Table([exposure,mjd,nspec,xtype,name,xtime,ra,dec,pa_sci,ra_e,dec_e,pa_e,ra_w,dec_w, pa_w,nstandards,moon_ra,moon_dec,moon_alt,moon_phase,moon_ill,exptime,xobject],
-                names=['Exposure','MJD','NSpec','Type','FileUsed','Time','RA','Dec','PA','RA_E', 'Dec_E','PA_E','RA_W','Dec_W','PA_W','NStandards','MoonRA','MoonDec','MoonAlt','MoonPhas','MoonIll','Exptime','Object'])
+    xtab=Table([exposure,mjd,smjd,nspec,xtype,name,xtime,ra,dec,pa_sci,ra_e,dec_e,pa_e,ra_w,dec_w, pa_w,nstandards,moon_ra,moon_dec,moon_alt,moon_phase,moon_ill,exptime,xobject],
+                names=['Exposure','MJD','SMJD','NSpec','Type','FileUsed','Time','RA','Dec','PA','RA_E', 'Dec_E','PA_E','RA_W','Dec_W','PA_W','NStandards','MoonRA','MoonDec','MoonAlt','MoonPhas','MoonIll','Exptime','Object'])
     
     xtab.sort(['Exposure'])
     

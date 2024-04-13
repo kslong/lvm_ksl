@@ -35,6 +35,8 @@ the last one created.
 
 * RunSkyCorr.py allows one to run SkyCoor on calibrated data.  The routine creates the .par files that SkyCorr needs and then runs SkyCorr on the Prepped files.
 
+* SkySumb.py allows one to run a simple sky subtraction (separating the continuum from the sky lines, and rescaling the sky lines to minimize the differences between the science and sky spectrum.  This uses the same input files as SkyCorr.
+
 * SummarizeData.py - Summarizes the raw data that has been dowwnloaded.  Used on the Utah cluster one can make a summary of all of the data that has been obtained
 
 * SkyID.py is intended to identify what SkyFields are associated with what pointings.  It uses the output of SummarizeData.py.

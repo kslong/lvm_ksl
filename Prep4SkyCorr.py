@@ -129,6 +129,11 @@ def Prep4SkyCorrSingle(filename='data/lvmCFrame-00006661.fits',fiber_id=10):
 
 
 def scifib(xtab,select='all',telescope=''):
+    '''
+    Select good fibers from a telescope, of a spefic 
+    type or all from a telescope from the slitmap table
+    of a calbrated file
+    '''
     # print(np.unique(xtab['fibstatus']))
     # print(np.unique(xtab['targettype']))
     ztab=xtab[xtab['fibstatus']==0]

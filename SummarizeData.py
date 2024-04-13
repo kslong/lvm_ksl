@@ -95,14 +95,16 @@ def get_files2use(directory='60202'):
     ytab['File2Use']=file2use
     return ytab# 
 
-def get_header_value(header, key, default_value=None, verbose=False):
+def get_header_value(header, key, default_value=-999.0, verbose=False):
     '''
     Robust way to get a header value if it exists
     '''
 
     try:
         value = header[key]
-        if isinstance(value, str):
+        if value==None:
+            value=default_value
+        elif isinstance(value, str):
             try:
                 value = float(value)  # or int(value) if it's an integer
             except ValueError as e:
@@ -116,6 +118,12 @@ def get_header_value(header, key, default_value=None, verbose=False):
     return value
 
 def do_summary(directory='60202'):
+    '''
+    Create a summary for a single directory
+
+    240409 - Added SMJD, which is the simply the directory where
+    the data is stored
+    '''
 
     ytab=get_files2use(directory)
 
@@ -146,9 +154,11 @@ def do_summary(directory='60202'):
     moon_alt=[]
     moon_phase=[]
     moon_ill=[]
+    smjd=[]
 
 
     for one_file in xfiles:
+        smjd.append(directory)
         # print(one_file)
         x=fits.open(one_file)
         head=x[0].header
@@ -269,8 +279,8 @@ def do_summary(directory='60202'):
     # xtab=Table([exposure,nspec,xtype,name,mjd,xtime,ra,dec,pa_sci,ra_e,dec_e,pa_e,ra_w,dec_w, pa_w,nstandards,moon_alt,moon_phase,exptime,xobject],
     #            names=['Exposure','NSpec','Type','FileUsed','MJD','Time','RA','Dec','PA','RA_E', 'Dec_E','PA_E','RA_W','Dec_W','PA_W','NStandards','MoonAlt','MoonPhas','Exptime','Object'])
     
-    xtab=Table([exposure,mjd,nspec,xtype,name,xtime,ra,dec,pa_sci,ra_e,dec_e,pa_e,ra_w,dec_w, pa_w,nstandards,moon_ra,moon_dec,moon_alt,moon_phase,moon_ill,exptime,xobject],
-                names=['Exposure','MJD','NSpec','Type','FileUsed','Time','RA','Dec','PA','RA_E', 'Dec_E','PA_E','RA_W','Dec_W','PA_W','NStandards','MoonRA','MoonDec','MoonAlt','MoonPhas','MoonIll','Exptime','Object'])
+    xtab=Table([exposure,mjd,smjd,nspec,xtype,name,xtime,ra,dec,pa_sci,ra_e,dec_e,pa_e,ra_w,dec_w, pa_w,nstandards,moon_ra,moon_dec,moon_alt,moon_phase,moon_ill,exptime,xobject],
+                names=['Exposure','MJD','SMJD','NSpec','Type','FileUsed','Time','RA','Dec','PA','RA_E', 'Dec_E','PA_E','RA_W','Dec_W','PA_W','NStandards','MoonRA','MoonDec','MoonAlt','MoonPhas','MoonIll','Exptime','Object'])
     
     xtab.sort(['Exposure'])
     

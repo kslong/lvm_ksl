@@ -129,6 +129,11 @@ def Prep4SkyCorrSingle(filename='data/lvmCFrame-00006661.fits',fiber_id=10):
 
 
 def scifib(xtab,select='all',telescope=''):
+    '''
+    Select good fibers from a telescope, of a spefic 
+    type or all from a telescope from the slitmap table
+    of a calbrated file
+    '''
     # print(np.unique(xtab['fibstatus']))
     # print(np.unique(xtab['targettype']))
     ztab=xtab[xtab['fibstatus']==0]
@@ -211,6 +216,9 @@ def Prep4SkyCorrMean(filename='data/lvmCFrame-00006661.nosky_sub.fits'):
     
     xsci=x['FLUX'].data[sci['fiberid']-1]
     esci=x['Error'].data[sci['fiberid']-1]
+
+    xsky=x['SKY'].data[sci['fiberid']-1]
+    esky=x['SKY_Error'].data[sci['fiberid']-1]
     
     xsky_e=x['FLUX'].data[sky_e['fiberid']-1]
     esky_e=x['Error'].data[sky_e['fiberid']-1]
@@ -226,6 +234,9 @@ def Prep4SkyCorrMean(filename='data/lvmCFrame-00006661.nosky_sub.fits'):
 
     sci_flux=biweight_location(xsci,axis=0,ignore_nan=True)
     sci_err=mad_std(xsci,axis=0,ignore_nan=True)
+
+    sky=biweight_location(xsky,axis=0,ignore_nan=True)
+    sky_e=biweight_location(xsky,axis=0,ignore_nan=True)
     
     sky_e_flux=biweight_location(xsky_e,axis=0,ignore_nan=True)
     sky_e_err=mad_std(xsky_e,axis=0,ignore_nan=True)
@@ -233,6 +244,8 @@ def Prep4SkyCorrMean(filename='data/lvmCFrame-00006661.nosky_sub.fits'):
     
     sky_w_flux=biweight_location(xsky_w,axis=0,ignore_nan=True)
     sky_w_err=mad_std(xsky_w,axis=0,ignore_nan=True)
+
+    print('a',np.sum(sky_e_flux-sky_w_flux))
     
     # sci_med=biweight_location(xsci,axis=0,ignore_nan=True))
     # esci_med=np.median(esci,axis=0)
@@ -284,6 +297,28 @@ def Prep4SkyCorrMean(filename='data/lvmCFrame-00006661.nosky_sub.fits'):
     Sci_file=outfile='Sci_%04d.fits' % xroot
     print('Writing: %s' % outfile)
     new.writeto(outfile,overwrite=True)      
+
+    #now write a median super sky; header to this file is the same
+    # so the rest should be easy
+
+    xtab['FLUX'] = sky
+    xtab['ERROR'] = sky_e
+
+    table_hdu = fits.BinTableHDU(xtab, name='') 
+    new_primary_hdu = fits.PrimaryHDU(header=x[0].header)
+    new = fits.HDUList([new_primary_hdu, table_hdu])
+    
+    new['Primary'].header['UTC']=utc
+    new['Primary'].header['RA']=ra
+    new['Primary'].header['DEC']=dec
+    new['Primary'].header['ALT']=alt
+    new['Primary'].header['TELE']=xtel
+    
+
+    Sky_file=outfile='SkyM_%04d.fits' % xroot
+    print('Writing: %s' % outfile)
+    new.writeto(outfile,overwrite=True)      
+
     
     # Now do Sky E
     
@@ -294,9 +329,9 @@ def Prep4SkyCorrMean(filename='data/lvmCFrame-00006661.nosky_sub.fits'):
     alt=90-np.arccos(1./airmass)*57.29578
     
     # xtab=Table([wave,sky_e_med,esky_e_med], names=['WAVE','FLUX','ERROR'])
-    xtab=Table([wave,sky_e_flux,sky_e_err], names=['WAVE','FLUX','ERROR'])
+    xtab_sky_e=Table([wave,sky_e_flux,sky_e_err], names=['WAVE','FLUX','ERROR'])
 
-    table_hdu = fits.BinTableHDU(xtab, name='') 
+    table_hdu = fits.BinTableHDU(xtab_sky_e, name='') 
     new_primary_hdu = fits.PrimaryHDU(header=x[0].header)
     new = fits.HDUList([new_primary_hdu, table_hdu])
     
@@ -319,9 +354,11 @@ def Prep4SkyCorrMean(filename='data/lvmCFrame-00006661.nosky_sub.fits'):
     alt=90-np.arccos(1./airmass)*57.29578
     
     # xtab=Table([wave,sky_w_med,esky_w_med], names=['WAVE','FLUX','ERROR'])
-    xtab=Table([wave,sky_w_flux,sky_w_err], names=['WAVE','FLUX','ERROR'])
+    xtab_sky_w=Table([wave,sky_w_flux,sky_w_err], names=['WAVE','FLUX','ERROR'])
 
-    table_hdu = fits.BinTableHDU(xtab, name='') 
+    print('b',np.sum(xtab_sky_e['FLUX']-xtab_sky_w['FLUX']))
+
+    table_hdu = fits.BinTableHDU(xtab_sky_w, name='') 
     new_primary_hdu = fits.PrimaryHDU(header=x[0].header)
     new = fits.HDUList([new_primary_hdu, table_hdu])
     

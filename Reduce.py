@@ -56,40 +56,7 @@ import os
 def format_number(number):
     return "{:08d}".format(number)
 
-def doit(mjd,first_exp,last_exp,sky_sub=False,xcopy=False,clean=True):
-    '''
-    Process a consecutive sequence of exposures from the same MJD
-    with our without sky subtraction.
-    '''
-
-    mjd='%s' % mjd
-    scani=first_exp
-    scanf=last_exp
-
-    if os.path.isdir('./xlog')==False:
-        os.mkdir('./xlog')
-
-
-    os.environ["RSYNC_PASSWORD"] = "panoPtic-5"
-    os.environ["LVMAGCAM_DIR"] = os.path.join(os.environ["SAS_BASE_DIR"], "sdsswork/data/agcam/lco/")
-
-    # Get the necessary FITS files
-    for i in range(scani, scanf + 1):
-        xnumb = format_number(i)
-        # Get the raw frames
-        raw_frames_process = subprocess.run(["rsync", "-av", "--no-motd", f"rsync://sdss5@dtn.sdss.org/sdsswork/data/lvm/lco/{mjd}/sdR-s-*-{xnumb}.fits.gz", f"{os.environ['SAS_BASE_DIR']}/sdsswork/data/lvm/lco/{mjd}/"])
-        if raw_frames_process.returncode == 0:
-            print(f"Raw frames for {xnumb} successfully downloaded.")
-        else:
-            print(f"Failed to download raw frames for {xnumb}.")
-
-        # Get the coadd with astrometry
-        os.makedirs(f"{os.environ['SAS_BASE_DIR']}/sdsswork/data/agcam/lco/{mjd}/coadds/", exist_ok=True)
-        coadd_process = subprocess.run(["rsync", "-av", "--no-motd", f"rsync://sdss5@dtn.sdss.org/sdsswork/data/agcam/lco/{mjd}/coadds/lvm.sci.coadd_s{xnumb}.fits", f"{os.environ['SAS_BASE_DIR']}/sdsswork/data/agcam/lco/{mjd}/coadds/"])
-        if coadd_process.returncode == 0:
-            print(f"Coadd for {xnumb} successfully downloaded.")
-        else:
-            print(f"Failed to download coadd for {xnumb}.")
+def process_one(mjd,i,sky_sub):
 
         # Regenerate metadata
         metadata_process = subprocess.run(["drp", "metadata", "regenerate", "-m", mjd])
@@ -110,13 +77,111 @@ def doit(mjd,first_exp,last_exp,sky_sub=False,xcopy=False,clean=True):
         if reduction_process.returncode == 0:
             print(f"Reduction for {i} completed successfully.")
         else:
-            print(f"Failed to complete reduction for {i}.")
+            print(f"FAILED to complete reduction for {i} on {mjd}, check log for errors.")
 
         print("Finished reduction of", i)
 
         # Clean up
         # os.remove(os.path.join(os.environ["LVMDATA_DIR"], mjd, "ancillary", "*.fits"))
 
+        return  reduction_process.returncode
+
+# Function to run rsync command with ignore-existing and dry-run options
+def run_forced_dry_rsync(mjd,xnumb,verbose=False):
+    # Run rsync command with dry-run and ignore-existing options
+    rsync_process = subprocess.Popen(
+        ["rsync", "-avn", "--no-motd", "--ignore-existing",
+         f"rsync://sdss5@dtn.sdss.org/sdsswork/data/lvm/lco/{mjd}/sdR-s-*-{xnumb}.fits.gz",
+         f"{os.environ['SAS_BASE_DIR']}/sdsswork/data/lvm/lco/{mjd}/"],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        universal_newlines=True
+    )
+
+    # Capture stdout and stderr
+    stdout, stderr = rsync_process.communicate()
+
+    # Check if rsync command was successful
+    if verbose:
+        if rsync_process.returncode == 0:
+            print(f"Files for {xnumb} would be successfully downloaded if forced.")
+        else:
+            print("Rsync forced dry-run failed.")
+
+        # Print stdout and stderr
+        print("Standard Output:")
+        print(stdout)
+        print("Standard Error:")
+        print(stderr)
+
+    return rsync_process.returncode
+
+
+def get_data(mjd,i):
+
+    os.environ["RSYNC_PASSWORD"] = "panoPtic-5"
+    os.environ["LVMAGCAM_DIR"] = os.path.join(os.environ["SAS_BASE_DIR"], "sdsswork/data/agcam/lco/")
+    mjd='%s' % mjd
+    xmjd='%d' % (int(mjd)+1)
+    xnumb = format_number(i)
+
+    if run_forced_dry_rsync(mjd,xnumb)==0:
+        print('All is OK with %s so proceeding' % mjd)
+        qmjd=mjd
+    elif run_forced_dry_rsync(xmjd,xnumb)==0:
+        print('Failed on orginal %s, but succeeded with  %s' % (mjd,xmjd))
+        qmjd=xmjd
+    else:
+        print('Failed with both %s and %s so returning' % (mjd,xmjd))
+        return 1
+
+
+
+    # Get the raw frames
+    raw_frames_process = subprocess.run(["rsync", "-av", "--no-motd", f"rsync://sdss5@dtn.sdss.org/sdsswork/data/lvm/lco/{qmjd}/sdR-s-*-{xnumb}.fits.gz", f"{os.environ['SAS_BASE_DIR']}/sdsswork/data/lvm/lco/{qmjd}/"])
+    if raw_frames_process.returncode == 0:
+        print(f"Raw frames for {xnumb} successfully downloaded.")
+    else:
+        print(f"Failed to download raw frames for {xnumb}.")
+
+    # Get the coadd with astrometry
+    os.makedirs(f"{os.environ['SAS_BASE_DIR']}/sdsswork/data/agcam/lco/{qmjd}/coadds/", exist_ok=True)
+    coadd_process = subprocess.run(["rsync", "-av", "--no-motd", f"rsync://sdss5@dtn.sdss.org/sdsswork/data/agcam/lco/{qmjd}/coadds/lvm.sci.coadd_s{xnumb}.fits", f"{os.environ['SAS_BASE_DIR']}/sdsswork/data/agcam/lco/{mjd}/coadds/"])
+    if coadd_process.returncode == 0:
+        print(f"Coadd for {xnumb} successfully downloaded.")
+    else:
+        print(f"Failed to download coadd for {xnumb}.")
+
+    return 0
+
+
+def doit(mjd,first_exp,last_exp,sky_sub=False,xcopy=False,clean=True):
+    '''
+    Process a consecutive sequence of exposures from the same MJD
+    with our without sky subtraction.
+    '''
+
+    if int(mjd) < 60177:
+        print('WARNING: THESE DATA ARE UNLIKELY BE CALIBRATABLE WITHOUT SPECIAL EFFORT, AS THEY WERE OBTAINED BEFORE MJD 60177')
+
+    mjd='%s' % mjd
+    scani=first_exp
+    scanf=last_exp
+
+    if os.path.isdir('./xlog')==False:
+        os.mkdir('./xlog')
+
+
+
+    # Get the necessary FITS files
+    for i in range(scani, scanf + 1):
+
+        xret=get_data(mjd,i)
+
+        if xret:
+            print('FILES were not found, so next step is unlikely to succeed')
+
+        process_one(mjd,i,sky_sub)
     
     if xcopy:
         print("Running LocateData and copying files")

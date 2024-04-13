@@ -185,35 +185,44 @@ def sky_sub_lines(sci_file='Sci_5554.fits',sky_file='SkyE_5554.fits',wmin=3600,w
 
     print('Results %f' % (minimum))
 
-    plt.figure(1,(8,6))
-    plt.subplot(4,1,1)
-    plt.plot(xsci['WAVE'],xsci['FLUX'],label='Science')
+    plt.figure(10,(12,6))
+    plt.clf()
+
+    plt.subplot(2,2,1)
+    plt.semilogy(xsci['WAVE'],xsci['FLUX'],label='Science')
     plt.legend()
     plt.xlim(wmin,wmax)
+    plt.ylim(2e-15,2e-12)
     plt.tight_layout()
     
-    plt.subplot(4,1,2)
-    plt.plot(xsky['WAVE'],xsky['FLUX'],label='Sky')
+    plt.subplot(2,2,2)
+    plt.semilogy(xsky['WAVE'],xsky['FLUX'],label='Sky')
+    plt.ylim(2e-15,2e-12)
 
     plt.xlim(wmin,wmax)
     plt.legend()
     plt.tight_layout()
 
-    plt.subplot(4,1,3)
-    plt.plot(xsci['WAVE'],xsci['FLUX']-minimum*xsky['LINES'],label='Sky-subtracted')
+    plt.subplot(2,2,3)
+    plt.semilogy(xsci['WAVE'],xsci['FLUX']-minimum*xsky['LINES'],label='Sky-subtracted')
     plt.legend()
     plt.xlim(wmin,wmax)
+    plt.ylim(2e-15,2e-12)
     plt.tight_layout()
 
-    plt.subplot(4,1,4)
+    plt.subplot(2,2,4)
     plt.plot(xsci['WAVE'],xsci['FLUX']-xsci['CONT']-minimum*xsky['LINES'],label='Sky and Cont subtracted')
+    plt.plot([3600,9800],[6e-15,6e-15],'k:')
+    plt.plot([3600,9800],[-6e-15,-6e-15],'k:')
     plt.legend()
     ymin,ymax=plt.ylim()
-    if ymin<-2e-14:
-        ymin=-2e-14
-    if ymax>1e-13:
-        ymax=1e-13
+    if ymin<-1e-14:
+        ymin=-1e-14
+
+    if ymax>1e-14:
+        ymax=1e-14
     plt.ylim(ymin,ymax)
+    plt.xlim(wmin,wmax)
     plt.tight_layout()
 
     outname='%s_%s_lines.png' % (sci_file.replace('.fits',''),sky_file.replace('.fits',''))

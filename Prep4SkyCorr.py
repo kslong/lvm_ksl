@@ -100,7 +100,11 @@ def Prep4SkyCorrSingle(filename='data/lvmCFrame-00006661.fits',fiber_id=10):
     xflux=flux=x['FlUX'].data[fiber_id-1,:]
     xsky=x['SKY'].data[fiber_id-1,:]
     flux+=xsky
-    error=x['ERROR'].data[fiber_id-1,:]
+    try:
+        error=np.sqrt(1/x['IVAR'].data[fiber_id-1,:])
+    except:
+        error=x['ERROR'].data[fiber_id-1,:]
+
     # print(error.shape)
     
     xtab=Table([wave,flux,error,xflux,xsky], names=['WAVE','FLUX','ERROR','XFLUX','XSKY'])
@@ -215,16 +219,32 @@ def Prep4SkyCorrMean(filename='data/lvmCFrame-00006661.nosky_sub.fits'):
     print(len(sci),len(sky_e),len(sky_w))
     
     xsci=x['FLUX'].data[sci['fiberid']-1]
-    esci=x['Error'].data[sci['fiberid']-1]
+
+    try:
+        esci=np.sqrt(1./x['IVAR'].data[sci['fiberid']-1])
+    except:
+        esci=x['Error'].data[sci['fiberid']-1]
 
     xsky=x['SKY'].data[sci['fiberid']-1]
-    esky=x['SKY_Error'].data[sci['fiberid']-1]
+
+    try:
+        esky=np.sqrt(1./x['SKY_IVAR'].data[sci['fiberid']-1])
+    except:
+        esky=x['SKY_ERROR'].data[sci['fiberid']-1]
     
     xsky_e=x['FLUX'].data[sky_e['fiberid']-1]
-    esky_e=x['Error'].data[sky_e['fiberid']-1]
+
+    try:
+        esky_e=np.sqrt(1./x['IVAR'].data[sky_e['fiberid']-1])
+    except:
+        esky_e=x['Error'].data[sky_e['fiberid']-1]
     
     xsky_w=x['FLUX'].data[sky_w['fiberid']-1]
-    esky_w=x['Error'].data[sky_w['fiberid']-1]    
+
+    try:
+        esky_w=np.sqrt(1./x['IVAR'].data[sky_w['fiberid']-1])    
+    except:
+        esky_w=x['Error'].data[sky_w['fiberid']-1]    
 
 
     # xflux=xfits[extension].data[xgood['fiberid']-1]

@@ -125,7 +125,7 @@ def Prep4SkyCorrSingle(filename='data/lvmCFrame-00006661.fits',fiber_id=10):
     words=filename.split('-')
     goo=words[-1].replace('.fits','')
     # print(goo)
-    outfile='w%s_%04d.fits' % (goo,fiber_id)
+    outfile='w%s_%d.fits' % (goo,fiber_id)
     print('Writing: %s' % outfile)
     new.writeto(outfile,overwrite=True)
     
@@ -175,6 +175,10 @@ def get_spec(filename='NoSky/lvmCFrame-00004852.fits',select='science',telescope
     results['STD'].format='.4e'
     expo=xfits[0].header['EXPOSURE']
     outname='Spec_%05d' % expo
+    if filename.count('SFrame'):
+        print('This has been sky subtracted')
+        outname='SpecS_%05d' % expo
+
     if telescope!='':
         outname='%s_%s' % (outname,telescope)
     if extension!='FLUX':
@@ -205,7 +209,9 @@ def Prep4SkyCorrMean(filename='data/lvmCFrame-00006661.nosky_sub.fits'):
         print('Error: Could not open %s' % filename)
         return
     #
-    xroot=x['PRIMARY'].header['EXPOSURE']
+    xroot='%s' % x['PRIMARY'].header['EXPOSURE']
+    if filename.count('SFrame'):
+        xroot='%s_s' % xroot
     
     # determine which telescope we are discussing
     slitmap=Table(x['SLITMAP'].data)     
@@ -314,7 +320,7 @@ def Prep4SkyCorrMean(filename='data/lvmCFrame-00006661.nosky_sub.fits'):
     new['Primary'].header['ALT']=alt
     new['Primary'].header['TELE']=xtel
     
-    Sci_file=outfile='Sci_%04d.fits' % xroot
+    Sci_file=outfile='Sci_%s.fits' % xroot
     print('Writing: %s' % outfile)
     new.writeto(outfile,overwrite=True)      
 
@@ -335,7 +341,7 @@ def Prep4SkyCorrMean(filename='data/lvmCFrame-00006661.nosky_sub.fits'):
     new['Primary'].header['TELE']=xtel
     
 
-    Sky_file=outfile='SkyM_%04d.fits' % xroot
+    Sky_file=outfile='SkyM_%s.fits' % xroot
     print('Writing: %s' % outfile)
     new.writeto(outfile,overwrite=True)      
 
@@ -361,7 +367,7 @@ def Prep4SkyCorrMean(filename='data/lvmCFrame-00006661.nosky_sub.fits'):
     new['Primary'].header['ALT']=alt
     new['Primary'].header['TELE']=xtel
     
-    SkyE_file=outfile='SkyE_%04d.fits' % xroot
+    SkyE_file=outfile='SkyE_%s.fits' % xroot
     print('Writing: %s' % outfile)
     new.writeto(outfile,overwrite=True)      
 
@@ -388,14 +394,28 @@ def Prep4SkyCorrMean(filename='data/lvmCFrame-00006661.nosky_sub.fits'):
     new['Primary'].header['ALT']=alt
     new['Primary'].header['TELE']=xtel
     
-    SkyW_file=outfile='SkyW_%04d.fits' % xroot
+    SkyW_file=outfile='SkyW_%s.fits' % xroot
     print('Writing: %s' % outfile)
     new.writeto(outfile,overwrite=True)      
 
     Sci_file=Sci_file.replace('.fits','')
+    Sky_file=Sky_file.replace('.fits','')
     SkyE_file=SkyE_file.replace('.fits','')
     SkyW_file=SkyW_file.replace('.fits','')
-    return Sci_file,SkyE_file,SkyW_file
+    return Sci_file,Sky_file,SkyE_file,SkyW_file
+
+def plot_all(names):
+    plt.figure(1,(8,8))
+    for one in names:
+        x=fits.open('%s.fits' % one)
+        xtab=Table(x[1].data)
+        plt.semilogy(xtab['WAVE'],xtab['FLUX'],label=one)
+    plt.legend()
+    plt.ylim(1e-16,1e-10)
+    plt.tight_layout()
+    plt.savefig('foo.png')
+    
+        
     
 
 def steer(argv):
@@ -435,7 +455,10 @@ def steer(argv):
         return
 
     for one in files:
-        Prep4SkyCorrMean(filename=one)
+        xfiles=Prep4SkyCorrMean(filename=one)
+        print('test:', xfiles)
+        plot_all(xfiles)
+
     return
 
 

@@ -184,6 +184,10 @@ def steer(argv):
     if xcp:
         get_em(locate,destination)    
 
+    locate=find_em(exp_start,exp_stop,'S')
+    if xcp:
+        get_em(locate,destination)    
+
     return
         
 

@@ -51,6 +51,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 import subprocess
 import os
+import sky_plot
 
 
 def format_number(number):
@@ -194,6 +195,9 @@ def doit(mjd,first_exp,last_exp,sky_sub=False,xcopy=False,clean=True):
         print("LocateData.py executed successfully.")
     else:
         print("Failed to execute LocateData.py.")
+
+
+    
 
 
 def steer(argv):

@@ -50,6 +50,7 @@ def doit(filename='foo.fits'):
         x=fits.open(filename)
     except:
         print('Error: could not locate ',filename)
+        return
 
     x.info()
 

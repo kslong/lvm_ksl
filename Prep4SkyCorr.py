@@ -207,7 +207,7 @@ def Prep4SkyCorrMean(filename='data/lvmCFrame-00006661.nosky_sub.fits'):
         x=fits.open(filename)
     except:
         print('Error: Could not open %s' % filename)
-        return
+        return []
     #
     xroot='%s' % x['PRIMARY'].header['EXPOSURE']
     if filename.count('SFrame'):
@@ -224,6 +224,7 @@ def Prep4SkyCorrMean(filename='data/lvmCFrame-00006661.nosky_sub.fits'):
     
     print(len(sci),len(sky_e),len(sky_w))
     
+    # This is the science data
     xsci=x['FLUX'].data[sci['fiberid']-1]
 
     try:
@@ -231,13 +232,34 @@ def Prep4SkyCorrMean(filename='data/lvmCFrame-00006661.nosky_sub.fits'):
     except:
         esci=x['Error'].data[sci['fiberid']-1]
 
-    xsky=x['SKY'].data[sci['fiberid']-1]
-
+    # This is the supersky sky teleescope
     try:
-        esky=np.sqrt(1./x['SKY_IVAR'].data[sci['fiberid']-1])
+        xsky=x['SKY'].data[sci['fiberid']-1]
+
+        try:
+            esky=np.sqrt(1./x['SKY_IVAR'].data[sci['fiberid']-1])
+        except:
+            esky=x['SKY_ERROR'].data[sci['fiberid']-1]
+        lcframe=True
     except:
-        esky=x['SKY_ERROR'].data[sci['fiberid']-1]
+        lcframe=False
+        xsky_super_east=x['SKY_EAST'].data[sci['fiberid']-1]
+
+        try:
+            esky_super_east=np.sqrt(1./x['SKY_EAST_IVAR'].data[sci['fiberid']-1])
+        except:
+            esky_super_east=x['SKY_EAST_ERROR'].data[sci['fiberid']-1]
+
+        xsky_super_west=x['SKY_WEST'].data[sci['fiberid']-1]
+
+        try:
+            esky_super_west=np.sqrt(1./x['SKY_WEST_IVAR'].data[sci['fiberid']-1])
+        except:
+            esky_super_west=x['SKY_WEST_ERROR'].data[sci['fiberid']-1]
+
+
     
+    # This is the fluxed SkyE 
     xsky_e=x['FLUX'].data[sky_e['fiberid']-1]
 
     try:
@@ -245,12 +267,15 @@ def Prep4SkyCorrMean(filename='data/lvmCFrame-00006661.nosky_sub.fits'):
     except:
         esky_e=x['Error'].data[sky_e['fiberid']-1]
     
+    # This is the fluxed SkyW
     xsky_w=x['FLUX'].data[sky_w['fiberid']-1]
 
     try:
         esky_w=np.sqrt(1./x['IVAR'].data[sky_w['fiberid']-1])    
     except:
         esky_w=x['Error'].data[sky_w['fiberid']-1]    
+
+    # This finishes the Sky telescope
 
 
     # xflux=xfits[extension].data[xgood['fiberid']-1]
@@ -261,8 +286,14 @@ def Prep4SkyCorrMean(filename='data/lvmCFrame-00006661.nosky_sub.fits'):
     sci_flux=biweight_location(xsci,axis=0,ignore_nan=True)
     sci_err=mad_std(xsci,axis=0,ignore_nan=True)
 
-    sky=biweight_location(xsky,axis=0,ignore_nan=True)
-    sky_e=biweight_location(xsky,axis=0,ignore_nan=True)
+    if lcframe:
+        sky=biweight_location(xsky,axis=0,ignore_nan=True)
+        sky_e=mad_std(xsky,axis=0,ignore_nan=True)
+    else:
+        sky_super_east=biweight_location(xsky_super_east,axis=0,ignore_nan=True)
+        sky_e_super_east=mad_std(xsky_super_east,axis=0,ignore_nan=True)
+        sky_super_west=biweight_location(xsky_super_east,axis=0,ignore_nan=True)
+        sky_e_super_west=mad_std(xsky_super_west,axis=0,ignore_nan=True)
     
     sky_e_flux=biweight_location(xsky_e,axis=0,ignore_nan=True)
     sky_e_err=mad_std(xsky_e,axis=0,ignore_nan=True)
@@ -283,6 +314,7 @@ def Prep4SkyCorrMean(filename='data/lvmCFrame-00006661.nosky_sub.fits'):
     # esky_w_med=np.median(esky_w,axis=0)
     
     wave=x['WAVE'].data
+    xtab=Table([wave],names=['WAVE'])
     
     # plt.plot(wave,sci_med,label='Sci')
     # plt.plot(wave,sky_e_med,label='SkyE')
@@ -298,52 +330,81 @@ def Prep4SkyCorrMean(filename='data/lvmCFrame-00006661.nosky_sub.fits'):
     word=xtime.split('T')
     word=word[-1].split(':')
     utc=int(word[0])+int(word[1])/60.+eval(word[2])/3600
-    
-    # First do the science data
-    
-    ra=x['PRIMARY'].header['TESCIRA']
-    dec=x['PRIMARY'].header['TESCIDE']
-    airmass=x['PRIMARY'].header['TESCIAM']
-    xtel='Sci'
-    alt=90-np.arccos(1./airmass)*57.29578
-    
-    # xtab=Table([wave,sci_med,esci_med], names=['WAVE','FLUX','ERROR'])
-    xtab=Table([wave,sci_flux,sci_err], names=['WAVE','FLUX','ERROR'])
-
-    table_hdu = fits.BinTableHDU(xtab, name='') 
-    new_primary_hdu = fits.PrimaryHDU(header=x[0].header)
-    new = fits.HDUList([new_primary_hdu, table_hdu])
-    
-    new['Primary'].header['UTC']=utc
-    new['Primary'].header['RA']=ra
-    new['Primary'].header['DEC']=dec
-    new['Primary'].header['ALT']=alt
-    new['Primary'].header['TELE']=xtel
-    
-    Sci_file=outfile='Sci_%s.fits' % xroot
-    print('Writing: %s' % outfile)
-    new.writeto(outfile,overwrite=True)      
-
     #now write a median super sky; header to this file is the same
     # so the rest should be easy
 
-    xtab['FLUX'] = sky
-    xtab['ERROR'] = sky_e
+    if lcframe:
+        xtab['FLUX'] = sky
+        xtab['ERROR'] = sky_e
 
-    table_hdu = fits.BinTableHDU(xtab, name='') 
-    new_primary_hdu = fits.PrimaryHDU(header=x[0].header)
-    new = fits.HDUList([new_primary_hdu, table_hdu])
+        table_hdu = fits.BinTableHDU(xtab, name='') 
+        new_primary_hdu = fits.PrimaryHDU(header=x[0].header)
+        new = fits.HDUList([new_primary_hdu, table_hdu])
     
-    new['Primary'].header['UTC']=utc
-    new['Primary'].header['RA']=ra
-    new['Primary'].header['DEC']=dec
-    new['Primary'].header['ALT']=alt
-    new['Primary'].header['TELE']=xtel
+        new['Primary'].header['UTC']=utc
+        new['Primary'].header['RA']=ra
+        new['Primary'].header['DEC']=dec
+        new['Primary'].header['ALT']=alt
+        new['Primary'].header['TELE']=xtel
     
 
-    Sky_file=outfile='SkyM_%s.fits' % xroot
-    print('Writing: %s' % outfile)
-    new.writeto(outfile,overwrite=True)      
+        Sky_file=outfile='SkyM_%s.fits' % xroot
+        print('Writing: %s' % outfile)
+        new.writeto(outfile,overwrite=True)      
+    else:
+        # first do super east
+        xtab['FLUX'] = sky_super_east
+        xtab['ERROR'] = sky_e_super_east
+
+        table_hdu = fits.BinTableHDU(xtab, name='') 
+        new_primary_hdu = fits.PrimaryHDU(header=x[0].header)
+        new = fits.HDUList([new_primary_hdu, table_hdu])
+    
+    
+        ra=x['PRIMARY'].header['TESKYERA']
+        dec=x['PRIMARY'].header['TESKYEDE']
+        airmass=x['PRIMARY'].header['TESKYEAM']  
+        xtel='SkyE'
+        alt=90-np.arccos(1./airmass)*57.29578
+    
+    
+        new['Primary'].header['UTC']=utc
+        new['Primary'].header['RA']=ra
+        new['Primary'].header['DEC']=dec
+        new['Primary'].header['ALT']=alt
+        new['Primary'].header['TELE']=xtel
+    
+
+        Sky_file_super_east=outfile='SkyE_Super_%s.fits' % xroot
+        print('Writing: %s' % outfile)
+        new.writeto(outfile,overwrite=True)      
+
+
+        # first do super west
+        xtab['FLUX'] = sky_super_west
+        xtab['ERROR'] = sky_e_super_west
+
+        table_hdu = fits.BinTableHDU(xtab, name='') 
+        new_primary_hdu = fits.PrimaryHDU(header=x[0].header)
+        new = fits.HDUList([new_primary_hdu, table_hdu])
+    
+    
+        ra=x['PRIMARY'].header['TESKYWRA']
+        dec=x['PRIMARY'].header['TESKYWDE']
+        airmass=x['PRIMARY'].header['TESKYWAM']  
+        xtel='SkyE'
+        alt=90-np.arccos(1./airmass)*57.29578
+    
+        new['Primary'].header['UTC']=utc
+        new['Primary'].header['RA']=ra
+        new['Primary'].header['DEC']=dec
+        new['Primary'].header['ALT']=alt
+        new['Primary'].header['TELE']=xtel
+    
+
+        Sky_file_super_west=outfile='SkyW_Super_%s.fits' % xroot
+        print('Writing: %s' % outfile)
+        new.writeto(outfile,overwrite=True)      
 
     
     # Now do Sky E
@@ -398,11 +459,51 @@ def Prep4SkyCorrMean(filename='data/lvmCFrame-00006661.nosky_sub.fits'):
     print('Writing: %s' % outfile)
     new.writeto(outfile,overwrite=True)      
 
-    Sci_file=Sci_file.replace('.fits','')
-    Sky_file=Sky_file.replace('.fits','')
-    SkyE_file=SkyE_file.replace('.fits','')
-    SkyW_file=SkyW_file.replace('.fits','')
-    return Sci_file,Sky_file,SkyE_file,SkyW_file
+    # Last do the science data
+    
+    ra=x['PRIMARY'].header['TESCIRA']
+    dec=x['PRIMARY'].header['TESCIDE']
+    airmass=x['PRIMARY'].header['TESCIAM']
+    xtel='Sci'
+    alt=90-np.arccos(1./airmass)*57.29578
+    
+    # xtab=Table([wave,sci_med,esci_med], names=['WAVE','FLUX','ERROR'])
+    xtab=Table([wave,sci_flux,sci_err], names=['WAVE','FLUX','ERROR'])
+
+    table_hdu = fits.BinTableHDU(xtab, name='') 
+    new_primary_hdu = fits.PrimaryHDU(header=x[0].header)
+    new = fits.HDUList([new_primary_hdu, table_hdu])
+    
+    new['Primary'].header['UTC']=utc
+    new['Primary'].header['RA']=ra
+    new['Primary'].header['DEC']=dec
+    new['Primary'].header['ALT']=alt
+    new['Primary'].header['TELE']=xtel
+    
+    if lcframe:
+        Sci_file=outfile='Sci_%s.fits' % xroot
+    else:
+        Sci_file=outfile='Sci_%s_s.fits' % xroot
+    print('Writing: %s' % outfile)
+    new.writeto(outfile,overwrite=True)      
+
+    #now write a median super sky; header to this file is the same
+    # so the rest should be easy
+
+
+    files=[]
+
+
+    files.append(Sci_file.replace('.fits',''))
+    if lcframe:
+        files.append(Sky_file.replace('.fits',''))
+    else:
+        files.append(Sky_file_super_east.replace('.fits',''))
+        files.append(Sky_file_super_west.replace('.fits',''))
+
+    files.append(SkyE_file.replace('.fits',''))
+    files.append(SkyW_file.replace('.fits',''))
+    return files                                    
 
 def plot_all(names):
     plt.figure(1,(8,8))
@@ -457,7 +558,8 @@ def steer(argv):
     for one in files:
         xfiles=Prep4SkyCorrMean(filename=one)
         print('test:', xfiles)
-        plot_all(xfiles)
+        if len(xfiles):
+            plot_all(xfiles)
 
     return
 

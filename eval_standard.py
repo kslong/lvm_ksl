@@ -98,37 +98,47 @@ def compare_with_gaia(filename='lvmCFrame-00005059.fits',outroot=''):
         except:
             pass
         i+=1
-    print(good)
-    print(obsmag)
-    print(gaia_id)
-    print(fib)
+    # print(good)
+    # print(obsmag)
+    # print(gaia_id)
+    # print(fib)
 
     plt.figure(1,(8,8))
     j=0
+    ok=False
     while j<len(fib):
-        print('start %d' % j)
-        wave,flux=ancillary_func.retrive_gaia_star(gaia_id[j],'test')
-        swave,sflux=get_standard(x,fib[j])
-        plt.semilogy(swave,xsmooth(sflux),label=fib[j])
-        plt.semilogy(wave,flux,'k')
+        print('Getting spectrum of %d' % (gaia_id[j]))
+        try:
+            wave,flux=ancillary_func.retrive_gaia_star(gaia_id[j],'test')
+            swave,sflux=get_standard(x,fib[j])
+            plt.semilogy(swave,xsmooth(sflux),label=fib[j])
+            plt.semilogy(wave,flux,'k')
+            ok=True
+        except:
+            pass
+            print('Error: Failed on object ',gaia_id[j])
+
         j+=1
 
-    plt.xlim(3500,9500)
-    plt.title('MJD %d Exposure %d' % (mjd,exposure))
-    # plt.legend()
-    print(plt.ylim())
-    ylm=plt.ylim()
-    plt.ylim(1e-13,ylm[1])
-    plt.tight_layout()
+    if ok:
+        plt.xlim(3500,9500)
+        plt.title('MJD %d Exposure %d' % (mjd,exposure))
+        # plt.legend()
+        print(plt.ylim())
+        ylm=plt.ylim()
+        plt.ylim(1e-13,ylm[1])
+        plt.tight_layout()
 
-    if outroot=='':
-        word=filename.split('/')
-        outroot=word[-1].replace('.fits','')
+        if outroot=='':
+            word=filename.split('/')
+            outroot=word[-1].replace('.fits','')
 
-    outfile='standard_%s.png' % outroot
-    plt.savefig(outfile)
+        outfile='standard_%s.png' % outroot
+        return outfile
+    else:
+        return None
 
-    return
+    return 
 
                 
 def steer(argv):
@@ -147,7 +157,11 @@ def steer(argv):
         i+=1
 
     for one in files:
-        compare_with_gaia(one)
+        outfile=compare_with_gaia(one)
+        if outfile!=None:
+            plt.savefig(outfile)
+        else:
+            print('Error: No spectra were obtained from GAIA, so no plot has been created for %s' % one)
                           
         
 

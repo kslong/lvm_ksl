@@ -38,7 +38,7 @@ from lvmdrp.external import ancillary_func
 
 
 
-from scipy.signal import boxcar
+from scipy.signal.windows import boxcar
 from scipy.signal import convolve
 
 def xsmooth(flux,smooth=21):

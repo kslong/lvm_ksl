@@ -52,6 +52,31 @@ import matplotlib.pyplot as plt
 import subprocess
 import os
 import sky_plot
+import re
+from collections import Counter
+
+def clean_and_count_lines_with_keywords(filename):
+    # Regular expression to remove non-ASCII characters
+    non_ascii_regex = re.compile(r'[^\x00-\x7F]+')
+
+    # Dictionary to store cleaned lines and their counts
+    line_counts = Counter()
+
+    # Read the file line by line
+    with open(filename, 'r', encoding='utf-8') as file:
+        for line in file:
+            # Check if the line contains 'WARNING' or 'ERROR'
+            if 'WARNING' in line or 'ERROR' in line:
+                # Remove non-ASCII characters
+                cleaned_line = non_ascii_regex.sub('', line)
+
+                # Count the cleaned line
+                line_counts[cleaned_line.strip()] += 1
+
+    # Display results sorted by frequency (most common first)
+    print('### WARNING/ERROR Summary ###')
+    for line, count in line_counts.most_common():
+        print(f"{count}: {line}")
 
 
 def format_number(number):
@@ -69,16 +94,19 @@ def process_one(mjd,i,sky_sub):
         # Quick reduction
         print("Starting reduction with log in xlog/log_{}.txt".format(i))
         with open("xlog/log_{}.txt".format(i), "w") as logfile:
-            if sky_sub:
-                print("Processing WITH sky subtraction")
-                reduction_process = subprocess.run(["drp", "quick-reduction", "-fe", str(i)], stdout=logfile, stderr=subprocess.STDOUT)
-            else:
-                print("Processing WITHOUT  sky subtraction")
-                reduction_process = subprocess.run(["drp", "quick-reduction", "-s","-fe", str(i)], stdout=logfile, stderr=subprocess.STDOUT)
+            xcommand=["drp", "quick-reduction", "-fe", str(i)]
+            print("Begin processing of ",i,"with command: ",xcommand)
+            reduction_process = subprocess.run(["drp", "quick-reduction", "-fe", str(i)], stdout=logfile, stderr=subprocess.STDOUT)
         if reduction_process.returncode == 0:
             print(f"Reduction for {i} completed successfully.")
         else:
             print(f"FAILED to complete reduction for {i} on {mjd}, check log for errors.")
+
+        print('Type for logfile', type(logfile))
+        print('Path ',os.path.isfile(logfile.name))
+        print('name', logfile.name)
+
+        clean_and_count_lines_with_keywords(logfile.name)
 
         print("Finished reduction of", i)
 

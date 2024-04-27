@@ -72,7 +72,7 @@ def get_latest_file(files):
 
 
 
-def find_em(exp_start=3596,exp_stop=3599):
+def find_em(exp_start=3596,exp_stop=3599,file_type='C'):
 
     print('gotcha',exp_start,exp_stop)
 
@@ -85,7 +85,7 @@ def find_em(exp_start=3596,exp_stop=3599):
     while i<=exp_stop:
         print(i)
         expno.append(i)
-        xfile='lvmCFrame-%08d.fits' % i
+        xfile='lvm%cFrame-%08d.fits' % (file_type,i)
         xfiles.append(xfile)
         files=glob('%s**/%s' % (os.environ['SAS_BASE_DIR'],xfile),recursive=True)
         if len(files)==0:
@@ -181,6 +181,10 @@ def steer(argv):
     locate=find_em(exp_start,exp_stop)
     print(locate)
     
+    if xcp:
+        get_em(locate,destination)    
+
+    locate=find_em(exp_start,exp_stop,'S')
     if xcp:
         get_em(locate,destination)    
 

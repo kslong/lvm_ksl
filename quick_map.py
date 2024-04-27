@@ -101,66 +101,29 @@ def get_redshift(r,d):
 
 
 
-def doit(filename,wrange=[6560,6566], out_label='',
-         crange=None,do_astrom=True,cube=False,do_mask=True,interpolate=False):
+def calculate_percentiles(arr, percentiles):
+    # Calculate specified percentiles, handling NaN values
+    result = np.nanpercentile(arr, percentiles)
+
+    return result
+
+def doit(filename,out_label='',wrange=[6560,6566],
+         crange=None,do_astrom=True,do_mask=True,interpolate=False):
     
     
-    # Read RSS QL file
-    # xname='%s/%s' % (RSS_DIR,filename)
-    xname=fib2radec.locate_file(filename)
-    print('\nReading file',xname)
+    print('\nReading file',filename)
     try:
-        rss=fits.open(xname)
+        rss=fits.open(filename)
     except:
-        print('Error": could not read row stack spectra at %s' % xname)
+        print('Error": could not read row stack spectra at %s' % filename)
         return
     mjd=rss['PRIMARY'].header['MJD']
     expnum=rss['PRIMARY'].header['EXPOSURE']
 
 
-    posang=0
-    RAobs=0
-    DECobs=0
-
-    try:
-        best=rss['PRIMARY'].header['Best']
-        print('Found Best astrometry')
-        posang=rss['PRIMARY'].header['BESTPA']
-        RAobs=rss['PRIMARY'].header['BESTRA']
-        DECobs=rss['PRIMARY'].header['BESTDEC']
-        do_astrom=False
-
-    except:
-        print('The is no pre-existing astrometry')
-
-    if do_astrom:
-        LVMAGCAM_DIR = os.environ.get('LVMAGCAM_DIR')
-        procscifile = f"{LVMAGCAM_DIR}/{mjd}/coadds/lvm.sci.coadd_s{expnum:0>8}.fits"
-        if os.path.exists(procscifile):
-            print('Found astrometry file')
-            
-            # Read WCS info from coadd
-            agfile    = os.path.basename(procscifile)
-            mfheader  = fits.getheader(procscifile, 1)
-            outw      = WCS(mfheader)
-            CDmatrix  = outw.pixel_scale_matrix
-            posangrad = -1*np.arctan(CDmatrix[1,0]/CDmatrix[0,0])
-            posang    = posangrad*180/np.pi
-            IFUcen    = outw.pixel_to_world(2500,1000)
-            RAobs     = IFUcen.ra.value
-            DECobs    = IFUcen.dec.value
-            print(f'Using center and PA of {RAobs:.6f}, {DECobs:.6f}, {posang:.6f} from {agfile}')
-            # For recent data, the header keywords should be correct
-            altRAobs  = mfheader['RAMEAS']
-            altDECobs = mfheader['DECMEAS']
-            altposang = mfheader['PAMEAS'] - 180.
-            print(f'Header values are {altRAobs:.6f} and {altDECobs:.6f} with PA {altposang:.6f}')
-        else:
-            print(f'{procscifile} does not exist, skipping astrometry')
-            do_astrom = False
-            RAobs  = mfheader['RAMEAS']
-            DECobs = mfheader['DECMEAS']
-            posang = mfheader['POSCIPA']
+    RAobs  = rss['PRIMARY'].header['TESCIRA']
+    DECobs = rss['PRIMARY'].header['TESCIDE']
+    posang = rss['PRIMARY'].header['POSCIPA']
     
     # Read fibermap and get x,y coordinates of fibers
     slittab = rss['SLITMAP'].data
@@ -175,16 +138,20 @@ def doit(filename,wrange=[6560,6566], out_label='',
     fibid=slittab['fiberid'][selsci]
     sciflux = rss['FLUX'].data[selsci]
     scimask = rss['MASK'].data[selsci]
-    print('Selected',sciflux.shape[0],'science fibers')
+    # print('Selected',sciflux.shape[0],'science fibers')
     
     
     # select wavelength range of interest
     z=get_redshift(RAobs,DECobs)
+    wrange[0]=float(wrange[0])
+    wrange[1]=float(wrange[1])
     wrange[0]*=(1+z)
     wrange[1]*=(1+z)
     if crange!=None:
+        crange[0]=float(crange[0])
+        crange[1]=float(crange[1])
         crange[0]*=(1+z)
-        wrange[1]*=(1+z)
+        crange[1]*=(1+z)
 
 
     nfibers,nchans = rss['FLUX'].data.shape
@@ -202,25 +169,28 @@ def doit(filename,wrange=[6560,6566], out_label='',
     # Fill the flux array
     if do_mask:
         sciflux[scimask==1] = np.nan
-    if not cube:
-        flux = np.nanmean(sciflux*selwave, axis=1)
-        print(flux)
-        print('Averages',np.nanmean(flux),np.nanmedian(flux))
-        # Optional continuum subtraction
-        if crange:
-            cflux = np.nanmean(sciflux*cselwave,axis=1)
-            print('Cont Averages',np.nanmean(cflux),np.nanmedian(cflux))
-            flux  = flux - cflux
-            print('Final Averages',np.nanmean(flux),np.nanmedian(flux))
-    else:  # In my version, never reduce the number of channels
-        flux = sciflux[:,selwave]
-        crval3 = wave[selwave.argmax()]
-        cdelt3 = rss['FLUX'].header['CDELT1'] * 1e10  # Angstroms
+    flux = np.nanmean(sciflux*selwave, axis=1)
+    # print(flux)
+    print('Averages',np.nanmean(flux),np.nanmedian(flux))
+    # Optional continuum subtraction
+    if crange:
+        cflux = np.nanmean(sciflux*cselwave,axis=1)
+        print('Cont Averages',np.nanmean(cflux),np.nanmedian(cflux))
+        flux  = flux - cflux
+        print('Final Averages',np.nanmean(flux),np.nanmedian(flux))
 
     xmean=np.nanmean(flux)
     xmed=np.nanmedian(flux)
     xstd=np.nanstd(flux)
+
+    percentiles=calculate_percentiles(flux,[5,95])
+
+
+
     print('Final stats %.2e %.2e %.2e ' % (xmean,xmed,xstd))
+    print('percentiles ',percentiles)
+
+
 
     # Calculate image geometry
     platescale=112.36748321030637 # Focal plane platescale in "/mm
@@ -230,31 +200,18 @@ def doit(filename,wrange=[6560,6566], out_label='',
     npix=int(1800) # size of IFU image
     print(f'The output image is {npix} pixels square')
 
-    # Create IFU Image
     xima, yima = np.meshgrid(np.arange(npix)-npix/2,np.arange(npix)-npix/2)
     xima=xima*pscale # x coordinate in mm of each pixel in image
     yima=yima*pscale # y coordinate in mm of each pixel in image
-    if not cube:
-        print('Making image')
-        ima=np.full((npix,npix),np.nan)
-        if not interpolate:
-            for i in range(len(x)):
-                sel=(xima-x[i])**2+(yima-y[i])**2<=rspaxel**2
-                ima[sel]=flux[i]
-        else:
-            ima = griddata((x,y), flux, (xima,yima), method='linear')
+
+    print('Making image')
+    ima=np.full((npix,npix),np.nan)
+    if not interpolate:
+        for i in range(len(x)):
+            sel=(xima-x[i])**2+(yima-y[i])**2<=rspaxel**2
+            ima[sel]=flux[i]
     else:
-        print('Making cube')
-        nwave = flux.shape[1]
-        ima=np.full((nwave,npix,npix),np.nan)
-        if not interpolate:
-            for i in range(len(x)):
-                sel=(xima-x[i])**2+(yima-y[i])**2<=rspaxel**2
-                for k in range(nwave):
-                    ima[k, sel]=flux[i, k]
-        else:
-            for k in range(nwave):
-                ima[k,:] = griddata((x,y), flux[:,k], (xima,yima), method='linear')
+        ima = griddata((x,y), flux, (xima,yima), method='linear')
                 
     # Create WCS for IFU image
     w = WCS(naxis=2)
@@ -274,39 +231,23 @@ def doit(filename,wrange=[6560,6566], out_label='',
     ima= np.flipud(np.fliplr(ima))
 
     # Save IFU image as fits
-    if cube == False:
-        hdu = fits.PrimaryHDU(ima.astype(np.float32), header=header)
-    else:
-        header['WCSAXES']=3
-        header['CRVAL3']=crval3
-        header['CDELT3']=cdelt3
-        header['CUNIT3']='Angstrom'
-        header['CRPIX3']=1.
-        header['CTYPE3']='WAVE'
-        hdu = fits.PrimaryHDU(ima.astype(np.float32), header=header)
-            
+    hdu = fits.PrimaryHDU(ima.astype(np.float32), header=header)
     hdul=fits.HDUList([hdu])
 
     if out_label=='':
-        if cube==False:
             outfile='x%05d_%04d_%04d.fits' % (expnum,wrange[0],wrange[1])
-        else:
-            outfile='c%05d_%04d_%04d.fits' % (expnum,wrange[0],wrange[1])
     else:
-        if cube==False:
-            outfile='x%05d_%s.fits' % (expnum,out_label)
-        else:
-            outfile='c%05d_%0s.fits' % (expnum,out_label)
+            outfile='x%05d_%0s.fits' % (expnum,out_label)
 
-    if crange==None:
-        outfile=outfile.replace('.fits','_no_back.fits')
 
     hdul.writeto(outfile, overwrite=True)
 
     hdul.info()
 
     print('Suggested LoadFrame commdand')
-    print('LoadFreme %s 1 %.2e %.2e' % (outfile,xmed-xstd,xmed+3*xstd))
+    # print('LoadFrame %s 1 %.2e %.2e' % (outfile,xmed-xstd,xmed+3*xstd))
+    print('LoadFrame %s 1 %.2e %.2e' % (outfile,percentiles[0],percentiles[1]))
+    return outfile
 
 def steer(argv):
     '''
@@ -352,9 +293,9 @@ def steer(argv):
         if image_type==one_band[0]:
             print(one_band[1],one_band[2],image_type)
             if sub_back:
-                doit(xfits,wrange=one_band[1],crange=one_band[2],out_label=image_type)
+                doit(xfits,out_labble=image_type,wrange=one_band[1],crange=one_band[2])
             else:
-                doit(xfits,wrange=one_band[1],crange=None,out_label=image_type)
+                doit(xfits,out_label=image_type,wrange=one_band[1],crange=None)
             good=True
             break
     if good==False:

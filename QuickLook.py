@@ -242,8 +242,8 @@ def eval_qual_sframe(filename='data/lvmSFrame-00011061.fits',ymin=-0.2e-13,ymax=
 
     ax1 = fig.add_subplot(gs[0, :])
     ax1.plot(wav,sci_flux_med,label='Sky-Subtracted Science',zorder=2)
-    ax1.plot(wav,skye_flux_med,label='SkyE-Subtracted SkyE',zorder=1)
-    ax1.plot(wav,skyw_flux_med,label='SkyW-Subtracted SkyW',zorder=0)
+    # ax1.plot(wav,skye_flux_med,label='SkyE-Subtracted SkyE',zorder=1)
+    # ax1.plot(wav,skyw_flux_med,label='SkyW-Subtracted SkyW',zorder=0)
     ax1.plot([3600,9600],[5.9e-15,5.9e-15],':r',label=r'$Med \pm$ MW 5 $\sigma$' )
     ax1.plot([3600,9600],[-5.9e-15,-5.9e-15],':r')
     ax1.set_xlim(3600,9600)
@@ -269,6 +269,107 @@ def eval_qual_sframe(filename='data/lvmSFrame-00011061.fits',ymin=-0.2e-13,ymax=
     ax3.plot(xwav,xsci_flux_med,label='Sky-Subtracted Science',zorder=2)
     # ax5.plot(wav,sci_flux_med,label='Sky-Subtracted Science',zorder=2)
 
+    # xwav,xskye_flux_med=limit_spectrum(wav,skye_flux_med,wmin,wmax)
+    # ax3.plot(xwav,xskye_flux_med,label='SkyE-Subtracted SkyE',zorder=1)
+
+    # xwav,xskyw_flux_med=limit_spectrum(wav,skyw_flux_med,wmin,wmax)
+    # ax3.plot(xwav,xskyw_flux_med,label='SkyW-Subtracted SkyW',zorder=0)
+
+    ax3.plot([wmin,wmax],[5.9e-15,5.9e-15],':r',label=r'$Med \pm$ MW 5 $\sigma$' )
+    ax3.plot([wmin,wmax],[-5.9e-15,-5.9e-15],':r')
+    ax3.set_xlim(wmin,wmax)
+    ymin,ymax=get_yscale(xsci_flux_med,-1e-14,1e-14)
+    ax3.set_ylim(ymin,ymax)
+
+
+    ax4 = fig.add_subplot(gs[2, 1])
+    wmin=6250
+    wmax=6800
+
+    xwav,xsci_flux_med=limit_spectrum(wav,sci_flux_med,wmin,wmax)
+    ax4.plot(xwav,xsci_flux_med,label='Sky-Subtracted Science',zorder=2)
+    # ax5.plot(wav,sci_flux_med,label='Sky-Subtracted Science',zorder=2)
+
+    # xwav,xskye_flux_med=limit_spectrum(wav,skye_flux_med,wmin,wmax)
+    # ax4.plot(xwav,xskye_flux_med,label='SkyE-Subtracted SkyE',zorder=1)
+
+    # xwav,xskyw_flux_med=limit_spectrum(wav,skyw_flux_med,wmin,wmax)
+    # ax4.plot(xwav,xskyw_flux_med,label='SkyW-Subtracted SkyW',zorder=0)
+
+    ax4.plot([wmin,wmax],[5.9e-15,5.9e-15],':r',label=r'$Med \pm$ MW 5 $\sigma$' )
+    ax4.plot([wmin,wmax],[-5.9e-15,-5.9e-15],':r')
+    ax4.set_xlim(wmin,wmax)
+    ymin,ymax=get_yscale(xsci_flux_med,-1e-14,1e-14)
+    ax4.set_ylim(ymin,ymax)
+
+    ax5 = fig.add_subplot(gs[2, 2])
+    wmin=9450
+    wmax=9600
+    xwav,xsci_flux_med=limit_spectrum(wav,sci_flux_med,wmin,wmax)
+    ax5.plot(xwav,xsci_flux_med,label='Sky-Subtracted Science',zorder=2)
+    # ax5.plot(wav,sci_flux_med,label='Sky-Subtracted Science',zorder=2)
+
+    # xwav,xskye_flux_med=limit_spectrum(wav,skye_flux_med,wmin,wmax)
+    # ax5.plot(xwav,xskye_flux_med,label='SkyE-Subtracted SkyE',zorder=1)
+
+    # xwav,xskyw_flux_med=limit_spectrum(wav,skyw_flux_med,wmin,wmax)
+    # ax5.plot(xwav,xskyw_flux_med,label='SkyW-Subtracted SkyW',zorder=0)
+
+    ax5.plot([wmin,wmax],[5.9e-15,5.9e-15],':r',label=r'$Med \pm$ MW 5 $\sigma$' )
+    ax5.plot([wmin,wmax],[-5.9e-15,-5.9e-15],':r')
+    ax5.set_xlim(wmin,wmax)
+    ymin,ymax=get_yscale(xsci_flux_med,-1e-14,1e-14)
+    ax5.set_ylim(ymin,ymax)
+
+    plt.tight_layout()
+
+    location='./figs_qual/'
+
+    if os.path.isdir(location)==False:
+        os.mkdir(location)
+
+    words=filename.split('/')
+    root=words[-1].replace('.fits','')
+    print(root)
+    figname='%s/%s.png' % (location,root)
+    plt.savefig(figname)
+
+    # Now make another plot for the sky fibers
+
+    fig=plt.figure(2,(8,12))
+    plt.clf()
+    gs= GridSpec(3, 3, figure=fig)
+
+    ax1 = fig.add_subplot(gs[0, :])
+    # ax1.plot(wav,sci_flux_med,label='Sky-Subtracted Science',zorder=2)
+    ax1.plot(wav,skye_flux_med,label='SkyE-Subtracted SkyE',zorder=1)
+    ax1.plot(wav,skyw_flux_med,label='SkyW-Subtracted SkyW',zorder=0)
+    ax1.plot([3600,9600],[5.9e-15,5.9e-15],':r',label=r'$Med \pm$ MW 5 $\sigma$' )
+    ax1.plot([3600,9600],[-5.9e-15,-5.9e-15],':r')
+    ax1.set_xlim(3600,9600)
+    ymin,ymax=ax1.get_ylim()
+    ax1.set_ylim(-1e-14,ymax)
+    ax1.legend()
+
+    ax2 = fig.add_subplot(gs[1, :])
+    # ax2.semilogy(wav,sci_flux_med+sci_sky_med,label='Science Total',zorder=2)
+    # ax2.semilogy(wav,sci_sky_med,label='Science Sky',zorder=1)
+    delta=skyw_flux_med+skyw_sky_med-(skye_flux_med+skye_sky_med)
+    ax2.plot(wav,delta,label='SkyW-SkyE',zorder=1)
+    # ymin,ymax=plt.ylim()
+    # ymax=np.max(sci_flux_med+sci_sky_med)
+    ax2.set_ylim(1e-3*ymax,1.1*ymax)
+    ax2.set_xlim(3600,9600)
+    ax2.legend()
+
+
+    ax3 = fig.add_subplot(gs[2, 0])
+    wmin=4650
+    wmax=5100
+
+    xwav,xsci_flux_med=limit_spectrum(wav,sci_flux_med,wmin,wmax)
+    # ax3.plot(xwav,xsci_flux_med,label='Sky-Subtracted Science',zorder=2)
+
     xwav,xskye_flux_med=limit_spectrum(wav,skye_flux_med,wmin,wmax)
     ax3.plot(xwav,xskye_flux_med,label='SkyE-Subtracted SkyE',zorder=1)
 
@@ -286,8 +387,7 @@ def eval_qual_sframe(filename='data/lvmSFrame-00011061.fits',ymin=-0.2e-13,ymax=
     wmax=6800
 
     xwav,xsci_flux_med=limit_spectrum(wav,sci_flux_med,wmin,wmax)
-    ax4.plot(xwav,xsci_flux_med,label='Sky-Subtracted Science',zorder=2)
-    # ax5.plot(wav,sci_flux_med,label='Sky-Subtracted Science',zorder=2)
+    # ax4.plot(xwav,xsci_flux_med,label='Sky-Subtracted Science',zorder=2)
 
     xwav,xskye_flux_med=limit_spectrum(wav,skye_flux_med,wmin,wmax)
     ax4.plot(xwav,xskye_flux_med,label='SkyE-Subtracted SkyE',zorder=1)
@@ -304,8 +404,7 @@ def eval_qual_sframe(filename='data/lvmSFrame-00011061.fits',ymin=-0.2e-13,ymax=
     wmin=9450
     wmax=9600
     xwav,xsci_flux_med=limit_spectrum(wav,sci_flux_med,wmin,wmax)
-    ax5.plot(xwav,xsci_flux_med,label='Sky-Subtracted Science',zorder=2)
-    # ax5.plot(wav,sci_flux_med,label='Sky-Subtracted Science',zorder=2)
+    # ax5.plot(xwav,xsci_flux_med,label='Sky-Subtracted Science',zorder=2)
 
     xwav,xskye_flux_med=limit_spectrum(wav,skye_flux_med,wmin,wmax)
     ax5.plot(xwav,xskye_flux_med,label='SkyE-Subtracted SkyE',zorder=1)
@@ -318,17 +417,18 @@ def eval_qual_sframe(filename='data/lvmSFrame-00011061.fits',ymin=-0.2e-13,ymax=
     ymin,ymax=get_yscale(xsci_flux_med,-1e-14,1e-14)
     ax5.set_ylim(ymin,ymax)
 
-    location='./figs_qual/'
-
-    if os.path.isdir(location)==False:
-        os.mkdir(location)
+    plt.tight_layout()
 
     words=filename.split('/')
     root=words[-1].replace('.fits','')
     print(root)
-    figname='%s/%s.png' % (location,root)
-    plt.savefig(figname)
-    return figname
+    sky_figname='%s/%s_sky.png' % (location,root)
+    plt.savefig(sky_figname)
+
+
+
+
+    return figname,sky_figname
                  
 
 
@@ -526,7 +626,25 @@ def make_images(filename='data/llvmSFrame-00011061.fits',outroot='test'):
     plot_fits_image(filename=s2_file,title='[SII]',outname=s2_plot)
     return ha_plot,s2_plot,cont_plot
 
+science_plot_comment='''
+The median sky subtracted spectrum from the science fibers.  The top panel shows the median spectrum.
+The middle panel shows the sum of the flux and sky, and just the sky.  The three panels at the 
+bottom show the median scence spectrum in there regions, namely Hbeta-[0II], Halpha-[SII], and SIII.
+Several of the plots also have dashed lines which correspond to what is expected for the 5sigma 
+sensitivity limit in the Milky Way.
+'''
 
+sky_plot_comment='''
+Comparisons of the median spectra in the SkyE and SkyW telescopes.  The top panel shows the median spectrum in each of the two sky telescopes (after sky subtraction.) The middle panel shows the difference in the the total fluxes (with sky included) in the two sky telescopes. The bottom panel shows the sky subtracted spectra in three spectral regions. (Note thatat present, the lvmdrp uses the sky calculated for the science telescope for subtracting sky from the sky telescopes. This implies that what is presented in this figure tells one mostly about the differences in the sky in the two telescopes.)
+'''
+
+image_comment='''
+Line and continuum images of fluxes the science telescope. The emission line emission images use a nearby band pass for
+continuum subtraction.
+Note that the emisison lime bandpasses for the LMC and SMC images are adjusted 
+for the red shifts of these galaxies.  In all other cases, no shifts are assumed.  The 
+The images are displayed linearly between the 5th and 95th percentile
+'''
 
 def make_html(filename='data/lvmSFrame-00011061.fits', outroot=''):
     '''
@@ -539,7 +657,7 @@ def make_html(filename='data/lvmSFrame-00011061.fits', outroot=''):
         outroot=words[-1].replace('.fits','')
     print(outroot)
 
-    string=xhtml.begin('LVMDRP Quality Asssessment for %s?' % filename)
+    string=xhtml.begin('LVMDRP Quality Asssessment for %s' % filename)
     string+=xhtml.hline()
     
     overview_list=create_overview(filename)
@@ -548,17 +666,24 @@ def make_html(filename='data/lvmSFrame-00011061.fits', outroot=''):
 
 
     string+=xhtml.hline()
-
-    string+=xhtml.paragraph('Comparisions of the median spectra in science and sky frames')
+    string+=xhtml.h2('Science Spectrum')
+    string+=xhtml.paragraph(science_plot_comment)
     
 
-    figname= eval_qual_sframe(filename,ymin=-0.2e-13,ymax=1e-13,xmin=3600,xmax=9500)
+    figname,sky_figname= eval_qual_sframe(filename,ymin=-0.2e-13,ymax=1e-13,xmin=3600,xmax=9500)
+
     string+=xhtml.image('file:%s' % (figname),width=900,height=1200)
     string+=xhtml.hline()
+    string+=xhtml.h2('SkyE and SkyW  Spectra')
+    string+=xhtml.paragraph(sky_plot_comment)
+
+    string+=xhtml.image('file:%s' % (sky_figname),width=900,height=1200)
+    string+=xhtml.hline()
+    string+=xhtml.h2('Line and Continuum images')
 
     ha_plot,s2_plot,cont_plot=make_images(filename,outroot)
 
-    string+=xhtml.paragraph('Line and continumum images of the science telescope (linearly scaled betwen the 5th and  95th percentile)')
+    string+=xhtml.paragraph(image_comment)
 
     string+=xhtml.image('file:%s' % (ha_plot),width=900,height=900)
     string+=xhtml.image('file:%s' % (s2_plot),width=900,height=900)
@@ -566,20 +691,20 @@ def make_html(filename='data/lvmSFrame-00011061.fits', outroot=''):
 
     string+=xhtml.hline()
 
-    string+=xhtml.paragraph('Comparision of the flux calibrated star fibers to the GAIA spectra of the stars')
+    string+=xhtml.paragraph('Comparision between the flux calibrated star fibers to the GAIA spectra of the stars')
 
     outname='figs_qual/standard_%s.png' % outroot
     status=eval_standard.qual_eval(filename,outname)
+
     if status==True:
         string+=xhtml.image(outname,width=900,height=900)
     else:
         string+=xhtml.paragraph('Could not do standard standard star comparision')
     
-    print(string)
-
     string+=xhtml.hline()
 
-
+    # Finally write out the html file
+    # print(string)
     g=open(outroot+'.html','w')
     g.write(string)
     g.close()

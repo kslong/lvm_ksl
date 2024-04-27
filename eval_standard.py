@@ -104,6 +104,7 @@ def compare_with_gaia(filename='lvmCFrame-00005059.fits',outroot=''):
     # print(fib)
 
     plt.figure(1,(8,8))
+    plt.clf()
     j=0
     ok=False
     while j<len(fib):
@@ -132,13 +133,26 @@ def compare_with_gaia(filename='lvmCFrame-00005059.fits',outroot=''):
         if outroot=='':
             word=filename.split('/')
             outroot=word[-1].replace('.fits','')
-
-        outfile='standard_%s.png' % outroot
+            outfile='standard_%s.png' % outroot
+        else:
+            outfile=outroot
         return outfile
     else:
         return None
 
     return 
+
+
+def qual_eval(filename,outname):
+    '''
+    This is an extra call so this routine can be run from the qual
+    evaluation routines.
+    '''
+    x=compare_with_gaia(filename,outname)
+    if x==None:
+        return False
+    plt.savefig(outname)
+    return True
 
                 
 def steer(argv):

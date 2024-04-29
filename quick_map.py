@@ -204,7 +204,7 @@ def doit(filename,out_label='',wrange=[6560,6566],
     xima=xima*pscale # x coordinate in mm of each pixel in image
     yima=yima*pscale # y coordinate in mm of each pixel in image
 
-    print('Making image')
+    # print('Making image')
     ima=np.full((npix,npix),np.nan)
     if not interpolate:
         for i in range(len(x)):
@@ -245,7 +245,6 @@ def doit(filename,out_label='',wrange=[6560,6566],
     hdul.info()
 
     print('Suggested LoadFrame commdand')
-    # print('LoadFrame %s 1 %.2e %.2e' % (outfile,xmed-xstd,xmed+3*xstd))
     print('LoadFrame %s 1 %.2e %.2e' % (outfile,percentiles[0],percentiles[1]))
     return outfile
 

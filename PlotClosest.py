@@ -42,6 +42,7 @@ from astropy import wcs
 from astropy.coordinates import SkyCoord
 import astropy.units as u
 import matplotlib.pyplot as plt
+from matplotlib.gridspec import GridSpec
 
 
 
@@ -138,22 +139,47 @@ def limit_wavelengths(xspec,wmin,wmax):
     xmax=xmax+0.05*xdelt
     return xmin,xmax,xspec
 
-def do_plot_all(filename='reduced/lvmCFrame-00007824.fits',fiber_id=770):
+
+def get_spec(filename='reduced/lvmCFrame-00007824.fits',ra=10,dec=-60.,rad=60.):
+    fiber_id=get_closest(ra,dec,filename)
+
+    fibers=[fiber_id['fiberid'][0]]
+
     x=fits.open(filename)
     wave=x['WAVE'].data
-    flux=x['FLUX'].data[fiber_id-1]
+    
+    fib_no=fiber_id['fiberid'][0]
+    flux=x['FLUX'].data[fib_no-1]
+
+    xfib=fiber_id[fiber_id['Sep']<rad]
+    if len(xfib)>1:
+        print(len(xfib))
+        flux=np.median(x['FLUX'].data[xfib['fiberid']-1],axis=0)
     xtab=Table([wave,flux],names=['WAVE','FLUX'])
+    return xtab
+
+
+def do_plot_all(xtab,fiber_id=770,outroot=''):
+
 
     
     plt.figure(1,(8,6))
     plt.clf()
-    plt.subplot(2,2,1)
+
+    gs= GridSpec(3, 3, figure=fig)
+
+    ax1-fig.add_subplot(gs[0, :])
+    ax1.plot(xspec['WAVE'],xspec['FLUX'])
+    ax1.set_xlim(3600,9600)
+
+    ax2 = fig.add_subplot(gs[1,
     wmin=3650
     wmax=3820
     ymin,ymax,xspec=limit_wavelengths(xtab,wmin,wmax)
-    plt.plot(xspec['WAVE'],xspec['FLUX'])
-    plt.xlim(wmin,wmax)
-    plt.ylim(ymin,ymax)
+    ax2.plot(xspec['WAVE'],xspec['FLUX'])
+    ax2.set_xlim(wmin,wmax)
+    ax2.set_ylim(ymin,ymax)
+
     plt.subplot(2,2,2)
     wmin=4825
     wmax=5050
@@ -175,6 +201,11 @@ def do_plot_all(filename='reduced/lvmCFrame-00007824.fits',fiber_id=770):
     plt.plot(xspec['WAVE'],xspec['FLUX'])
     plt.xlim(wmin,wmax)
     plt.ylim(ymin,ymax)   
+
+    if outroot=='':
+        plt.savefig('test.pnt')
+    else:
+        plt.savefig('%s.png' % (outroot) )
     return
 
 
@@ -186,12 +217,16 @@ def steer(argv):
     ra=None
     dec=None
     filename=[]
+    rad=0
 
     i=1
     while i<len(argv):
         if argv[i]=='-h' or len(argv)<4:
             print(__doc__)
             return 
+        elif argv[i]=='-rad':
+            i+=1
+            rad=eval(argv[i])
         elif ra==None:
             ra=argv[i]
         elif dec==None:
@@ -208,18 +243,18 @@ def steer(argv):
 
     for one_file in filename:
 
-        fib_no=get_closest(ra,dec,one_file)
-        print('test')
-        if len(fib_no):
-            print('Plotting fiber %d' % fib_no['fiberid'][0])
+        print('Starting %s' % one_file)
 
-            root=one_file.split('/')[-1]
-            root=root.replace('.fits','')
+
+        root=one_file.split('/')[-1]
+        root=root.replace('.fits','')
 
 
 
-            do_plot_all(filename=one_file,fiber_id=fib_no['fiberid'][0])
-            plt.savefig('spec_%s_%.2f_%.2f.png' % (root,ra,dec) )
+        outroot='spec_%s_%.2f_%.2f' % (root,ra,dec)
+        xtab=get_spec(one_file,ra,dec,rad)
+        do_plot_all(xtab,outroot=outroot)
+        # plt.savefig('spec_%s_%.2f_%.2f.png' % (root,ra,dec) )
 
     
 

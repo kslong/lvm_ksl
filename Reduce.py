@@ -5,12 +5,12 @@
 
 Synopsis:  
 
-Reduce one or more consecutive LVM datasets in a single MJD
+Reduce one or more  LVM datasets from one or more MJDs
 
 
 Command line usage (if any):
 
-    usage: Reduce.py [-h] [-keep] [-cp}mjd exposure_start [expousure_stop]
+    usage: Reduce.py [-h] [-keep] [-cp]  -np exposures to process 
 
     where
 
@@ -20,22 +20,36 @@ Command line usage (if any):
         relative to where the program is being run
     -keep causes the routine to keep the ancilary fits files that are made
         The default is to delete these files to save disk space
-    mjd  is the mjd of the exposure or exposures
-    exposure_start is the first exposure to process
-    exposure_stop is the last exposure to process (numbered consecuatively)
+    -np is the number of threads to use to process the data
+
+    and exposures s to process is a string of words that is interpreted as follows
+
+    word > 50000, this is a mjd
+    word < 500 process this exposure
+    500-510  process exposures 500 to 510 incluse
+    500,505,513  process exposures 500, 505 and 513
+
+    so and exaple set of words might be
+
+    60188 4155-4157  60189 4321  60190 5011,5012,5013
+
+    which would mean to process 4155-4157 from mjd 60188, 4321 from 60189, and 4011,5012,
+    and 5013 from 60190
+
+
+
 
 Description:  
 
-    This routine downloadesraw  data to one's local verion of the lvm reduction
-    data structure and process the data with the quick-reduction pipleline.
-    One can optionally skip sky subtraction, and optionally copy the
-    reduced data to a local .data directory.  The normal log fils
+    This routine downloades raw data to one's local verion of the lvm reduction
+    data structure and process the data with the pipleline.
+    One can optionally optionally copy the
+    reduced data to a local ./data directory.  The normal log fils
     produced by the pipeline can be found in a local ./xlog directory.
 
 
 Primary routines:
 
-    doit
 
 Notes:
                                        
@@ -43,11 +57,14 @@ History:
 
 240404 ksl Coding begun
 240526 ksl Adapt to new version of the DRP
+240527 ksl Add multiprocessing and allow for a more complicated 
+input spectrum.
 
 '''
 
 import sys
 from astropy.io import ascii,fits
+from astropy.table import Table
 import numpy as np
 import matplotlib.pyplot as plt
 import subprocess
@@ -193,7 +210,7 @@ def get_data(mjd,i):
     return qmjd
 
 
-def do_one(mjd,exp,clean=True):
+def do_one(mjd,exp,clean=True,xcopy=True):
     '''
     mjd is a string, as is qmjd
     '''
@@ -209,6 +226,17 @@ def do_one(mjd,exp,clean=True):
 
     process_one(mjd,exp,clean)
 
+
+    
+    if xcopy:
+        print("Running LocateData and copying files on %s" % str(exp))
+        locate_data_process = subprocess.run(["LocateData.py", "-cp", str(exp), str(exp)])
+
+        if locate_data_process.returncode == 0:
+            print("LocateData.py executed successfully.")
+        else:
+            print("Failed to execute LocateData.py.")
+
     return 0
     
 def get_no_jobs(jobs):
@@ -221,17 +249,12 @@ def get_no_jobs(jobs):
             njobs+=1
     return njobs
 
-def do_many(mjd,first_exp,last_exp,clean=True,xcopy=True,nproc=8):    
+def do_many(xtab,clean=True,xcopy=True,nproc=8):    
     '''
     A routine to run the lvmdrp in parallel
     '''
 
-    if int(mjd) < 60177:
-        print('WARNING: THESE DATA ARE UNLIKELY BE CALIBRATABLE WITHOUT SPECIAL EFFORT, AS THEY WERE OBTAINED BEFORE MJD 60177')
 
-    mjd='%s' % mjd
-    scani=first_exp
-    scanf=last_exp
 
     if os.path.isdir('./xlog')==False:
         os.mkdir('./xlog')
@@ -240,14 +263,17 @@ def do_many(mjd,first_exp,last_exp,clean=True,xcopy=True,nproc=8):
     start_time = timeit.default_timer()
 
     jobs=[]
-    for i in range(scani, scanf + 1):
+    for one in xtab:                   
+        if int(one['MJD']) < 60177:
+            print('WARNING: THESE DATA ARE UNLIKELY BE CALIBRATABLE WITHOUT SPECIAL EFFORT, AS THEY WERE OBTAINED BEFORE MJD 60177')
 
-        p=multiprocessing.Process(target=do_one,args=[mjd,i,clean])
+        p=multiprocessing.Process(target=do_one,args=[one['MJD'],one['ExpNo'],clean,xcopy])
         jobs.append(p)
 
     i=0
     while i<nproc and i<len(jobs):
         t = time.localtime()
+        print('STARTING  %d of %d:\n' % (i+1,len(xtab)))
         one=jobs[i]
         one.start()
         i+=1
@@ -260,6 +286,7 @@ def do_many(mjd,first_exp,last_exp,clean=True,xcopy=True,nproc=8):
 
         while njobs<nproc and i<len(jobs):
             t = time.localtime()
+            print('STARTING  %d of %d:\n' % (i+1,len(xtab)))
             one=jobs[i]
             one.start()
             njobs+=1
@@ -269,7 +296,7 @@ def do_many(mjd,first_exp,last_exp,clean=True,xcopy=True,nproc=8):
     p.close()
 
     elapsed = timeit.default_timer() - start_time
-    print('Completed multiprocessing of  %s exposures  %d - %d ' % (mjd,first_exp,last_exp))
+    print('Completed multiprocessing of  %d exposures  ' % (len(xtab)))
 
     return
 
@@ -310,6 +337,50 @@ def doit(mjd,first_exp,last_exp,clean=True,xcopy=False):
         print("Failed to execute LocateData.py.")
 
 
+def parse(words):
+
+    print('Parsing ',words)
+
+    mjd=[]
+    xexp=[]
+    mjd_now=0
+    for word in words:
+        
+        if word.count('-'):
+            xword=word.split('-')
+            if len(xword)==2:
+                imin=int(xword[0])
+                imax=int(xword[1])
+                i=imin
+                while i<=imax:
+                    mjd.append(mjd_now)
+                    xexp.append(i)
+                    i+=1
+            else:
+                print('Badly formated inputs',words)
+                return []
+        elif word.count(','):
+            xword=word.split(',')
+            for one in xword:
+                mjd.append(mjd_now)
+                xexp.append(int(one))
+        else:
+            try:
+                value=int(word)
+                if value>50000:
+                    mjd_now=value
+                else:
+                    mjd.append(mjd_now)
+                    xexp.append(value)
+            
+ 
+            except:
+                print('Badly formated inputs',words)
+                return []
+    print(mjd)
+    print(xexp)
+    xtab=Table([mjd,xexp],names=['MJD','ExpNo'])
+    return xtab
     
 
 
@@ -327,6 +398,8 @@ def steer(argv):
     clean=True
     nproc=1
 
+    words=[]
+
     while i<len(argv):
         if argv[i][0:2]=='-h':
             print(__doc__)
@@ -341,25 +414,26 @@ def steer(argv):
         elif argv[i][0]=='-':
             print('Error: Could not parse command line: ', argv)
             return
-        elif mjd<0:
-            mjd=int(argv[i])
-        elif first_exp<0:
-            first_exp=int(argv[i])
-        elif last_exp<0:
-            last_exp=int(argv[i])
+        else:
+            words.append(argv[i])
         i+=1
 
-    if first_exp < 0:
+    xtab=parse(words)
+
+    print(xtab)
+
+    if len(xtab)==0:
         print('Error: Could not parse command line: ', argv)
         return
         
-    if first_exp>0 and last_exp < 0:
-        last_exp=first_exp
-
     if nproc==1:
-        doit(mjd,first_exp,last_exp,clean,xcopy)
+        if os.path.isdir('./xlog')==False:
+            os.mkdir('./xlog')
+
+        for one in xtab:
+            do_one(one['MJD'],one['ExpNo'],clean)
     else:
-        do_many(mjd,first_exp,last_exp,clean,xcopy,nproc)
+        do_many(xtab,clean,xcopy,nproc)
 
 if __name__ == "__main__":
     import sys

@@ -51,10 +51,15 @@ from astropy.io import ascii,fits
 import numpy as np
 import matplotlib.pyplot as plt
 import subprocess
+import timeit
+import time
+import multiprocessing
+multiprocessing.set_start_method("spawn",force=True)
 import os
 import sky_plot
 import re
 from collections import Counter
+
 
 def clean_and_count_lines_with_keywords(filename):
     # Regular expression to remove non-ASCII characters
@@ -206,8 +211,68 @@ def do_one(mjd,exp,clean=True):
 
     return 0
     
+def get_no_jobs(jobs):
+    '''
+    Check how many jobs are running
+    '''
+    njobs=0
+    for one in jobs:
+        if one.is_alive():
+            njobs+=1
+    return njobs
 
-    
+def do_many(mjd,first_exp,last_exp,clean=True,xcopy=True,nproc=8):    
+    '''
+    A routine to run the lvmdrp in parallel
+    '''
+
+    if int(mjd) < 60177:
+        print('WARNING: THESE DATA ARE UNLIKELY BE CALIBRATABLE WITHOUT SPECIAL EFFORT, AS THEY WERE OBTAINED BEFORE MJD 60177')
+
+    mjd='%s' % mjd
+    scani=first_exp
+    scanf=last_exp
+
+    if os.path.isdir('./xlog')==False:
+        os.mkdir('./xlog')
+
+
+    start_time = timeit.default_timer()
+
+    jobs=[]
+    for i in range(scani, scanf + 1):
+
+        p=multiprocessing.Process(target=do_one,args=[mjd,i,clean])
+        jobs.append(p)
+
+    i=0
+    while i<nproc and i<len(jobs):
+        t = time.localtime()
+        one=jobs[i]
+        one.start()
+        i+=1
+
+    njobs=get_no_jobs(jobs)
+
+    while i<len(jobs):
+        time.sleep(2)
+        njobs=get_no_jobs(jobs)
+
+        while njobs<nproc and i<len(jobs):
+            t = time.localtime()
+            one=jobs[i]
+            one.start()
+            njobs+=1
+            i+=1
+
+    p.join()
+    p.close()
+
+    elapsed = timeit.default_timer() - start_time
+    print('Completed multiprocessing of  %s exposures  %d - %d ' % (mjd,first_exp,last_exp))
+
+    return
+
 
 
 def doit(mjd,first_exp,last_exp,clean=True,xcopy=False):
@@ -260,13 +325,15 @@ def steer(argv):
     clean=True
     xcopy=False
     clean=True
+    nproc=1
 
     while i<len(argv):
         if argv[i][0:2]=='-h':
             print(__doc__)
             return
-        elif argv[i]=='-no_sky':
-            clean=False
+        if argv[i]=='-np':
+            i+=1
+            nproc=int(argv[i])
         elif argv[i]=='-cp':
             xcopy=True 
         elif argv[i]=='-keep':
@@ -289,7 +356,10 @@ def steer(argv):
     if first_exp>0 and last_exp < 0:
         last_exp=first_exp
 
-    doit(mjd,first_exp,last_exp,clean,xcopy)
+    if nproc==1:
+        doit(mjd,first_exp,last_exp,clean,xcopy)
+    else:
+        do_many(mjd,first_exp,last_exp,clean,xcopy,nproc)
 
 if __name__ == "__main__":
     import sys

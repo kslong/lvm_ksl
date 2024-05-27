@@ -10,12 +10,12 @@ Reduce one or more consecutive LVM datasets in a single MJD
 
 Command line usage (if any):
 
-    usage: Reduce.py [-h] [-no_sky]  mjd exposure_start [expousure_stop]
+    usage: Reduce.py [-h] [-keep] [-cp}mjd exposure_start [expousure_stop]
 
     where
 
     -h  prints this help message
-    -no_sky runs the quick-reduction package without sky_subtraction
+    -keep retains the ancillary fiels which are otherwise deleteed
     -cp causes the routine to copy the reduced frames to a directory .data 
         relative to where the program is being run
     -keep causes the routine to keep the ancilary fits files that are made
@@ -42,6 +42,7 @@ Notes:
 History:
 
 240404 ksl Coding begun
+240526 ksl Adapt to new version of the DRP
 
 '''
 
@@ -82,21 +83,23 @@ def clean_and_count_lines_with_keywords(filename):
 def format_number(number):
     return "{:08d}".format(number)
 
-def process_one(mjd,i,sky_sub):
+def process_one(mjd,i,clean):
 
         # Regenerate metadata
-        metadata_process = subprocess.run(["drp", "metadata", "regenerate", "-m", mjd])
-        if metadata_process.returncode == 0:
-            print("Metadata regenerated successfully.")
-        else:
-            print("Failed to regenerate metadata.")
+        # metadata_process = subprocess.run(["drp", "metadata", "regenerate", "-m", mjd])
+        # if metadata_process.returncode == 0:
+        #     print("Metadata regenerated successfully.")
+        # else:
+        #     print("Failed to regenerate metadata.")
 
-        # Quick reduction
         print("Starting reduction with log in xlog/log_{}.txt".format(i))
         with open("xlog/log_{}.txt".format(i), "w") as logfile:
-            xcommand=["drp", "quick-reduction", "-fe", str(i)]
+            xcommand=["drp", "run", "-m",str(mjd),"-e", str(i)]
+            if clean==True:
+                xcommand=["drp", "run", "-c","-m",str(mjd),"-e", str(i)]
+
             print("Begin processing of ",i,"with command: ",xcommand)
-            reduction_process = subprocess.run(["drp", "quick-reduction", "-fe", str(i)], stdout=logfile, stderr=subprocess.STDOUT)
+            reduction_process = subprocess.run(xcommand, stdout=logfile, stderr=subprocess.STDOUT)
         if reduction_process.returncode == 0:
             print(f"Reduction for {i} completed successfully.")
         else:
@@ -110,10 +113,8 @@ def process_one(mjd,i,sky_sub):
 
         print("Finished reduction of", i)
 
-        # Clean up
-        # os.remove(os.path.join(os.environ["LVMDATA_DIR"], mjd, "ancillary", "*.fits"))
-
         return  reduction_process.returncode
+
 
 # Function to run rsync command with ignore-existing and dry-run options
 def run_forced_dry_rsync(mjd,xnumb,verbose=False):
@@ -147,6 +148,9 @@ def run_forced_dry_rsync(mjd,xnumb,verbose=False):
 
 
 def get_data(mjd,i):
+    '''
+    qmjd is a string
+    '''
 
     os.environ["RSYNC_PASSWORD"] = "panoPtic-5"
     os.environ["LVMAGCAM_DIR"] = os.path.join(os.environ["SAS_BASE_DIR"], "sdsswork/data/agcam/lco/")
@@ -162,7 +166,7 @@ def get_data(mjd,i):
         qmjd=xmjd
     else:
         print('Failed with both %s and %s so returning' % (mjd,xmjd))
-        return 1
+        return 'Failed'
 
 
 
@@ -181,10 +185,32 @@ def get_data(mjd,i):
     else:
         print(f"Failed to download coadd for {xnumb}.")
 
+    return qmjd
+
+
+def do_one(mjd,exp,clean=True):
+    '''
+    mjd is a string, as is qmjd
+    '''
+
+    qmjd=get_data(mjd,exp)
+
+    if qmjd=='Failed':
+        return 1
+
+    if mjd!=qmjd:
+        print('Although these data were taken on %s, the are in SMJD %s' % (mjd,qmjd))
+        mjd=qmjd
+
+    process_one(mjd,exp,clean)
+
     return 0
+    
+
+    
 
 
-def doit(mjd,first_exp,last_exp,sky_sub=False,xcopy=False,clean=True):
+def doit(mjd,first_exp,last_exp,clean=True,xcopy=False):
     '''
     Process a consecutive sequence of exposures from the same MJD
     with our without sky subtraction.
@@ -204,13 +230,7 @@ def doit(mjd,first_exp,last_exp,sky_sub=False,xcopy=False,clean=True):
 
     # Get the necessary FITS files
     for i in range(scani, scanf + 1):
-
-        xret=get_data(mjd,i)
-
-        if xret:
-            print('FILES were not found, so next step is unlikely to succeed')
-
-        process_one(mjd,i,sky_sub)
+        do_one(mjd,i,clean)
     
     if xcopy:
         print("Running LocateData and copying files")
@@ -237,7 +257,7 @@ def steer(argv):
     mjd=-1
     first_exp=-1
     last_exp=-1
-    sky_sub=True
+    clean=True
     xcopy=False
     clean=True
 
@@ -246,7 +266,7 @@ def steer(argv):
             print(__doc__)
             return
         elif argv[i]=='-no_sky':
-            sky_sub=False
+            clean=False
         elif argv[i]=='-cp':
             xcopy=True 
         elif argv[i]=='-keep':
@@ -269,7 +289,7 @@ def steer(argv):
     if first_exp>0 and last_exp < 0:
         last_exp=first_exp
 
-    doit(mjd,first_exp,last_exp,sky_sub,xcopy,clean)
+    doit(mjd,first_exp,last_exp,clean,xcopy)
 
 if __name__ == "__main__":
     import sys

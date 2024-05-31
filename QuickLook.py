@@ -549,7 +549,11 @@ def create_overview(filename='data/lvmSFrame-00011061.fits'):
     obs_time=get_header_string(hdr,'OBSTIME')
     ra=get_header_value(hdr,'TESCIRA')
     dec=get_header_value(hdr,'TESCIDE')
-    pa=get_header_value(hdr,'POSCIPA')
+    try:
+        pa=get_header_value(hdr,'POSCIPA')
+    except:
+        print('Error: PSCIIPA keyword is missing, assuming PA is zero')
+        pa=0
 
     ra_sky_e=get_header_value(hdr,'POSKYERA')
     dec_sky_e=get_header_value(hdr,'POSKYEDE')

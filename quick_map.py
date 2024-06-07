@@ -123,7 +123,11 @@ def doit(filename,out_label='',wrange=[6560,6566],
 
     RAobs  = rss['PRIMARY'].header['TESCIRA']
     DECobs = rss['PRIMARY'].header['TESCIDE']
-    posang = rss['PRIMARY'].header['POSCIPA']
+    try:
+        posang = rss['PRIMARY'].header['POSCIPA']
+    except:
+        print('Error: POSCIPA is missing, assuming 0')
+        posang=0
     
     # Read fibermap and get x,y coordinates of fibers
     slittab = rss['SLITMAP'].data

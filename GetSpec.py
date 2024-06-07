@@ -12,7 +12,7 @@ RA and DEC and a size
 
 Command line usage (if any):
 
-    usage: PlotClosest.py [-h] [-size xx]  exp_no ra dec
+    usage: Getspec.py  [-h] [-size xx]  filename ra dec
 
 
 
@@ -134,7 +134,7 @@ def get_closest(fiber_pos,xra=n103b_ra,xdec=n103b_dec):
     xsep=[]
     i=0
     for one in fiber_pos:
-        pos2= SkyCoord(ra=one['RA']* u.deg, dec=one['Dec'] * u.deg, frame='icrs')
+        pos2= SkyCoord(ra=one['ra']* u.deg, dec=one['dec'] * u.deg, frame='icrs')
         angular_distance = pos1.separation(pos2).arcsec
         xsep.append(angular_distance)
         i+=1
@@ -146,7 +146,7 @@ def get_closest(fiber_pos,xra=n103b_ra,xdec=n103b_dec):
 
 def get_spec(filename,xfib,nfib=1):
     '''
-    Retrive the spectra from the first
+    Retrieve the spectra from the first
     nfib fibers in the xfib table
     '''
 
@@ -154,36 +154,34 @@ def get_spec(filename,xfib,nfib=1):
     wave=x['WAVE'].data
     xxfib=xfib[0:nfib]
     flux=x['FLUX'].data[xxfib['fiberid']-1]
-    error=x['ERROR'].data[xxfib['fiberid']-1]
+    ivar=x['IVAR'].data[xxfib['fiberid']-1]
     mask=x['MASK'].data[xxfib['fiberid']-1]
     sky=x['SKY'].data[xxfib['fiberid']-1]
-    sky_error=x['SKY_ERROR'].data[xxfib['fiberid']-1]
-    fwhm=x['FWHM'].data[xxfib['fiberid']-1]
+    sky_ivar=x['SKY_IVAR'].data[xxfib['fiberid']-1]
+    lsf=x['LSF'].data[xxfib['fiberid']-1]
     # print(flux.shape)
     xflux=np.average(flux,axis=0)
     xsky=np.average(sky,axis=0)
     xmask=np.sum(mask,axis=0)
     
-    xfwhm=np.median(fwhm,axis=0)
+    xlsf=np.median(lsf,axis=0)
 
-    xerr=error*error
     # print('z',xerr.shape)
-    xerr=np.sum(xerr,axis=0)
+    ivar=np.sum(ivar,axis=0)
     # print(xerr.shape)
-    xerr=np.sqrt(xerr)
+    xerr=1/np.sqrt(ivar)
     # print(xflux.shape)
     # print(xsky.shape)
     # print(xmask.shape)
-    xsky_error=sky_error*sky_error
-    xsky_error=np.sum(xsky_error,axis=0)
-    xsky_error=np.sqrt(xsky_error)
-    xspec=Table([wave,xflux,xerr,xsky,xsky_error,xmask,xfwhm],names=['WAVE','FLUX','ERROR','SKY','SKY_ERROR','MASK','FWHM'])
+    xsky_error=np.sum(sky_ivar,axis=0)
+    xsky_error=1/np.sqrt(xsky_error)
+    xspec=Table([wave,xflux,xerr,xsky,xsky_error,xmask,xlsf],names=['WAVE','FLUX','ERROR','SKY','SKY_ERROR','MASK','LSF'])
     xspec['WAVE'].format='.1f'
     xspec['FLUX'].format='.3e'
     xspec['ERROR'].format='.3e'
     xspec['SKY'].format='.3e'
     xspec['SKY_ERROR'].format='.3e'
-    xspec['FWHM'].format='.2f'
+    xspec['LSF'].format='.2f'
     return xspec
 
 header='''
@@ -196,7 +194,7 @@ def write_reg(filename,xtab):
     g=open(filename,'w')
     g.write(header)
     for one in xtab:
-        g.write('circle(%f,%f,5.")  # text={%d}\n' % (one['RA'],one['Dec'],one['fiberid']))
+        g.write('circle(%f,%f,5.")  # text={%d}\n' % (one['ra'],one['dec'],one['fiberid']))
     g.close()
 
 
@@ -214,7 +212,7 @@ def steer(argv):
     the way things are at present
     '''
 
-    exposure=-99
+    filename=None
     ra=None
     dec=None
     size=0
@@ -234,13 +232,15 @@ def steer(argv):
         elif ra==None and argv[i][0]=='-':
             print('Error: Incorrect Command line: ',argv)
             return
-        elif exposure<0:
-            exposure=eval(argv[i])
+        elif filename==None:
+            filename=argv[i]
         elif ra==None:
             ra=argv[i]
         elif dec==None:
             dec=argv[i]
-
+        else:
+            print('Error: Incorrect Command line: (exta args) ',argv)
+            return
         i+=1
 
 
@@ -250,41 +250,16 @@ def steer(argv):
 
     ra,dec=radec2deg(ra,dec)
 
-
-    xcal_file='XCFrame-%08d.fits' % exposure
-    xcal=fib2radec.locate_file(xcal_file)
-    if xcal!=None:
-        print('Using %s ' % xcal_file)
-        x=fits.open(xcal)
-        xtab=Table(x['SLITMAP'].data)
-        xtab=xtab[xtab['RA']>0.0]
-        xtab=xtab[xtab['fibstatus']==0]
-    else:
-        print('Could not locate %s' % xcal_file)
-    
-
-        calibrated_file='lvmCFrame-%08d.fits' % exposure
-        guider_file='lvm.sci.coadd_s%08d.fits' % exposure
-
-        xcal=fib2radec.locate_file(calibrated_file)
-        if xcal==None:
-            print('Could not locate calibrated file: %s' % calibrated_file)
-            return
-    
-        xguide=fib2radec.locate_file(guider_file)
-        if xguide==None:
-            print('Could not locate guider file: %s' % guider_file)
-            xguide=''
-
-        xguide,racen,decen,pa,xtab=fib2radec.get_ra_dec(xcal,xguide,outname='xfib.txt')
+    try:
+        x=fits.open(filename)
+    except:
+        print('Error: could not open %s',filename)
+        return
 
 
+
+    xtab=Table(x['SLITMAP'].data)
     fib_no=get_closest(fiber_pos=xtab,xra=ra,xdec=dec)
-
-    xlist=['fiberid',   'targettype',    'telescope',    'ringnum', 'fibstatus',   'RA', 'Dec', 'Sep']
-    print('Closest fibers\n',fib_no[xlist][0:10])
-
-
     xfib=fib_no[fib_no['Sep']<=size]
 
     nfib=len(xfib)
@@ -296,12 +271,10 @@ def steer(argv):
         print('Error: This RA and Dec (%.5f %.5f) does not appear to be in the field' % (ra,dec))
         return
 
-    print('Taking spectra from\n',fib_no[xlist][0:nfib])
+    print('Taking spectra from\n',fib_no['fiberid'][0:nfib])
+    xspec=get_spec(filename=filename,xfib=fib_no,nfib=nfib)
 
-    
-
-
-    xspec=get_spec(filename=xcal,xfib=fib_no,nfib=nfib)
+    exposure=x['PRIMARY'].header['EXPOSURE']
 
     if root=='Spec':
         outname='%s_%05d_%.2f_%.2f_%02d.txt' % (root,exposure,ra,dec,nfib)
@@ -309,9 +282,9 @@ def steer(argv):
         outname='%s_%05d_%02d.txt' % (root,exposure,nfib)
 
     regname=outname.replace('.txt','.reg')
-    write_reg(regname,fib_no[xlist][0:nfib])
+    write_reg(regname,xtab=xfib)
 
-    xspec.meta['comments']=['Filename %s' % xcal,'RA %.5f' % ra, 'Dec %.5f' % dec]
+    xspec.meta['comments']=['Filename %s' % filename,'RA %.5f' % ra, 'Dec %.5f' % dec]
     print(xspec)
 
     xspec.write(outname,format='ascii.fixed_width_two_line',overwrite=True)

@@ -28,6 +28,8 @@ Notes:
 History:
 
 231212 ksl Coding begun
+240517 ksl Update to reflect fact that ra and decs are now 
+    part of standard processing
 
 '''
 
@@ -40,8 +42,8 @@ from astropy import wcs
 from astropy.coordinates import SkyCoord
 import astropy.units as u
 import matplotlib.pyplot as plt
+from matplotlib.gridspec import GridSpec
 
-import fib2radec
 
 
 def radec2deg(ra='05:13:06.2',dec='-10:13:14.2'):
@@ -97,22 +99,34 @@ n103b_dec=-68.72674
 
 
 
-def get_closest(fiber_pos,xra=n103b_ra,xdec=n103b_dec):
+
+def get_closest(xra=81,xdec=-68,filename='unknown.fits'):
+
+    try:
+        x=fits.open(filename)
+    except:
+        print('Error: could not open %s' % filename)
+        return []   
+
+    fiber_tab=Table(x['SLITMAP'].data)
+
     xdistance=[]
     pos1=SkyCoord(ra=xra * u.deg, dec=xdec * u.deg, frame='icrs')
 
-    
+
     xsep=[]
     i=0
-    for one in fiber_pos:
-        pos2= SkyCoord(ra=one['RA']* u.deg, dec=one['Dec'] * u.deg, frame='icrs')
+    for one in fiber_tab:
+        pos2= SkyCoord(ra=one['ra']* u.deg, dec=one['dec'] * u.deg, frame='icrs')
         angular_distance = pos1.separation(pos2).arcsec
         xsep.append(angular_distance)
         i+=1
-        
-    fiber_pos['Sep']=xsep
-    fiber_pos.sort(['Sep'])
-    return fiber_pos
+
+    fiber_tab['Sep']=xsep
+    fiber_tab.sort(['Sep'])
+
+    x.close()
+    return fiber_tab
 
 
 def limit_wavelengths(xspec,wmin,wmax):
@@ -125,22 +139,47 @@ def limit_wavelengths(xspec,wmin,wmax):
     xmax=xmax+0.05*xdelt
     return xmin,xmax,xspec
 
-def do_plot_all(filename='reduced/lvmCFrame-00007824.fits',fiber_id=770):
+
+def get_spec(filename='reduced/lvmCFrame-00007824.fits',ra=10,dec=-60.,rad=60.):
+    fiber_id=get_closest(ra,dec,filename)
+
+    fibers=[fiber_id['fiberid'][0]]
+
     x=fits.open(filename)
     wave=x['WAVE'].data
-    flux=x['FLUX'].data[fiber_id-1]
+    
+    fib_no=fiber_id['fiberid'][0]
+    flux=x['FLUX'].data[fib_no-1]
+
+    xfib=fiber_id[fiber_id['Sep']<rad]
+    if len(xfib)>1:
+        print(len(xfib))
+        flux=np.median(x['FLUX'].data[xfib['fiberid']-1],axis=0)
     xtab=Table([wave,flux],names=['WAVE','FLUX'])
+    return xtab
+
+
+def do_plot_all(xtab,fiber_id=770,outroot=''):
+
 
     
     plt.figure(1,(8,6))
     plt.clf()
-    plt.subplot(2,2,1)
+
+    gs= GridSpec(3, 3, figure=fig)
+
+    ax1-fig.add_subplot(gs[0, :])
+    ax1.plot(xspec['WAVE'],xspec['FLUX'])
+    ax1.set_xlim(3600,9600)
+
+    ax2 = fig.add_subplot(gs[1,
     wmin=3650
     wmax=3820
     ymin,ymax,xspec=limit_wavelengths(xtab,wmin,wmax)
-    plt.plot(xspec['WAVE'],xspec['FLUX'])
-    plt.xlim(wmin,wmax)
-    plt.ylim(ymin,ymax)
+    ax2.plot(xspec['WAVE'],xspec['FLUX'])
+    ax2.set_xlim(wmin,wmax)
+    ax2.set_ylim(ymin,ymax)
+
     plt.subplot(2,2,2)
     wmin=4825
     wmax=5050
@@ -162,6 +201,11 @@ def do_plot_all(filename='reduced/lvmCFrame-00007824.fits',fiber_id=770):
     plt.plot(xspec['WAVE'],xspec['FLUX'])
     plt.xlim(wmin,wmax)
     plt.ylim(ymin,ymax)   
+
+    if outroot=='':
+        plt.savefig('test.pnt')
+    else:
+        plt.savefig('%s.png' % (outroot) )
     return
 
 
@@ -170,65 +214,47 @@ def steer(argv):
     This is just a steering routine
     '''
 
-    exposure=-99
     ra=None
     dec=None
+    filename=[]
+    rad=0
 
     i=1
     while i<len(argv):
         if argv[i]=='-h' or len(argv)<4:
             print(__doc__)
             return 
-        elif exposure<0:
-            exposure=eval(argv[i])
+        elif argv[i]=='-rad':
+            i+=1
+            rad=eval(argv[i])
         elif ra==None:
             ra=argv[i]
         elif dec==None:
             dec=argv[i]
+        elif argv[i].count('fit')>0:
+            filename.append(argv[i])
 
         i+=1
         
 
-    ra,dec=radec2deg(argv[2],argv[3])
+    ra,dec=radec2deg(ra,dec)
 
     print(ra,dec)
 
+    for one_file in filename:
 
-    xcal_file='XCFrame-%08d.fits' % exposure
-    xcal=fib2radec.locate_file(xcal_file)
-    if xcal!=None:
-        print('Using %s ' % xcal_file)
-        x=fits.open(xcal)
-        xtab=Table(x['SLITMAP'].data)
-        xtab=xtab[xtab['RA']>0.0]
-    else:
-        print('Could not locate %s' % xcal_file)
-    
-
-        calibrated_file='lvmCFrame-%08d.fits' % exposure
-        guider_file='lvm.sci.coadd_s%08d.fits' % exposure
-
-        xcal=fib2radec.locate_file(calibrated_file)
-        if xcal==None:
-            print('Could not locate calibrated file: %s' % calibrated_file)
-            return
-    
-        xguide=fib2radec.locate_file(guider_file)
-        if xguide==None:
-            print('Could not locate guider file: %s' % guider_file)
-            xguide=''
-
-        xguide,racen,decen,pa,xtab=fib2radec.get_ra_dec(xcal,xguide,outname='xfib.txt')
+        print('Starting %s' % one_file)
 
 
-    fib_no=get_closest(fiber_pos=xtab,xra=ra,xdec=dec)
-
-    print('Plotting fiber %d' % fib_no['fiberid'][0])
+        root=one_file.split('/')[-1]
+        root=root.replace('.fits','')
 
 
 
-    do_plot_all(filename=xcal,fiber_id=fib_no['fiberid'][0])
-    plt.savefig('spec%05d_%.2f_%.2f.png' % (exposure,ra,dec) )
+        outroot='spec_%s_%.2f_%.2f' % (root,ra,dec)
+        xtab=get_spec(one_file,ra,dec,rad)
+        do_plot_all(xtab,outroot=outroot)
+        # plt.savefig('spec_%s_%.2f_%.2f.png' % (root,ra,dec) )
 
     
 

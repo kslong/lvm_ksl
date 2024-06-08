@@ -156,6 +156,8 @@ def do_summary(directory='60202'):
     moon_ill=[]
     smjd=[]
 
+    tile=[]
+
 
     for one_file in xfiles:
         smjd.append(directory)
@@ -179,6 +181,18 @@ def do_summary(directory='60202'):
             xtype.append(head['IMAGETYP'])
         except:
             xtype.append('Unknown')
+            
+        try:
+            qqq=head['TILE_ID']
+        except:
+            qqq=-999
+        try:
+            qqq=int(qqq)
+        except:
+            # print(qqq)
+            qqq=11111
+        # print('final',qqq)
+        tile.append(qqq)
             
         try:
             mjd.append(head['MJD'])
@@ -279,8 +293,8 @@ def do_summary(directory='60202'):
     # xtab=Table([exposure,nspec,xtype,name,mjd,xtime,ra,dec,pa_sci,ra_e,dec_e,pa_e,ra_w,dec_w, pa_w,nstandards,moon_alt,moon_phase,exptime,xobject],
     #            names=['Exposure','NSpec','Type','FileUsed','MJD','Time','RA','Dec','PA','RA_E', 'Dec_E','PA_E','RA_W','Dec_W','PA_W','NStandards','MoonAlt','MoonPhas','Exptime','Object'])
     
-    xtab=Table([exposure,mjd,smjd,nspec,xtype,name,xtime,ra,dec,pa_sci,ra_e,dec_e,pa_e,ra_w,dec_w, pa_w,nstandards,moon_ra,moon_dec,moon_alt,moon_phase,moon_ill,exptime,xobject],
-                names=['Exposure','MJD','SMJD','NSpec','Type','FileUsed','Time','RA','Dec','PA','RA_E', 'Dec_E','PA_E','RA_W','Dec_W','PA_W','NStandards','MoonRA','MoonDec','MoonAlt','MoonPhas','MoonIll','Exptime','Object'])
+    xtab=Table([exposure,tile,mjd,smjd,nspec,xtype,name,xtime,ra,dec,pa_sci,ra_e,dec_e,pa_e,ra_w,dec_w, pa_w,nstandards,moon_ra,moon_dec,moon_alt,moon_phase,moon_ill,exptime,xobject],
+                names=['Exposure','TILE_ID','MJD','SMJD','NSpec','Type','FileUsed','Time','RA','Dec','PA','RA_E', 'Dec_E','PA_E','RA_W','Dec_W','PA_W','NStandards','MoonRA','MoonDec','MoonAlt','MoonPhas','MoonIll','Exptime','Object'])
     
     xtab.sort(['Exposure'])
     

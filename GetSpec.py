@@ -160,20 +160,20 @@ def get_spec(filename,xfib,nfib=1):
     sky_ivar=x['SKY_IVAR'].data[xxfib['fiberid']-1]
     lsf=x['LSF'].data[xxfib['fiberid']-1]
     # print(flux.shape)
-    xflux=np.average(flux,axis=0)
-    xsky=np.average(sky,axis=0)
+    xflux=np.nanmean(flux,axis=0)
+    xsky=np.nanmean(sky,axis=0)
     xmask=np.sum(mask,axis=0)
     
-    xlsf=np.median(lsf,axis=0)
+    xlsf=np.nanmedian(lsf,axis=0)
 
     # print('z',xerr.shape)
-    ivar=np.sum(ivar,axis=0)
+    ivar=np.nansum(ivar,axis=0)
     # print(xerr.shape)
     xerr=1/np.sqrt(ivar)
     # print(xflux.shape)
     # print(xsky.shape)
     # print(xmask.shape)
-    xsky_error=np.sum(sky_ivar,axis=0)
+    xsky_error=np.nansum(sky_ivar,axis=0)
     xsky_error=1/np.sqrt(xsky_error)
     xspec=Table([wave,xflux,xerr,xsky,xsky_error,xmask,xlsf],names=['WAVE','FLUX','ERROR','SKY','SKY_ERROR','MASK','LSF'])
     xspec['WAVE'].format='.1f'

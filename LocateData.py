@@ -87,7 +87,9 @@ def find_em(exp_start=3596,exp_stop=3599,file_type='C'):
         expno.append(i)
         xfile='lvm%cFrame-%08d.fits' % (file_type,i)
         xfiles.append(xfile)
-        files=glob('%s**/%s' % (os.environ['SAS_BASE_DIR'],xfile),recursive=True)
+        search_string='%s/**/%s' % (os.environ['SAS_BASE_DIR'],xfile)
+        print('test :', search_string)
+        files=glob('%s/**/%s' % (os.environ['SAS_BASE_DIR'],xfile),recursive=True)
         if len(files)==0:
             location.append('Unknown')
             creation_date.append('Unknown')

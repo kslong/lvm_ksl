@@ -5,23 +5,45 @@
 
 Synopsis:  
 
-Retrieve data from Utah to a local computer
+Retrieve drp output data from Utah to a local computer
 
 
 Command line usage (if any):
 
-    usage: GetFromUtah.py filename
+    usage: GetFromUtah.py [-h] [-cp] [-CFrame]  mjd expstart [expstop]
+
+    where:
+
+    -h prints out this help message
+    -cp copies the retrieved data to a local directory
+    -CFrame causes the CFrame data to be retrieved instead of the 
+        SFrame data
+    mjd is the mjd of the observations one wants to retrieve
+    expstart is the first exposure to retrieve
+    expstart, if given means to retrieve exposures from expstart to
+        expstop
 
 Description:  
+
+    The routine retrieves data from Utah and stores it locally
+    in the local redux directory.
+
 
 Primary routines:
 
 
 Notes:
+
+    At present the routine looks for data in the 1.0.3 directories
+    at Utah, which is what is used for the standard processing.
+
+    When it becomes desirable to specify the version of the
+    drp pipeline to use, this should be straightforward to
+    modify.
                                        
 History:
 
-240607 ksl Coding begun; adatpted from a routine provided
+240607 ksl Coding begun; adapted from a routine provided
     by Alfredo
 
 '''
@@ -74,9 +96,9 @@ def download_drp_product(drpver, tileid, mjd, expnum, channel=None, kind="SFrame
         a.add('lvm_frame', drpver=drpver, mjd=mjd, tileid=tileid, expnum=expnum, kind=kind)
         a.set_stream()
         a.commit()
-        log.info(f"downloaded product of {kind = } for {mjd = } - {expnum = }")
+        print(f"Downloaded product of {kind = } for {mjd = } - {expnum = }")
     except Exception as e:
-        log.error(f"error while downloading product of {kind = } for {mjd = } - {expnum = }: {e}")
+        print(f"Error: failed downloading product of {kind = } for {mjd = } - {expnum = }: {e}")
 
 
 def steer(argv):
@@ -93,7 +115,7 @@ def steer(argv):
     xmjd=60281
     xexp=8700
     ftype='SFrame'
-    find_type='S'
+    # find_type='S'
     xdest=''
 
     xmjd=''
@@ -105,6 +127,8 @@ def steer(argv):
         if argv[i][0:2]=='-h':
             print(__doc__)
             return
+        elif argv[i]=='-CFrame':
+            ftype='CFrame'
         elif argv[i]=='-cp':
             copy=True
         elif argv[i][0]=='-':
@@ -130,7 +154,7 @@ def steer(argv):
         download_drp_product(drpver=drp_ver, tileid=xtile, mjd=xmjd, expnum=exp_now, kind=ftype)
         exp_now+=1
 
-    xtab=LocateData.find_em(exp_start,exp_stop,find_type)
+    xtab=LocateData.find_em(exp_start,exp_stop,ftype)
     print(xtab)
     if copy==True:
         LocateData.get_em(xtab,destination=xdest)

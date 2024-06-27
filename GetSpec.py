@@ -12,19 +12,19 @@ RA and DEC and a size
 
 Command line usage (if any):
 
-    usage: Getspec.py  [-h] [-size xx]  [-root whatever] -median filename ra dec
+    usage: Getspec.py  [-h] [-root whatever] -median filename ra dec [rmin] [rmax]
 
 
 
     where 
     -h prints out this help
-    -size xx defines a separation in arc seconsds of fibers to
-        incluce in the output spectrum.
     -median constructs the median instead of the average spectrum
     -root whatever prepends a root to the standard file name
     exp_no is the exposure
-    and ra and dec are the desired right ascension, written
+    ra and dec are the desired right ascension, written
         either in degrees or in h:m:s d:m:s
+    [rmin] is and optional inner radius, and 
+    [rmax] is an optinal outer radius
 
 Description:  
 
@@ -41,6 +41,16 @@ Description:
 
     The errors are the errors for one fiber, not something
     that has been reduced by the number of fibers.
+
+    if rmin is not present then the spectrum of the closest
+    fiber will be retrieved
+
+    if only rmin is present then all fibers with centers
+    inside that radius will be retried
+
+    if rmin and rmax are rpersend the average or medain apctra
+    will be regriived
+
 Primary routines:
 
     steer - unlike most of ksl's routines, at present
@@ -270,6 +280,7 @@ def steer(argv):
     ra=None
     dec=None
     size=0
+    size_max=0
     root='Spec'
     xtype='ave'
 
@@ -297,6 +308,8 @@ def steer(argv):
             dec=argv[i]
         elif size==0:
             size=eval(argv[i])
+        elif size_max==0:
+            size_max=eval(argv[i])
         else:
             print('Error: Incorrect Command line: (exta args) ',argv)
             return
@@ -334,7 +347,10 @@ def steer(argv):
 
 
     xtab=Table(x['SLITMAP'].data)
-    fibers=get_circle(xtab,ra,dec,radius=size)
+    if size_max==0:
+        fibers=get_circle(xtab,ra,dec,radius=size)
+    else:
+        fibers=get_annulus(xtab,ra,dec,size,size_max)
 
     if len(fibers)==0:
         return
@@ -350,6 +366,8 @@ def steer(argv):
 
     if size>0:
         outname='%s_%d' % (outname,size)
+    if size_max>0:
+        outname='%s_%d' % (outname,size_max)
     if xtype=='med':
         outname='%s_med' % (outname)
 

@@ -56,6 +56,7 @@ History:
 '''
 
 
+import os
 from astropy.io import fits,ascii
 from astropy.wcs import WCS
 from astropy.table import Table
@@ -68,6 +69,7 @@ import matplotlib.pyplot as plt
 import fib2radec
 
 from LocateReduced import read_drpall,find_em
+XTOP='/uufs/chpc.utah.edu/common/home/sdss51/'
 
 
 def radec2deg(ra='05:13:06.2',dec='-10:13:14.2'):
@@ -256,12 +258,15 @@ def steer(argv):
         exp_no=int(filename)
         drpall=read_drpall()
         xlocate=find_em(drpall,exp_no,exp_no)
-        filename=xlocate[0]['location'
+        filename=xlocate[0]['location']
+
+    if os.path.isfile(filename)==False:
+        filename='%s/%s' % (XTOP,filename)
 
     try:
         x=fits.open(filename)
     except:
-        print('Error: could not open %s',filename)
+        print('Error: could not open %s' % filename)
         return
 
 

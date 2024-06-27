@@ -70,6 +70,7 @@ import fib2radec
 
 from LocateReduced import read_drpall,find_em
 XTOP='/uufs/chpc.utah.edu/common/home/sdss51/'
+XXTOP='%s/Projects/lvm_data/sas/' % (os.environ['HOME'])
 
 
 def radec2deg(ra='05:13:06.2',dec='-10:13:14.2'):
@@ -258,15 +259,22 @@ def steer(argv):
         exp_no=int(filename)
         drpall=read_drpall()
         xlocate=find_em(drpall,exp_no,exp_no)
-        filename=xlocate[0]['location']
+        try:
+            filename=xlocate[0]['location']
+            print('Found location for %d on mjd %d' % (exp_no,xlocate['mjd']))
+        except:
+            print('Error: Could not find file for exposure %d in drpall.fits' % exp_no)
+            return
 
     if os.path.isfile(filename)==False:
-        filename='%s/%s' % (XTOP,filename)
+        xfilename='%s/%s' % (XTOP,filename)
+        if os.path.isfile(xfilename)==False:
+            xfilename='%s/%s' % (XXTOP,filename)
 
     try:
-        x=fits.open(filename)
+        x=fits.open(xfilename)
     except:
-        print('Error: could not open %s' % filename)
+        print('Error: could not open %s' % xfilename)
         return
 
 
@@ -285,7 +293,7 @@ def steer(argv):
         return
 
     print('Taking spectra from\n',fib_no['fiberid'][0:nfib])
-    xspec=get_spec(filename=filename,xfib=fib_no,nfib=nfib)
+    xspec=get_spec(filename=xfilename,xfib=fib_no,nfib=nfib)
 
     exposure=x['PRIMARY'].header['EXPOSURE']
 

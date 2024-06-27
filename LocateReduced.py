@@ -62,13 +62,21 @@ from datetime import datetime
 
 
 def read_drpall(drp_ver='1.0.3'):
-    BASEDIR='/uufs/chpc.utah.edu/common/home/sdss51/sdsswork/lvm/spectro/redux/%s/' % (drp_ver)
     DRPFILE='drpall-%s.fits' % (drp_ver)
-    xfile='%s/%s' % (BASEDIR,DRPFILE)
+    # First try to locate the DRP file locally, otherwise
+    if os.path.isfile(DRPFILE):
+        xfile=DRPFILE
+    else:
+        BASEDIR='/uufs/chpc.utah.edu/common/home/sdss51/sdsswork/lvm/spectro/redux/%s/' % (drp_ver)
+        xfile='%s/%s' % (BASEDIR,DRPFILE)
+        if os.path.isfile(xfile)==False:
+            print('Error: Could not locate : ', xfile)
+            return []
+
     try:
         drpall=fits.open(xfile)
     except:
-        print('Error: Could not locate : ', xfile)
+        print('Error: Locared but could not read  : ', xfile)
         return []
 
     drp_tab=Table(drpall[1].data)
@@ -114,6 +122,7 @@ def get_em(xtab,destination='',file_type='SFrame'):
                
         
 def steer(argv):
+
     exp_start=0
     exp_stop=0
     xcp=False
@@ -148,15 +157,27 @@ def steer(argv):
         i+=1
 
 
+    if exp_stop==0:
+        exp_stop=exp_start
+        print('Setting exp_stop to ',exp_stop)
+
     if (exp_start>exp_stop):
         print('Error: exp_stop %d less than exp_start %d, exiting' % (exp_start,exp_stop))
         return 
 
 
     drp_tab=read_drpall()
+    if len(drp_tab)==0:
+        return
 
     locate=find_em(drp_tab,exp_start,exp_stop)
-    print(locate)
+
+    if len(locate):
+        print(locate)
+    else:
+        print('No exposures between %d and %d were found' % (exp_start,exp_stop))
+        return
+
     
     if xcp:
         get_em(locate,destination,file_type)    

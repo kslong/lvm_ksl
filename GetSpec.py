@@ -12,7 +12,7 @@ RA and DEC and a size
 
 Command line usage (if any):
 
-    usage: Getspec.py  [-h] [-size xx]  filename ra dec
+    usage: Getspec.py  [-h] [-size xx]  [-root whatever] -median filename ra dec
 
 
 
@@ -20,6 +20,8 @@ Command line usage (if any):
     -h prints out this help
     -size xx defines a separation in arc seconsds of fibers to
         incluce in the output spectrum.
+    -median constructs the median instead of the average spectrum
+    -root whatever prepends a root to the standard file name
     exp_no is the exposure
     and ra and dec are the desired right ascension, written
         either in degrees or in h:m:s d:m:s
@@ -149,7 +151,7 @@ def get_closest(fiber_pos,xra=n103b_ra,xdec=n103b_dec):
     return fiber_pos
 
 
-def get_spec(filename,xfib,nfib=1):
+def get_spec(filename,xfib,nfib=1,xtype='ave'):
     '''
     Retrieve the spectra from the first
     nfib fibers in the xfib table
@@ -165,11 +167,20 @@ def get_spec(filename,xfib,nfib=1):
     sky_ivar=x['SKY_IVAR'].data[xxfib['fiberid']-1]
     lsf=x['LSF'].data[xxfib['fiberid']-1]
     # print(flux.shape)
-    xflux=np.nanmean(flux,axis=0)
-    xsky=np.nanmean(sky,axis=0)
-    xmask=np.sum(mask,axis=0)
-    
-    xlsf=np.nanmedian(lsf,axis=0)
+
+    if xtype=='ave':
+        xflux=np.nanmean(flux,axis=0)
+        xsky=np.nanmean(sky,axis=0)
+        xmask=np.sum(mask,axis=0)
+        xlsf=np.nanmean(lsf,axis=0)
+    elif xtype=='med':
+        xflux=np.nanmedian(flux,axis=0)
+        xsky=np.nanmedian(sky,axis=0)
+        xmask=np.sum(mask,axis=0)
+        xlsf=np.nanmedian(lsf,axis=0)
+    else:
+        print('Error: getspec: only ave or med allowd for xtype')
+        return
 
     # print('z',xerr.shape)
     ivar=np.nansum(ivar,axis=0)
@@ -203,6 +214,44 @@ def write_reg(filename,xtab):
     g.close()
 
 
+def get_circle(xtab,ra,dec,radius):
+    '''
+    Get the fibers which lie within a certain distance of
+    a center position
+
+    where xtab is slitmap extension,  
+    ra, dec are a position in degrees
+    and
+    radius is a maxium separation in arcsec
+    '''
+
+    fib_no=get_closest(fiber_pos=xtab,xra=ra,xdec=dec)
+    xfib=fib_no[fib_no['Sep']<=radius]
+    if len(xfib)==0:
+        xfib=fib_no[0]
+    if xfib['Sep'][0]>70:
+        print('Error: This RA and Dec (%.5f %.5f) does not appear to be in the field' % (ra,dec))
+        return []
+    return xfib
+
+
+def get_annulus(xtab,ra,dec,rmin,rmax):
+    '''
+    Get the fibers which lie within an annulus centered on a specific ra and dec
+
+    where xtab is slitmap extension,  
+    ra, dec are a position in degrees
+    and
+    rmin and rmax are the minimum and maximum sizes of the annulus
+    '''
+    fib_no=get_closest(fiber_pos=xtab,xra=ra,xdec=dec)
+    xfib=fib_no[fib_no['Sep']>=rmin]
+    xfib=xfib[xfib['Sep']<=rmax]
+
+    if len(xfib)==0:
+        print('Error: get_annulus: no fibers RA and DEC ( (%.5f %.5f) and rmin and rmax (%.2f %.2f)' (ra,dec,rmin,rmax))
+    
+    return xfib
 
 def steer(argv):
     '''
@@ -222,6 +271,7 @@ def steer(argv):
     dec=None
     size=0
     root='Spec'
+    xtype='ave'
 
     i=1
     while i<len(argv):
@@ -234,6 +284,8 @@ def steer(argv):
         elif argv[i]=='-root':
             i+=1
             root=argv[i]
+        elif argv[i][0:4]=='-med':
+            xtype='med'
         elif ra==None and argv[i][0]=='-':
             print('Error: Incorrect Command line: ',argv)
             return
@@ -243,6 +295,8 @@ def steer(argv):
             ra=argv[i]
         elif dec==None:
             dec=argv[i]
+        elif size==0:
+            size=eval(argv[i])
         else:
             print('Error: Incorrect Command line: (exta args) ',argv)
             return
@@ -280,37 +334,33 @@ def steer(argv):
 
 
     xtab=Table(x['SLITMAP'].data)
-    fib_no=get_closest(fiber_pos=xtab,xra=ra,xdec=dec)
-    xfib=fib_no[fib_no['Sep']<=size]
+    fibers=get_circle(xtab,ra,dec,radius=size)
 
-    nfib=len(xfib)
-    if nfib==0:
-        nfib=1
-
-
-    if nfib==1 and fib_no['Sep'][0]>70:
-        print('Error: This RA and Dec (%.5f %.5f) does not appear to be in the field' % (ra,dec))
+    if len(fibers)==0:
         return
 
-    print('Taking spectra from\n',fib_no['fiberid'][0:nfib])
-    xspec=get_spec(filename=xfilename,xfib=fib_no,nfib=nfib)
+
+    print('Taking spectra from\n',fibers['fiberid'])
+    xspec=get_spec(filename=xfilename,xfib=fibers,nfib=len(fibers),xtype=xtype)
 
     exposure=x['PRIMARY'].header['EXPOSURE']
 
-    if root=='Spec':
-        outname='%s_%05d_%.2f_%.2f_%02d.txt' % (root,exposure,ra,dec,nfib)
-    else:
-        outname='%s_%05d_%02d.txt' % (root,exposure,nfib)
 
-    regname=outname.replace('.txt','.reg')
-    write_reg(regname,xtab=xfib)
+    outname='%s_%05d_%.2f_%.2f' % (root,exposure,ra,dec)
+
+    if size>0:
+        outname='%s_%d' % (outname,size)
+    if xtype=='med':
+        outname='%s_med' % (outname)
+
+
+    write_reg('%s.reg' % outname,xtab=fibers)
 
     xspec.meta['comments']=['Filename %s' % filename,'RA %.5f' % ra, 'Dec %.5f' % dec]
-    print(xspec)
 
-    xspec.write(outname,format='ascii.fixed_width_two_line',overwrite=True)
+    xspec.write('%s.txt'% outname,format='ascii.fixed_width_two_line',overwrite=True)
 
-    print('The output file is %s' % (outname))
+    print('The output file is %s.txt' % (outname))
 
 
 

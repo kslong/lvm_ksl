@@ -49,6 +49,9 @@ import numpy as np
 def do_one_region(spectab,wmin=3600,wmax=4100,frac=0.1):
     xx=spectab[spectab['WAVE']>wmin]
     xx=xx[xx['WAVE']<wmax]
+    mask=np.isfinite(xx['FLUX'])
+    xx=xx[mask]
+    good=np.where(mask)[0]
     plt.plot(xx['WAVE'],xx['FLUX'])
     plt.xlim(wmin,wmax)
     ymin,ymax=plt.ylim()

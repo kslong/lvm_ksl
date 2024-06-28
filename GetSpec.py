@@ -375,7 +375,7 @@ def steer(argv):
 
     write_reg('%s.reg' % outname,xtab=fibers)
 
-    xspec.meta['comments']=['Filename %s' % filename,'RA %.5f' % ra, 'Dec %.5f' % dec]
+    xspec.meta['comments']=['Filename %s' % filename,'RA %.5f' % ra, 'Dec %.5f' % dec, 'nfibers %d' % (len(fibers))]
 
     xspec.write('%s.txt'% outname,format='ascii.fixed_width_two_line',overwrite=True)
 

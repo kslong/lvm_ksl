@@ -195,12 +195,12 @@ def get_spec(filename,xfib,nfib=1,xtype='ave'):
     # print('z',xerr.shape)
     ivar=np.nansum(ivar,axis=0)
     # print(xerr.shape)
-    xerr=1/np.sqrt(ivar)
+    xerr=np.select([ivar>1],[1/np.sqrt(ivar)],default=np.nan)
     # print(xflux.shape)
     # print(xsky.shape)
     # print(xmask.shape)
     xsky_error=np.nansum(sky_ivar,axis=0)
-    xsky_error=1/np.sqrt(xsky_error)
+    xsky_error=np.select([xsky_error>1],[1/np.sqrt(xsky_error)],default=np.nan)
     xspec=Table([wave,xflux,xerr,xsky,xsky_error,xmask,xlsf],names=['WAVE','FLUX','ERROR','SKY','SKY_ERROR','MASK','LSF'])
     xspec['WAVE'].format='.1f'
     xspec['FLUX'].format='.3e'
@@ -259,7 +259,7 @@ def get_annulus(xtab,ra,dec,rmin,rmax):
     xfib=xfib[xfib['Sep']<=rmax]
 
     if len(xfib)==0:
-        print('Error: get_annulus: no fibers RA and DEC ( (%.5f %.5f) and rmin and rmax (%.2f %.2f)' (ra,dec,rmin,rmax))
+        print('Error: get_annulus: no fibers RA and DEC ( (%.5f %.5f) and rmin and rmax (%.2f %.2f)' % (ra,dec,rmin,rmax))
     
     return xfib
 
@@ -327,8 +327,8 @@ def steer(argv):
         drpall=read_drpall()
         xlocate=find_em(drpall,exp_no,exp_no)
         try:
-            filename=xlocate[0]['location']
-            print('Found location for %d on mjd %d' % (exp_no,xlocate['mjd']))
+            filename=xlocate['location'][0]
+            print('Found location for %d on mjd %d' % (exp_no,xlocate['mjd'][0]))
         except:
             print('Error: Could not find file for exposure %d in drpall.fits' % exp_no)
             return
@@ -350,6 +350,7 @@ def steer(argv):
     if size_max==0:
         fibers=get_circle(xtab,ra,dec,radius=size)
     else:
+        print('annulus ',size,size_max)
         fibers=get_annulus(xtab,ra,dec,size,size_max)
 
     if len(fibers)==0:

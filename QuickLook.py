@@ -740,12 +740,12 @@ def make_html(filename='data/lvmSFrame-00011061.fits', outroot=''):
 
     figname,sky_figname= eval_qual_sframe(filename,ymin=-0.2e-13,ymax=1e-13,xmin=3600,xmax=9500)
 
-    string+=xhtml.image('file:%s' % (figname),width=900,height=1200)
+    string+=xhtml.image('%s' % (figname),width=900,height=1200)
     string+=xhtml.hline()
     string+=xhtml.h2('SkyE and SkyW  Spectra')
     string+=xhtml.paragraph(sky_plot_comment)
 
-    string+=xhtml.image('file:%s' % (sky_figname),width=900,height=1200)
+    string+=xhtml.image('%s' % (sky_figname),width=900,height=1200)
     string+=xhtml.hline()
     string+=xhtml.h2('Line and Continuum images')
 
@@ -753,9 +753,9 @@ def make_html(filename='data/lvmSFrame-00011061.fits', outroot=''):
 
     string+=xhtml.paragraph(image_comment)
 
-    string+=xhtml.image('file:%s' % (ha_plot),width=900,height=900)
-    string+=xhtml.image('file:%s' % (s2_plot),width=900,height=900)
-    string+=xhtml.image('file:%s' % (cont_plot),width=900,height=900)
+    string+=xhtml.image('%s' % (ha_plot),width=900,height=900)
+    string+=xhtml.image('%s' % (s2_plot),width=900,height=900)
+    string+=xhtml.image('%s' % (cont_plot),width=900,height=900)
 
     string+=xhtml.hline()
 

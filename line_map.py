@@ -33,9 +33,8 @@ Notes:
 History:
 
 231216 ksl Coding begun
-240303 ksl Added redshift corrections if RA and DEC are near the LMC or
+w40303 ksl Added redshift corrections if RA and DEC are near the LMC or
     SMC
-240630 ksl Modified to use ra and dec's recorded in the SLITMAP extension
 
 '''
 
@@ -45,12 +44,10 @@ import sys
 import numpy as np
 import astropy.io.fits as fits
 import astropy.units as u
-from astropy.wcs.utils import fit_wcs_from_points
 import matplotlib.pyplot as plt
 from astropy.wcs import WCS
 from scipy.interpolate import griddata
 from lvm_ksl import fib2radec
-from astropy.coordinates import SkyCoord
 
 
 
@@ -110,37 +107,6 @@ def calculate_percentiles(arr, percentiles):
 
     return result
 
-platescale=112.36748321030637 # Focal plane platescale in "/mm
-pscale=0.01
-skypscale=pscale*platescale/3600 # IFU image pixel scale in deg/pix
-
-def make_wcs(slitab):
-    '''
-    Create a WCS from the ra's and dec's in 
-    the slitmap extension
-    '''
-
-    tab=slitab[slitab['telescope']=='Sci']
-
-    # This choice for xcoords and ycoords is specific to the image  created
-    # and flips to get a wcs with RA in creasing to the left.
-    xcoords=900-tab['xpmm']/pscale
-    ycoords=900-tab['ypmm']/pscale
-    stars=np.array([xcoords,ycoords])
-    # print('stars\n',stars)
-    ra=np.array(tab['ra'])
-    dec=np.array(tab['dec'])
-    radec=np.transpose([ra,dec])
-    # print('radec\n',radec)
-    known_coords=SkyCoord(radec,frame='icrs',unit='deg')
-    xwcs=fit_wcs_from_points(xy = stars, world_coords = known_coords, projection='TAN')
-
-    xstars=np.transpose(stars)
-    # print(xstars.shape)
-    ra_dec = xwcs.all_pix2world(xstars, 1)
-    # print(ra_dec)
-    return xwcs
-
 def doit(filename,out_label='',wrange=[6560,6566],
          crange=None,do_astrom=True,do_mask=True,interpolate=False):
     
@@ -155,16 +121,8 @@ def doit(filename,out_label='',wrange=[6560,6566],
     expnum=rss['PRIMARY'].header['EXPOSURE']
 
 
-    try:
-        RAobs  = rss['PRIMARY'].header['POSCIRA']
-    except:
-        RAobs  = rss['PRIMARY'].header['TESCIRA']
-
-    try:
-        DECobs = rss['PRIMARY'].header['POSCIDE']
-    except:
-        DECobs = rss['PRIMARY'].header['TESCIDE']
-
+    RAobs  = rss['PRIMARY'].header['TESCIRA']
+    DECobs = rss['PRIMARY'].header['TESCIDE']
     try:
         posang = rss['PRIMARY'].header['POSCIPA']
     except:
@@ -204,12 +162,12 @@ def doit(filename,out_label='',wrange=[6560,6566],
     wcsrss=WCS(rss['FLUX'].header)
     wave=np.array(wcsrss.pixel_to_world(np.arange(nchans),0)[0]*1e10)
     selwave=(wave>=wrange[0])*(wave<=wrange[1])
-    # print('Requested wavelength range is',wrange[0],'to',wrange[1])
-    # print(f'Actual wavelength range is {wave[selwave][0]} to {wave[selwave][-1]}')
+    print('Requested wavelength range is',wrange[0],'to',wrange[1])
+    print(f'Actual wavelength range is {wave[selwave][0]} to {wave[selwave][-1]}')
     if crange:
-        # print('Requested continuum wavelength range is',crange[0],'to',crange[1])
+        print('Requested ontinuum wavelength range is',crange[0],'to',crange[1])
         cselwave=(wave>=crange[0])*(wave<=crange[1])
-        # print('Continuum wavelength range is',crange[0],'to',crange[1])
+        print('Continuum wavelength range is',crange[0],'to',crange[1])
 
 
     # Fill the flux array
@@ -231,17 +189,20 @@ def doit(filename,out_label='',wrange=[6560,6566],
 
     percentiles=calculate_percentiles(flux,[5,95])
 
+
+
     print('Final stats %.2e %.2e %.2e ' % (xmean,xmed,xstd))
-    # print('percentiles ',percentiles)
+    print('percentiles ',percentiles)
+
 
 
     # Calculate image geometry
     platescale=112.36748321030637 # Focal plane platescale in "/mm
-    # print("Using Fiducial Platescale = ", platescale)
+    print("Using Fiducial Platescale = ", platescale)
     pscale=0.01 # IFU image pixel scale in mm/pix
     rspaxel=35.3/platescale/2 # spaxel radius in mm assuming 35.3" diameter chromium mask
     npix=int(1800) # size of IFU image
-    # print(f'The output image is {npix} pixels square')
+    print(f'The output image is {npix} pixels square')
 
     xima, yima = np.meshgrid(np.arange(npix)-npix/2,np.arange(npix)-npix/2)
     xima=xima*pscale # x coordinate in mm of each pixel in image
@@ -256,24 +217,18 @@ def doit(filename,out_label='',wrange=[6560,6566],
     else:
         ima = griddata((x,y), flux, (xima,yima), method='linear')
                 
-    # Make the header from the ra's and dec's in the slitmap if possible
-    try:
-        ww=make_wcs(slittab)
-        header = ww.to_header()
-    except:
-        print('Error: could not create wcs from RA and Dec in SLITTAB, so using header keywords')
-        # Create WCS for IFU image from keywords in the header
-        w = WCS(naxis=2)
-        w.wcs.crpix = [int(npix/2)+1, int(npix/2)+1]
-        skypscale=pscale*platescale/3600 # IFU image pixel scale in deg/pix
-        # The extra 180 degrees is to get the image in the corect orientation.
-        posangrad=(posang+180.)*np.pi/180
-        w.wcs.cd=np.array([[skypscale*np.cos(posangrad),    -1*skypscale*np.sin(posangrad)],
+    # Create WCS for IFU image
+    w = WCS(naxis=2)
+    w.wcs.crpix = [int(npix/2)+1, int(npix/2)+1]
+    skypscale=pscale*platescale/3600 # IFU image pixel scale in deg/pix
+    # The extra 180 degrees is to get the image in the corect orientation.
+    posangrad=(posang+180.)*np.pi/180
+    w.wcs.cd=np.array([[skypscale*np.cos(posangrad),    -1*skypscale*np.sin(posangrad)],
                        [-1*skypscale*np.sin(posangrad), -1*skypscale*np.cos(posangrad)]])
-        w.wcs.crval = [RAobs,DECobs]
-        w.wcs.ctype = ["RA---TAN", "DEC--TAN"]
-        header=w.to_header
-
+    w.wcs.crval = [RAobs,DECobs]
+    w.wcs.ctype = ["RA---TAN", "DEC--TAN"]
+    header = w.to_header()
+    
     
     # Flip axes so that one produces an image with the standard orientation
 
@@ -291,7 +246,7 @@ def doit(filename,out_label='',wrange=[6560,6566],
 
     hdul.writeto(outfile, overwrite=True)
 
-    # hdul.info()
+    hdul.info()
 
     print('Suggested LoadFrame commdand')
     print('LoadFrame %s 1 %.2e %.2e' % (outfile,percentiles[0],percentiles[1]))
@@ -341,7 +296,7 @@ def steer(argv):
         if image_type==one_band[0]:
             print(one_band[1],one_band[2],image_type)
             if sub_back:
-                doit(xfits,out_label=image_type,wrange=one_band[1],crange=one_band[2])
+                doit(xfits,out_labble=image_type,wrange=one_band[1],crange=one_band[2])
             else:
                 doit(xfits,out_label=image_type,wrange=one_band[1],crange=None)
             good=True

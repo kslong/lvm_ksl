@@ -20,6 +20,7 @@ Command line usage (if any):
     -cp means not only to locate the files but to copy them to local data directory
     -dir whatever gives an alternative place to copy the data.  Not that -dir implies -cp
          even if it is not given
+    -CFrame located CFrame files instead of SFrame files, which is the default
 
 Description:
 
@@ -85,9 +86,11 @@ def find_em(exp_start=3596,exp_stop=3599,file_type='C'):
     while i<=exp_stop:
         print(i)
         expno.append(i)
-        xfile='lvm%cFrame-%08d.fits' % (file_type,i)
+        xfile='lvm%cFrame-%08d.fits' % (file_type[0],i)
         xfiles.append(xfile)
-        files=glob('%s**/%s' % (os.environ['SAS_BASE_DIR'],xfile),recursive=True)
+        search_string='%s/**/%s' % (os.environ['SAS_BASE_DIR'],xfile)
+        print('test :', search_string)
+        files=glob('%s/**/%s' % (os.environ['SAS_BASE_DIR'],xfile),recursive=True)
         if len(files)==0:
             location.append('Unknown')
             creation_date.append('Unknown')
@@ -148,6 +151,7 @@ def steer(argv):
     exp_stop=0
     xcp=False
     destination=''
+    ftype='SFrame'
 
     i=1
     while i<len(argv):
@@ -160,6 +164,8 @@ def steer(argv):
             xcp=True
             i+=1
             destination=argv[i]
+        elif argv[i][0:2]=='-C':
+            ftype='CFrame'
         elif argv[i][0]=='-':
             print('Error: Unknown switch',argv)
             return
@@ -178,13 +184,16 @@ def steer(argv):
         print('Error: exp_stop %d less than exp_start %d, exiting' % (exp_start,exp_stop))
         return 
 
+    if exp_stop==0:
+        exp_stop=exp_start
+
     locate=find_em(exp_start,exp_stop)
     print(locate)
     
     if xcp:
         get_em(locate,destination)    
 
-    locate=find_em(exp_start,exp_stop,'S')
+    locate=find_em(exp_start,exp_stop,ftype)
     if xcp:
         get_em(locate,destination)    
 

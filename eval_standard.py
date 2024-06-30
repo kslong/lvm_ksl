@@ -108,7 +108,7 @@ def compare_with_gaia(filename='lvmCFrame-00005059.fits',outroot=''):
     j=0
     ok=False
     while j<len(fib):
-        print('Getting spectrum of %d' % (gaia_id[j]))
+        print('Getting GAIA spectrum of %d' % (gaia_id[j]))
         try:
             wave,flux=ancillary_func.retrive_gaia_star(gaia_id[j],'test')
             swave,sflux=get_standard(x,fib[j])
@@ -117,7 +117,7 @@ def compare_with_gaia(filename='lvmCFrame-00005059.fits',outroot=''):
             ok=True
         except:
             pass
-            print('Error: Failed on object ',gaia_id[j])
+            print('Error: Failed on GAIA object ',gaia_id[j])
 
         j+=1
 

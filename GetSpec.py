@@ -12,17 +12,19 @@ RA and DEC and a size
 
 Command line usage (if any):
 
-    usage: Getspec.py  [-h] [-size xx]  filename ra dec
+    usage: Getspec.py  [-h] [-root whatever] -median filename ra dec [rmin] [rmax]
 
 
 
     where 
     -h prints out this help
-    -size xx defines a separation in arc seconsds of fibers to
-        incluce in the output spectrum.
+    -median constructs the median instead of the average spectrum
+    -root whatever prepends a root to the standard file name
     exp_no is the exposure
-    and ra and dec are the desired right ascension, written
+    ra and dec are the desired right ascension, written
         either in degrees or in h:m:s d:m:s
+    [rmin] is and optional inner radius, and 
+    [rmax] is an optinal outer radius
 
 Description:  
 
@@ -39,6 +41,16 @@ Description:
 
     The errors are the errors for one fiber, not something
     that has been reduced by the number of fibers.
+
+    if rmin is not present then the spectrum of the closest
+    fiber will be retrieved
+
+    if only rmin is present then all fibers with centers
+    inside that radius will be retried
+
+    if rmin and rmax are rpersend the average or medain apctra
+    will be regriived
+
 Primary routines:
 
     steer - unlike most of ksl's routines, at present
@@ -56,6 +68,7 @@ History:
 '''
 
 
+import os
 from astropy.io import fits,ascii
 from astropy.wcs import WCS
 from astropy.table import Table
@@ -66,6 +79,10 @@ import astropy.units as u
 import matplotlib.pyplot as plt
 
 import fib2radec
+
+from LocateReduced import read_drpall,find_em
+XTOP='/uufs/chpc.utah.edu/common/home/sdss51/'
+XXTOP='%s/Projects/lvm_data/sas/' % (os.environ['HOME'])
 
 
 def radec2deg(ra='05:13:06.2',dec='-10:13:14.2'):
@@ -144,7 +161,7 @@ def get_closest(fiber_pos,xra=n103b_ra,xdec=n103b_dec):
     return fiber_pos
 
 
-def get_spec(filename,xfib,nfib=1):
+def get_spec(filename,xfib,nfib=1,xtype='ave'):
     '''
     Retrieve the spectra from the first
     nfib fibers in the xfib table
@@ -160,21 +177,30 @@ def get_spec(filename,xfib,nfib=1):
     sky_ivar=x['SKY_IVAR'].data[xxfib['fiberid']-1]
     lsf=x['LSF'].data[xxfib['fiberid']-1]
     # print(flux.shape)
-    xflux=np.average(flux,axis=0)
-    xsky=np.average(sky,axis=0)
-    xmask=np.sum(mask,axis=0)
-    
-    xlsf=np.median(lsf,axis=0)
+
+    if xtype=='ave':
+        xflux=np.nanmean(flux,axis=0)
+        xsky=np.nanmean(sky,axis=0)
+        xmask=np.sum(mask,axis=0)
+        xlsf=np.nanmean(lsf,axis=0)
+    elif xtype=='med':
+        xflux=np.nanmedian(flux,axis=0)
+        xsky=np.nanmedian(sky,axis=0)
+        xmask=np.sum(mask,axis=0)
+        xlsf=np.nanmedian(lsf,axis=0)
+    else:
+        print('Error: getspec: only ave or med allowd for xtype')
+        return
 
     # print('z',xerr.shape)
-    ivar=np.sum(ivar,axis=0)
+    ivar=np.nansum(ivar,axis=0)
     # print(xerr.shape)
-    xerr=1/np.sqrt(ivar)
+    xerr=np.select([ivar>1],[1/np.sqrt(ivar)],default=np.nan)
     # print(xflux.shape)
     # print(xsky.shape)
     # print(xmask.shape)
-    xsky_error=np.sum(sky_ivar,axis=0)
-    xsky_error=1/np.sqrt(xsky_error)
+    xsky_error=np.nansum(sky_ivar,axis=0)
+    xsky_error=np.select([xsky_error>1],[1/np.sqrt(xsky_error)],default=np.nan)
     xspec=Table([wave,xflux,xerr,xsky,xsky_error,xmask,xlsf],names=['WAVE','FLUX','ERROR','SKY','SKY_ERROR','MASK','LSF'])
     xspec['WAVE'].format='.1f'
     xspec['FLUX'].format='.3e'
@@ -198,6 +224,44 @@ def write_reg(filename,xtab):
     g.close()
 
 
+def get_circle(xtab,ra,dec,radius):
+    '''
+    Get the fibers which lie within a certain distance of
+    a center position
+
+    where xtab is slitmap extension,  
+    ra, dec are a position in degrees
+    and
+    radius is a maxium separation in arcsec
+    '''
+
+    fib_no=get_closest(fiber_pos=xtab,xra=ra,xdec=dec)
+    xfib=fib_no[fib_no['Sep']<=radius]
+    if len(xfib)==0:
+        xfib=fib_no[0]
+    if xfib['Sep'][0]>70:
+        print('Error: This RA and Dec (%.5f %.5f) does not appear to be in the field' % (ra,dec))
+        return []
+    return xfib
+
+
+def get_annulus(xtab,ra,dec,rmin,rmax):
+    '''
+    Get the fibers which lie within an annulus centered on a specific ra and dec
+
+    where xtab is slitmap extension,  
+    ra, dec are a position in degrees
+    and
+    rmin and rmax are the minimum and maximum sizes of the annulus
+    '''
+    fib_no=get_closest(fiber_pos=xtab,xra=ra,xdec=dec)
+    xfib=fib_no[fib_no['Sep']>=rmin]
+    xfib=xfib[xfib['Sep']<=rmax]
+
+    if len(xfib)==0:
+        print('Error: get_annulus: no fibers RA and DEC ( (%.5f %.5f) and rmin and rmax (%.2f %.2f)' % (ra,dec,rmin,rmax))
+    
+    return xfib
 
 def steer(argv):
     '''
@@ -216,7 +280,9 @@ def steer(argv):
     ra=None
     dec=None
     size=0
+    size_max=0
     root='Spec'
+    xtype='ave'
 
     i=1
     while i<len(argv):
@@ -229,6 +295,8 @@ def steer(argv):
         elif argv[i]=='-root':
             i+=1
             root=argv[i]
+        elif argv[i][0:4]=='-med':
+            xtype='med'
         elif ra==None and argv[i][0]=='-':
             print('Error: Incorrect Command line: ',argv)
             return
@@ -238,6 +306,10 @@ def steer(argv):
             ra=argv[i]
         elif dec==None:
             dec=argv[i]
+        elif size==0:
+            size=eval(argv[i])
+        elif size_max==0:
+            size_max=eval(argv[i])
         else:
             print('Error: Incorrect Command line: (exta args) ',argv)
             return
@@ -250,46 +322,64 @@ def steer(argv):
 
     ra,dec=radec2deg(ra,dec)
 
+    if filename.count('fits')==0:
+        exp_no=int(filename)
+        drpall=read_drpall()
+        xlocate=find_em(drpall,exp_no,exp_no)
+        try:
+            filename=xlocate['location'][0]
+            print('Found location for %d on mjd %d' % (exp_no,xlocate['mjd'][0]))
+        except:
+            print('Error: Could not find file for exposure %d in drpall.fits' % exp_no)
+            return
+
+    if os.path.isfile(filename)==False:
+        xfilename='%s/%s' % (XTOP,filename)
+        if os.path.isfile(xfilename)==False:
+            xfilename='%s/%s' % (XXTOP,filename)
+
     try:
-        x=fits.open(filename)
+        x=fits.open(xfilename)
     except:
-        print('Error: could not open %s',filename)
+        print('Error: could not open %s' % xfilename)
         return
 
 
 
     xtab=Table(x['SLITMAP'].data)
-    fib_no=get_closest(fiber_pos=xtab,xra=ra,xdec=dec)
-    xfib=fib_no[fib_no['Sep']<=size]
+    if size_max==0:
+        fibers=get_circle(xtab,ra,dec,radius=size)
+    else:
+        print('annulus ',size,size_max)
+        fibers=get_annulus(xtab,ra,dec,size,size_max)
 
-    nfib=len(xfib)
-    if nfib==0:
-        nfib=1
-
-
-    if nfib==1 and fib_no['Sep'][0]>70:
-        print('Error: This RA and Dec (%.5f %.5f) does not appear to be in the field' % (ra,dec))
+    if len(fibers)==0:
         return
 
-    print('Taking spectra from\n',fib_no['fiberid'][0:nfib])
-    xspec=get_spec(filename=filename,xfib=fib_no,nfib=nfib)
+
+    print('Taking spectra from\n',fibers['fiberid'])
+    xspec=get_spec(filename=xfilename,xfib=fibers,nfib=len(fibers),xtype=xtype)
 
     exposure=x['PRIMARY'].header['EXPOSURE']
 
-    if root=='Spec':
-        outname='%s_%05d_%.2f_%.2f_%02d.txt' % (root,exposure,ra,dec,nfib)
-    else:
-        outname='%s_%05d_%02d.txt' % (root,exposure,nfib)
 
-    regname=outname.replace('.txt','.reg')
-    write_reg(regname,xtab=xfib)
+    outname='%s_%05d_%.2f_%.2f' % (root,exposure,ra,dec)
 
-    xspec.meta['comments']=['Filename %s' % filename,'RA %.5f' % ra, 'Dec %.5f' % dec]
-    print(xspec)
+    if size>0:
+        outname='%s_%d' % (outname,size)
+    if size_max>0:
+        outname='%s_%d' % (outname,size_max)
+    if xtype=='med':
+        outname='%s_med' % (outname)
 
-    xspec.write(outname,format='ascii.fixed_width_two_line',overwrite=True)
 
-    print('The output file is %s' % (outname))
+    write_reg('%s.reg' % outname,xtab=fibers)
+
+    xspec.meta['comments']=['Filename %s' % filename,'RA %.5f' % ra, 'Dec %.5f' % dec, 'nfibers %d' % (len(fibers))]
+
+    xspec.write('%s.txt'% outname,format='ascii.fixed_width_two_line',overwrite=True)
+
+    print('The output file is %s.txt' % (outname))
 
 
 

@@ -121,8 +121,16 @@ def doit(filename,out_label='',wrange=[6560,6566],
     expnum=rss['PRIMARY'].header['EXPOSURE']
 
 
-    RAobs  = rss['PRIMARY'].header['TESCIRA']
-    DECobs = rss['PRIMARY'].header['TESCIDE']
+    try:
+        RAobs  = rss['PRIMARY'].header['POSCIRA']
+    except:
+        RAobs  = rss['PRIMARY'].header['TESCIRA']
+
+    try:
+        DECobs = rss['PRIMARY'].header['POSCIDE']
+    except:
+        DECobs = rss['PRIMARY'].header['TESCIDE']
+
     try:
         posang = rss['PRIMARY'].header['POSCIPA']
     except:

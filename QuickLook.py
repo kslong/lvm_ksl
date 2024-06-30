@@ -203,7 +203,7 @@ def get_yscale(f,ymin,ymax):
     med=np.median(f)
     zmin=ymin+med
     zmax=ymax+med
-    print(zmin,zmax,med,ymin,ymax)
+    # print(zmin,zmax,med,ymin,ymax)
     return zmin,zmax
 
 
@@ -362,7 +362,6 @@ def eval_qual_sframe(filename='data/lvmSFrame-00011061.fits',ymin=-0.2e-13,ymax=
 
     words=filename.split('/')
     root=words[-1].replace('.fits','')
-    print(root)
     figname='%s/%s.png' % (location,root)
     plt.savefig(figname)
 
@@ -410,10 +409,8 @@ def eval_qual_sframe(filename='data/lvmSFrame-00011061.fits',ymin=-0.2e-13,ymax=
 
     xwav,delta_limit=limit_spectrum(wav,delta,wmin,wmax)
     delta_median=np.median(delta_limit)
-    print('a',delta_median)
     delta_limit-=delta_median
     delta_median=np.median(delta_limit)
-    print('b',delta_median)
     ax3.plot(xwav,delta_limit,label='SkyE-Subtracted SkyE',zorder=1)
 
     # ax3.plot(xwav,xskyw_flux_med,label='SkyW-Subtracted SkyW',zorder=0)
@@ -435,10 +432,8 @@ def eval_qual_sframe(filename='data/lvmSFrame-00011061.fits',ymin=-0.2e-13,ymax=
     xwav,delta_limit=limit_spectrum(wav,delta,wmin,wmax)
 
     delta_median=np.median(delta_limit)
-    print('a',delta_median)
     delta_limit-=delta_median
     delta_median=np.median(delta_limit)
-    print('b',delta_median)
 
     ax4.plot(xwav,delta_limit,zorder=1)
 
@@ -472,7 +467,6 @@ def eval_qual_sframe(filename='data/lvmSFrame-00011061.fits',ymin=-0.2e-13,ymax=
 
     words=filename.split('/')
     root=words[-1].replace('.fits','')
-    print(root)
     sky_figname='%s/%s_sky.png' % (location,root)
     plt.savefig(sky_figname)
 
@@ -568,7 +562,6 @@ def create_overview(filename='data/lvmSFrame-00011061.fits'):
     distance_sky_e=distance(ra,dec,ra_sky_e,dec_sky_e)
 
   
-    # print(obstime)
 
     moon_info=get_moon_info_las_campanas(obs_time)
     #for key, value in moon_info.items():
@@ -661,7 +654,7 @@ def make_images(filename='data/llvmSFrame-00011061.fits',outroot='test'):
     Make multiple images of the CFrame of SFrame data
     '''
     xha=['Ha',[6560.,6566.],[6590.,6630.]]
-    xs2=['[SII]',[6710.,6735.],[6740.,6760.]]
+    xs2=['SII',[6710.,6735.],[6740.,6760.]]
     cont=['Cont',[5299.,6200.],None]
 
     ha_file=quick_map.doit(filename,xha[0],xha[1],xha[2])
@@ -684,7 +677,7 @@ def make_images(filename='data/llvmSFrame-00011061.fits',outroot='test'):
 
     plot_fits_image(filename=c_file,title='Cont.(5200-6200)',outname=cont_plot)
     plot_fits_image(filename=ha_file,title=r'H$\alpha$',outname=ha_plot)
-    plot_fits_image(filename=s2_file,title='[SII]',outname=s2_plot)
+    plot_fits_image(filename=s2_file,title='SII',outname=s2_plot)
     return ha_plot,s2_plot,cont_plot
 
 science_plot_comment='''
@@ -723,7 +716,6 @@ def make_html(filename='data/lvmSFrame-00011061.fits', outroot=''):
     if outroot=='':
         words=filename.split('/')
         outroot=words[-1].replace('.fits','')
-    print(outroot)
 
     string=xhtml.begin('LVMDRP Quality Asssessment for %s' % filename)
     string+=xhtml.hline()

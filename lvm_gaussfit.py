@@ -65,7 +65,11 @@ def fit_gaussian_to_spectrum(spectrum_table, line, init_wavelength, init_fwhm, w
     mask = (spectrum_table['WAVE'] >= wavelength_min) & (spectrum_table['WAVE'] <= wavelength_max)
     x = spectrum_table['WAVE'][mask]
     y = spectrum_table['FLUX'][mask]
-    
+
+    finite_mask=np.isfinite(y)
+    x=x[finite_mask]
+    y=y[finite_mask]
+
     # Convert FWHM to standard deviation: FWHM = 2.355 * sigma
     init_stddev = init_fwhm / 2.355
     
@@ -171,6 +175,10 @@ def fit_double_gaussian_to_spectrum(spectrum_table, line, init_wavelength1, init
     x = spectrum_table['WAVE'][mask]
     y = spectrum_table['FLUX'][mask]
 
+    finite_mask=np.isfinite(y)
+    xx=x[finite_mask]
+    yy=y[finite_mask]
+
     # Extract side regions for background estimation
     side_region_mask = ((spectrum_table['WAVE'] >= wavelength_min - (wavelength_max - wavelength_min)) & 
                         (spectrum_table['WAVE'] < wavelength_min)) | \
@@ -179,17 +187,17 @@ def fit_double_gaussian_to_spectrum(spectrum_table, line, init_wavelength1, init
     y_side = spectrum_table['FLUX'][side_region_mask]
     
     # Estimate background as the median flux of the side regions
-    background = np.median(y_side)
+    background = np.nanmedian(y_side)
     
     # Subtract the estimated background from the flux
-    y = y - background
+    yy = yy - background
     
     # Convert FWHM to standard deviation: FWHM = 2.355 * sigma
     init_stddev = init_fwhm / 2.355
     
     # Initialize the Gaussian models with the provided initial guesses
-    g1_init = models.Gaussian1D(amplitude=max(y), mean=init_wavelength1, stddev=init_stddev)
-    g2_init = models.Gaussian1D(amplitude=max(y), mean=init_wavelength2, stddev=init_stddev)
+    g1_init = models.Gaussian1D(amplitude=max(yy), mean=init_wavelength1, stddev=init_stddev)
+    g2_init = models.Gaussian1D(amplitude=max(yy), mean=init_wavelength2, stddev=init_stddev)
     
     # Tie the standard deviations of both Gaussians to the same value
     g2_init.stddev.tied = lambda model: model.stddev_0
@@ -201,10 +209,8 @@ def fit_double_gaussian_to_spectrum(spectrum_table, line, init_wavelength1, init
     fit_g = fitting.LevMarLSQFitter(calc_uncertainties=True)
     
     # Perform the fit
-    combined_fit = fit_g(combined_init, x, y)
+    combined_fit = fit_g(combined_init, xx, yy)
 
-    # Perform the fit
-    combined_fit = fit_g(combined_init, x, y)
     param_errors = None
     if fit_g.fit_info['param_cov'] is not None:
         try:

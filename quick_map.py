@@ -10,15 +10,25 @@ Create an image or cube from a LVM exposure
 
 Command line usage (if any):
 
-    usage: kslmap.py [-no_back]  [-image_type filter] filename
+    usage: kslmap.py [-no_back]  [-band filter] filename
 
     where image_type indicates a predefined filter to plot.  The
     currenly allowed bands are 
 
     * ha
     * sii
+    * x
 
     -no_back means not to subtract background from the image
+
+    for band x, there are aditional parameters to be entered, e.g.
+
+    -band x 6700 6800  will produce an image of the average flux 
+        between 6700 and 6800 A. For this no backgournd is
+        obtained
+
+    The routine produces and output fits file, which starts with x
+    normally, but starts with z if a CFrame file is provided.
 
 Description:  
 
@@ -154,6 +164,10 @@ def doit(filename,out_label='',wrange=[6560,6566],
     mjd=rss['PRIMARY'].header['MJD']
     expnum=rss['PRIMARY'].header['EXPOSURE']
 
+    xstart='x'
+    if filename.count('lvmCFrame'):
+        xstart='z'
+
 
     try:
         RAobs  = rss['PRIMARY'].header['POSCIRA']
@@ -284,16 +298,16 @@ def doit(filename,out_label='',wrange=[6560,6566],
     hdul=fits.HDUList([hdu])
 
     if out_label=='':
-            outfile='x%05d_%04d_%04d.fits' % (expnum,wrange[0],wrange[1])
+            outfile='%s%05d_%04d_%04d.fits' % (xstart,expnum,wrange[0],wrange[1])
     else:
-            outfile='x%05d_%0s.fits' % (expnum,out_label)
+            outfile='%s%05d_%0s.fits' % (xstart,expnum,out_label)
 
 
     hdul.writeto(outfile, overwrite=True)
 
     # hdul.info()
 
-    print('Suggested LoadFrame commdand')
+    print('Suggested LoadFrame command')
     print('LoadFrame %s 1 %.2e %.2e' % (outfile,percentiles[0],percentiles[1]))
     return outfile
 
@@ -306,6 +320,11 @@ def steer(argv):
     xfits=''
     sub_back=True
 
+    xha=['ha',[6560,6566],[6590,6630]]
+    xs2=['sii',[6710,6735],[6740,6760]]
+    xxx=['x',[8000,9000],[6000,7000]]
+
+
     i=1
     while i<len(argv):
         print(argv[i])
@@ -315,6 +334,12 @@ def steer(argv):
         elif argv[i]=='-band':
             i+=1
             image_type=argv[i]
+            if image_type=='x':
+                i+=1
+                xxx[1][0]=eval(argv[i])
+                i+=1
+                xxx[1][1]=eval(argv[i])
+                sub_back=False
         elif argv[i]=='-no_back':
             sub_back=False
         elif argv[i][0]=='-':
@@ -322,24 +347,20 @@ def steer(argv):
             return
         elif xfits=='':
             xfits=argv[i]
-        print(argv[i])
+        # print(argv[i])
         i+=1
-
-
-    xha=['ha',[6560,6566],[6590,6630]]
-    xs2=['sii',[6710,6735],[6740,6760]]
 
     if xfits=='':
         print('Error: not enough arguments: ', argv)
         return
 
-    xbands=[xha,xs2]
+    xbands=[xha,xs2,xxx]
 
     good=False
     for one_band in xbands:
-        print(image_type,one_band[0])
+        # print(image_type,one_band[0])
         if image_type==one_band[0]:
-            print(one_band[1],one_band[2],image_type)
+            # print(one_band[1],one_band[2],image_type)
             if sub_back:
                 doit(xfits,out_label=image_type,wrange=one_band[1],crange=one_band[2])
             else:

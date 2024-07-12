@@ -213,12 +213,12 @@ def get_spec(filename,xfib,nfib=1,xtype='ave'):
 header='''
 # Region file format: DS9 version 4.1
 # Filename: lmc_snr.txt.reg
-global color=yellow width=3 font="helvetica 14 bold" select=1 highlite=1 dash=0 fixed=0 edit=1 move=1 delete=1 include=1 source=1
+global color=%s width=4 font="helvetica 14 bold" select=1 highlite=1 dash=0 fixed=0 edit=1 move=1 delete=1 include=1 source=1
 fk5
 '''
-def write_reg(filename,xtab):
+def write_reg(filename,xtab,color='yellow'):
     g=open(filename,'w')
-    g.write(header)
+    g.write(header % (color) )
     for one in xtab:
         g.write('circle(%f,%f,5.")  # text={%d}\n' % (one['ra'],one['dec'],one['fiberid']))
     g.close()
@@ -337,6 +337,8 @@ def steer(argv):
         xfilename='%s/%s' % (XTOP,filename)
         if os.path.isfile(xfilename)==False:
             xfilename='%s/%s' % (XXTOP,filename)
+    else:
+        xfilename=filename
 
     try:
         x=fits.open(xfilename)
@@ -371,9 +373,13 @@ def steer(argv):
         outname='%s_%d' % (outname,size_max)
     if xtype=='med':
         outname='%s_med' % (outname)
+    else:
+        outname='%s_ave' % (outname)
 
-
-    write_reg('%s.reg' % outname,xtab=fibers)
+    if size_max>0:
+        write_reg('%s.reg' % outname,xtab=fibers,color='green')
+    else:
+        write_reg('%s.reg' % outname,xtab=fibers,color='yellow')
 
     xspec.meta['comments']=['Filename %s' % filename,'RA %.5f' % ra, 'Dec %.5f' % dec, 'nfibers %d' % (len(fibers))]
 

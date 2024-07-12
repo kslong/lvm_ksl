@@ -54,9 +54,10 @@ def do_one_region(spectab,wmin=3600,wmax=4100,frac=0.1):
     good=np.where(mask)[0]
     plt.plot(xx['WAVE'],xx['FLUX'])
     plt.xlim(wmin,wmax)
-    ymin,ymax=plt.ylim()
-    ymin=np.median(xx['FLUX'])-0.05*ymax
-    plt.ylim(ymin,frac*ymax)
+    if frac<1.0:
+        ymin,ymax=plt.ylim()
+        ymin=np.median(xx['FLUX'])-0.05*ymax
+        plt.ylim(ymin,frac*ymax)
     return
 
 def xmark(line='[SIII]',w=9069.3,frac=0.8):

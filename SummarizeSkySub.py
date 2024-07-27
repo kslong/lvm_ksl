@@ -34,18 +34,9 @@ import numpy as np
 import matplotlib.pyplot as plt
 import os
 from astropy.table import join, Table
-import numpy as np
-
-
-
-
-from glob import glob
-from astropy.table import Table, join
-from astropy.io import fits
-import os
-import numpy as np
 import shutil
 from datetime import datetime
+from astropy.wcs import WCS
 
 
 def read_drpall(drp_ver='1.0.3'):
@@ -207,7 +198,21 @@ def make_med_spec(xtab,data_dir,outfile=''):
     hdu3=fits.ImageHDU(data=xsci_flux,name='FLUX')
     hdu4=fits.ImageHDU(data=xsci_sky,name='SKY')
     hdu5 = fits.BinTableHDU(xtab, name='drp_all')
+
+    wmin=wav[0]
+    dwave=0.5
+
+    wcs = WCS(naxis=2)
+    wcs.wcs.crpix = [1, 1]  # Reference pixel (1-based index)
+    wcs.wcs.crval = [wmin, 0]  # Coordinates at the reference pixel: minimum wavelength and line number 0
+    wcs.wcs.cdelt = [dwave, 1]  # Pixel scale: 0.5 Angstroms per pixel in wavelength, 1 per pixel in line number
+    wcs.wcs.ctype = ['WAVE', 'LINE']  # Coordinate types: wavelength and line number
+
+    hdu3.header.update(wcs.to_header())
+    hdu4.header.update(wcs.to_header())
+
     hdul = fits.HDUList([hdu1, hdu2, hdu3,hdu4,hdu5])
+
     if outfile=='':
         outfile='test.fits'
     else:

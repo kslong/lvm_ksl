@@ -12,7 +12,7 @@ number of files
 
 Command line usage (if any):
 
-    usage: SummarizeSkySub.py filename
+    usage: SummarizeSFrame.py  exp_start expstop delta
 
 Description:  
 
@@ -176,6 +176,8 @@ def make_med_spec(xtab,data_dir,outfile=''):
             xfiles.append(xfile)
         i+=1
     print('There are %d files to process' % (len(select)))
+
+    xtab=xtab[select]
     # print(xfiles)
     i=0
     xsci_flux=[]
@@ -193,7 +195,7 @@ def make_med_spec(xtab,data_dir,outfile=''):
     xsci_sky=np.array(xsci_sky)
     print(xsci_flux.shape,xsci_sky.shape)
     hdu1 = fits.PrimaryHDU(data=None)
-    hdu1.header['MY_KEY'] = 'Header info'
+    hdu1.header['Title'] = 'SFrame_Suummary'
     hdu2= fits.ImageHDU(data=wav,name='WAVE')
     hdu3=fits.ImageHDU(data=xsci_flux,name='FLUX')
     hdu4=fits.ImageHDU(data=xsci_sky,name='SKY')
@@ -230,12 +232,12 @@ def doit(exp_start=4000,exp_stop=8000,delta=5,exp_min=900.,out_name='',drp_ver='
     ztab=select(xtab,exp_start,exp_stop,delta)
     
     if out_name=='':
-        out_name='XSky_%d_%d_%d.fits' % (exp_start,exp_stop,delta)
+        out_name='XSframe_%d_%d_%d.fits' % (exp_start,exp_stop,delta)
     make_med_spec(xtab=ztab,data_dir=xtop,outfile=out_name)
 
 def steer(argv):
     '''
-    SummarizeSkySub exp_start expstop delta
+    SummarizeSFrame.py  exp_start expstop delta
     '''
     exp_start=-1
     exp_stop=-1

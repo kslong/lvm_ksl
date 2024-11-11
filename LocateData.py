@@ -117,7 +117,7 @@ def find_em(exp_start=3596,exp_stop=3599,file_type='C'):
         names=['Exposure','Filename','nfiles','Creation_date','Location'])
 
     # print(xtab)
-    if os.path.isfile('xlog')==False:
+    if os.path.isdir('./xlog')==False:
         os.mkdir('./xlog')
     xtab.write('./xlog/xfound_%05d_%05d.txt' % (exp_start,exp_stop),format='ascii.fixed_width_two_line',overwrite=True)
 

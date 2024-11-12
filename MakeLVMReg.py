@@ -225,6 +225,19 @@ def do_simple(filename,outroot='',color='yellow',target_type='science'):
     return xtab,exposure
                     
     
+def do_one(filename,ra,dec,size,outroot=''):
+    icolor=['red','green','blue','cyan','magenta','black','white']
+    xtab,exposure=get_good_fibers(filename,color='yellow',target_type='science')
+    i=0
+    while i<len(size):
+        ra_deg,dec_deg=radec2deg(ra[i],dec[i])
+        xtab=add_circular_region(xtab,ra_deg,dec_deg,size[i],icolor[i])
+        i+=1
+    if outroot=='':
+        outname='SlitMap_%05d' % exposure
+    else:
+        outname='%s_%05d' % (outroot,exposure)
+    write_reg(outname+'.reg',xtab,color='yellow')
 
 
 
@@ -275,22 +288,10 @@ def steer(argv):
             size=eval(argv[i])
         i+=1
 
-
-
     for one_file in filename:
-        xtab,exposure=get_good_fibers(one_file,color='yellow',target_type='science')
-        i=0
-        while i<len(size):
-            ra_deg,dec_deg=radec2deg(ra[i],dec[i])
-            xtab=add_circular_region(xtab,ra_deg,dec_deg,size[i],icolor[i])
-            i+=1
-        if outroot=='':
-            outname='SlitMap_%05d' % exposure
-        else:
-            outname='%s_%05d' % (outroot,exposure)
-        write_reg(outname+'.reg',xtab,color='yellow')
+        do_one(one_file,ra,dec,size,outroot='')
 
-
+    return
 
 
 

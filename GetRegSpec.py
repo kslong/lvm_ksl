@@ -191,6 +191,73 @@ def get_spec(filename,xfib,nfib=1,xtype='ave'):
     return xspec
 
 
+def do_one(filename,source_reg,source_reg_color,back_reg=None, back_reg_color=None, xtype='ave',root='Spec'):
+
+    try:
+        x=fits.open(filename)
+    except:
+        print('Error: could not open %s' % filename)
+        return
+
+
+    source_fibers=read_reg(source_reg,source_reg_color)
+    print(source_fibers)
+
+    if len(source_fibers)==0:
+        return
+
+    if xtype=='sum':
+        xspec=get_spec(filename=filename,xfib=source_fibers,nfib=len(source_fibers),xtype='ave')
+    else:
+        xspec=get_spec(filename=filename,xfib=source_fibers,nfib=len(source_fibers),xtype=xtype)
+
+    if back_reg!=None:
+        bfibers=read_reg(back_reg,back_reg_color)
+        bspec=get_spec(filename=filename,xfib=bfibers,nfib=len(bfibers),xtype='med')
+        xspec['SOURCE_FLUX']=xspec['FLUX']
+        xspec['SOURCE_ERROR']=xspec['ERROR']
+        xspec['FLUX']-=bspec['FLUX']
+        xspec['ERROR']=np.sqrt(xspec['ERROR']*xspec['ERROR']+bspec['ERROR']*bspec['ERROR'])
+        xspec['BACK_FLUX']=bspec['FLUX']
+        xspec['BACK_ERROR']=bspec['ERROR']
+
+    print('Taking spectra from\n',source_fibers['fiberid'])
+    if xtype=='sum':
+        xspec['FLUX']*=len(source_fibers)
+        xspec['ERROR']*=len(source_fibers)
+        xspec['SKY']*=len(source_fibers)
+        xspec['SKY_ERROR']*=len(source_fibers)
+        if back_reg!=None:
+            xspec['BACK_FLUX']*=len(source_fibers)
+            xspec['BACK_ERROR']*=len(source_fibers)
+            xspec['SOURCE_FLUX']*=len(source_fibers)
+            xspec['SOURCE_ERROR']*=len(source_fibers)
+
+    exposure=x['PRIMARY'].header['EXPOSURE']
+
+
+    outname='%s_%05d' % (root,exposure)
+
+    if xtype=='med':
+        outname='%s_med' % (outname)
+    elif xtype=='sum':
+        outname='%s_sum' % (outname)
+    else:
+        outname='%s_ave' % (outname)
+
+    if back_reg!=None:
+        outname='%s_back' % (outname)
+
+
+
+    # xspec.meta['comments']=['Filename %s' % filename,'RA %.5f' % ra, 'Dec %.5f' % dec, 'nfibers %d' % (len(fibers))]
+
+
+    xspec.write('%s.txt'% outname,format='ascii.fixed_width_two_line',overwrite=True)
+
+    print('The output file is %s.txt' % (outname))
+
+
 
 
 
@@ -249,80 +316,9 @@ def steer(argv):
         i+=1
 
 
-    print('source.reg',source_reg,source_reg_color)
-    print('back.reg',back_reg,back_reg_color)
+    do_one(filename,source_reg,source_reg_color,back_reg, back_reg_color, xtype,root)
 
-
-    source_fibers=read_reg(source_reg,source_reg_color)
-    print(source_fibers)
-
-
-    try:
-        x=fits.open(filename)
-    except:
-        print('Error: could not open %s' % filename)
-        return
-
-
-
-
-    if len(source_fibers)==0:
-        return
-
-    if xtype=='sum':
-        xspec=get_spec(filename=filename,xfib=source_fibers,nfib=len(source_fibers),xtype='ave')
-    else:
-        xspec=get_spec(filename=filename,xfib=source_fibers,nfib=len(source_fibers),xtype=xtype)
-
-    if back_reg!=None:
-        bfibers=read_reg(back_reg,back_reg_color)
-        bspec=get_spec(filename=filename,xfib=bfibers,nfib=len(bfibers),xtype='med')
-        xspec['SOURCE_FLUX']=xspec['FLUX']
-        xspec['SOURCE_ERROR']=xspec['ERROR']
-        xspec['FLUX']-=bspec['FLUX']
-        xspec['ERROR']=np.sqrt(xspec['ERROR']*xspec['ERROR']+bspec['ERROR']*bspec['ERROR'])
-        xspec['BACK_FLUX']=bspec['FLUX']
-        xspec['BACK_ERROR']=bspec['ERROR']
-
-    print('Taking spectra from\n',source_fibers['fiberid'])
-    if xtype=='sum':
-        xspec['FLUX']*=len(source_fibers)
-        xspec['ERROR']*=len(source_fibers)
-        xspec['SKY']*=len(source_fibers)
-        xspec['SKY_ERROR']*=len(source_fibers)
-        if back:
-            xspec['BACK_FLUX']*=len(source_fibers)
-            xspec['BACK_ERROR']*=len(source_fibers)
-            xspec['SOURCE_FLUX']*=len(source_fibers)
-            xspec['SOURCE_ERROR']*=len(source_fibers)
-
-    exposure=x['PRIMARY'].header['EXPOSURE']
-
-
-    outname='%s_%05d' % (root,exposure)
-
-    if xtype=='med':
-        outname='%s_med' % (outname)
-    elif xtype=='sum':
-        outname='%s_sum' % (outname)
-    else:
-        outname='%s_ave' % (outname)
-
-    if back_reg!=None:
-        outname='%s_back' % (outname)
-
-
-
-    # xspec.meta['comments']=['Filename %s' % filename,'RA %.5f' % ra, 'Dec %.5f' % dec, 'nfibers %d' % (len(fibers))]
-
-
-    xspec.write('%s.txt'% outname,format='ascii.fixed_width_two_line',overwrite=True)
-
-    print('The output file is %s.txt' % (outname))
-
-
-
-
+    return
 
 
 

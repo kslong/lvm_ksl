@@ -299,7 +299,7 @@ def steer(argv):
     exposure=x['PRIMARY'].header['EXPOSURE']
 
 
-    outname='%s_%05d_test' % (root,exposure)
+    outname='%s_%05d' % (root,exposure)
 
     if xtype=='med':
         outname='%s_med' % (outname)

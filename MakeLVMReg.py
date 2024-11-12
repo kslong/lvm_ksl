@@ -13,7 +13,7 @@ region
 
 Command line usage (if any):
 
-    usage: MakeReg.py filename
+    usage: MakeLVMReg.py -h -root whatever -circle ra dec size -circle ra dec size  file1  file 2
 
 Description:  
 
@@ -156,18 +156,8 @@ def get_closest(fiber_pos,xra,xdec):
     return fiber_pos
 
 
+def add_circular_region(xtab,ra,dec,radius,color):
 
-def do_circular(filename,ra,dec,radius,outname='',color='yellow',target_type='science'):
-    '''
-    This version allows one to give a circular region a diffrent color from the other
-    fibers
-    '''
-    x=fits.open(filename)
-    xtab=Table(x['SLITMAP'].data)
-    xtab.info()
-    xtab=xtab[xtab['fibstatus']==0]
-    xtab=xtab[xtab['targettype']==target_type]
-    xtab['color']=color
     xtab['row_no']=np.arange(len(xtab))
     
     fib_no=get_closest(fiber_pos=xtab.copy(),xra=ra,xdec=dec)
@@ -182,20 +172,36 @@ def do_circular(filename,ra,dec,radius,outname='',color='yellow',target_type='sc
         return []
 
     for one in xfib:
-        xtab['color'][one['row_no']]='red'
+        xtab['color'][one['row_no']]=color
+    return xtab
+
+    
+
+
+def do_circular(filename,ra,dec,radius,outname='',color='red',target_type='science'):
+    '''
+    This version allows one to give a circular region a diffrent color from the other
+    fibers
+    '''
+    xtab=get_good_fibers(filename,color='yellow',target_type='science')
+    xtab= add_circular_region(xtab,ra,dec,radius,color)
+
 
     if outname=='':
         word=filename.split('/')
         outname=word[-1].replace('.fits','.reg')
     write_reg(outname,xtab,color)
                     
-    
+def get_good_fibers(filename,color='yellow',target_type='science'):    
+    '''
+    Just get the good fibers in the field and return the slitmap table
+    along with exposure number
+    '''
+    try:
+        x=fits.open(filename)
+    except:
+        print('Error: Could not find :',filename)
 
-def do_simple(filename,outname='',color='yellow',target_type='science'):
-    '''
-    This version just makes a region file for all of the good science fibers
-    '''
-    x=fits.open(filename)
     xtab=Table(x['SLITMAP'].data)
     xtab.info()
     xtab=xtab[xtab['fibstatus']==0]
@@ -203,10 +209,20 @@ def do_simple(filename,outname='',color='yellow',target_type='science'):
     print(np.unique(xtab['targettype']))
     print(np.unique(xtab['fibstatus'],return_counts=True))
     xtab['color']=color
-    if outname=='':
-        word=filename.split('/')
-        outname=word[-1].replace('.fits','.reg')
-    write_reg(outname,xtab,color)
+    exposure=x[0].header['EXPOSURE']
+    return xtab,exposure
+
+def do_simple(filename,outroot='',color='yellow',target_type='science'):
+    '''
+    This version just makes a region file for all of the good science fibers
+    '''
+    xtab,exposure=get_good_fibers(filename,color='yellow',target_type='science')
+    if outroot=='':
+        outname='SlitMap_%05d' % exposure
+    else:
+        outname='%s_%05d' % (outroot,exposure)
+    write_reg(outname+'.reg',xtab,color)
+    return xtab,exposure
                     
     
 
@@ -214,17 +230,38 @@ def do_simple(filename,outname='',color='yellow',target_type='science'):
 
 def steer(argv):
     '''
-    MakeReg.py [-h] [-root whatever] 
+    MakeReg.py [-h] [-root whatever]  file1 file2   ra dec size ra dec size  
+    or
+
+    MakeReg.py -h -root whatever -circle ra dec size -circle ra dec size  file1  file 2
+
+    or 
+
+    MakeReg.py  n103b.txt file 1 file 2 
     '''
-    ra=None
-    dec=None
-    size=None
+    ra=[]  
+    dec=[]  
+    size=[]  
     filename=[]
+    outroot=''
+    icolor=['red','green','blue','cyan','magenta','black','white']
 
     i=1
     while i<len(argv):
-        if argv[i][0:2]=='h':
-            print(__doc__return)
+        if argv[i][0:2]=='-h':
+            print(__doc__)
+            return
+        elif argv[i]=='-root':
+            i+=1
+            outroot=argv[i]
+        elif argv[i]=='-circle':
+            print('gotcha')
+            i+=1
+            ra.append(argv[i])
+            i+=1
+            dec.append(argv[i])
+            i+=1
+            size.append(eval(argv[i]))
         elif argv[i][0]=='-' and ra==None:
             print('Error: cannot parse command line :',argv)
             return
@@ -238,13 +275,20 @@ def steer(argv):
             size=eval(argv[i])
         i+=1
 
-    if dec==None:
-        for one_file in filename:
-            do_simple(one_file)
-    else:
-        ra,dec=radec2deg(ra,dec)
-        for one_file in filename:
-            do_circular(one_file,ra,dec,size,outname='',color='yellow',target_type='science')
+
+
+    for one_file in filename:
+        xtab,exposure=get_good_fibers(one_file,color='yellow',target_type='science')
+        i=0
+        while i<len(size):
+            ra_deg,dec_deg=radec2deg(ra[i],dec[i])
+            xtab=add_circular_region(xtab,ra_deg,dec_deg,size[i],icolor[i])
+            i+=1
+        if outroot=='':
+            outname='SlitMap_%05d' % exposure
+        else:
+            outname='%s_%05d' % (outroot,exposure)
+        write_reg(outname+'.reg',xtab,color='yellow')
 
 
 

@@ -163,8 +163,8 @@ def add_circular_region(xtab,ra,dec,radius,color):
     fib_no=get_closest(fiber_pos=xtab.copy(),xra=ra,xdec=dec)
     xfib=fib_no[fib_no['Sep']<=radius]
     # xfib is a table with only those fibers that satisfy the conditions
-    print(ra,dec)
-    print(xfib['row_no','Sep','ra','dec','fiberid'])
+    # print(ra,dec)
+    # print(xfib['row_no','Sep','ra','dec','fiberid'])
     if len(xfib)==0:
         xfib=fib_no[0]
     if xfib['Sep'][0]>70:
@@ -203,11 +203,10 @@ def get_good_fibers(filename,color='yellow',target_type='science'):
         print('Error: Could not find :',filename)
 
     xtab=Table(x['SLITMAP'].data)
-    xtab.info()
     xtab=xtab[xtab['fibstatus']==0]
     xtab=xtab[xtab['targettype']==target_type]
-    print(np.unique(xtab['targettype']))
-    print(np.unique(xtab['fibstatus'],return_counts=True))
+    # print(np.unique(xtab['targettype']))
+    # print(np.unique(xtab['fibstatus'],return_counts=True))
     xtab['color']=color
     exposure=x[0].header['EXPOSURE']
     return xtab,exposure
@@ -237,7 +236,9 @@ def do_one(filename,ra,dec,size,outroot=''):
         outname='SlitMap_%05d' % exposure
     else:
         outname='%s_%05d' % (outroot,exposure)
-    write_reg(outname+'.reg',xtab,color='yellow')
+    outfile=outname+'.reg'
+    write_reg(outfile,xtab,color='yellow')
+    return outfile
 
 
 

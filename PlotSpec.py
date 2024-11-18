@@ -47,13 +47,14 @@ from astropy.io import fits
 import numpy as np
 
 def do_one_region(spectab,wmin=3600,wmax=4100,frac=0.1):
-    xx=spectab[spectab['WAVE']>wmin]
-    xx=xx[xx['WAVE']<wmax]
+    extra=10
+    xx=spectab[spectab['WAVE']>wmin-extra]
+    xx=xx[xx['WAVE']<wmax+extra]
     mask=np.isfinite(xx['FLUX'])
     xx=xx[mask]
     good=np.where(mask)[0]
     plt.plot(xx['WAVE'],xx['FLUX'])
-    plt.xlim(wmin,wmax)
+    plt.xlim(wmin-extra,wmax+extra)
     if frac<1.0:
         ymin,ymax=plt.ylim()
         ymin=np.median(xx['FLUX'])-0.05*ymax
@@ -64,45 +65,47 @@ def xmark(line='[SIII]',w=9069.3,frac=0.8):
 
     ymin,ymax=plt.ylim()
     # print(w,ymin,ymax)
-    plt.text(w,frac *ymax,line,ha='center',clip_on=True)
+    plt.text(w,frac *ymax,line,ha='center',color='red',clip_on=True)
 
 def do_lines():
     xmark('[OII]', 3728)
-    xmark('OIII',4363.15)
+    xmark('[OIII]',4363.15,.6)
+    xmark('[OIII]',5006.843)
+    xmark('[OI]',6300.3)
     xmark('[SIII]',9069.3)
     xmark('[SIII]',9532.3)
     xmark('HI',8862)
     xmark('HI',9014)
-    xmark('ArIII',7135.67)
-    xmark('CaII',7291)
-    xmark('CaII',7323.72)
-    xmark('CaII',3933.61)
-    xmark('SII',6720)
-    xmark(r'H$\alpha$',6563)
+    xmark('[ArIII]',7135.67)
+    xmark('[CaII]',7291)
+    xmark('[CaII]',7323.72)
+    xmark('CaII',3933.61,0.6)
+    xmark('[SII]',6720)
+    xmark(r'H$\alpha$/[NII]',6563)
     xmark(r'H$\beta$',4861)
-    xmark('NeIII',3868.69)
-    xmark('NeIII',3967)
-    xmark('HI',4104.73)
-    xmark('HI',4340.46)
+    xmark('[NeIII]',3868.69)
+    xmark('[NeIII]',3967)
+    xmark(r'H$\delta$',4104.73)
+    xmark(r'H$\gamma$',4340.46)
     xmark('HI', 9229.02)
     xmark('HeII',4199.83)
     xmark('HeII',4685.74)
     xmark('HeI',5875.6)
     xmark('HeI', 6678.2)
-    xmark('NII',5754.5)
-    xmark('SIII',6310.05)
-    xmark('FeVII',4987.17)
-    xmark('FeVII',5157.45)
-    xmark('FeII',8617.0)
-    xmark('FeII',8891.9)
-    xmark('SII',4076.27)
+    xmark('[NII]',5754.5)
+    xmark('[SIII]',6310.05,0.6)
+    xmark('FeVII',4987.17,0.6)
+    xmark('FeVII',5157.45,0.6)
+    xmark('[FeII]',8617.0)
+    xmark('[FeII]',8891.9)
+    xmark('[SII]',4076.27)
     xmark('HeI',3888.6,0.6)
     xmark('HI',3889.05,0.4)
     xmark('HI',3835.38)
     xmark('HI',3770.6)
     xmark('HI',3797.9)
-    xmark('MgI',4566.78) 
-    xmark('OII',7320.24,0.6)
+    xmark('[MgI]',4566.78) 
+    xmark('[OII]',7320.24,0.6)
     return
 
 
@@ -133,7 +136,7 @@ def do_all(xtab,frac=0.1):
 
 def steer(argv):
     '''
-    Steerrin routine for creating plots of
+    Steering routine for creating plots of
     the spectra
     '''
 
@@ -184,7 +187,7 @@ def steer(argv):
     words=filename.split('/')
     outname=words[-1].replace('.txt','')
     outname=outname.replace('.tab','')
-    plt.savefig('%s.png' % outname)
+    plt.savefig('%s.overview.png' % outname)
 
 
 

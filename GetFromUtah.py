@@ -108,7 +108,7 @@ def steer(argv):
     GetFromUtah -cp mjd exp_start exp_stop 
 
     '''
-    drp_ver="1.0.3"
+    drp_ver="1.1.0"
     copy=False
     xtile=1028683
     xtile='*'

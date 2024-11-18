@@ -109,7 +109,6 @@ def read_reg(xfile,color=None):
                     xfib=int(foo)
                 if one_word.count('color='):
                      zcolor=one_word.replace('color=','')
-                     print('gotcha', zcolor)
             fibers.append(xfib)
             colors.append(zcolor)
 
@@ -121,11 +120,10 @@ def read_reg(xfile,color=None):
         qtab=Table([qcolor,qcount],names=['color','ncount'])
         qtab.sort('ncount')
         color=qtab['color'][0]
-        print('Hi knox')
         print(qtab)
 
 
-    print('Selecting :', color)
+    # print('Selecting :', color)
     xtab=xtab[xtab['color']==color]
 
 
@@ -156,7 +154,6 @@ def get_spec(filename,xfib,nfib=1,xtype='ave'):
     sky=x['SKY'].data[xxfib['fiberid']-1]
     sky_ivar=x['SKY_IVAR'].data[xxfib['fiberid']-1]
     lsf=x['LSF'].data[xxfib['fiberid']-1]
-    # print(flux.shape)
 
     if xtype=='ave':
         xflux=np.nanmean(flux,axis=0)
@@ -172,13 +169,8 @@ def get_spec(filename,xfib,nfib=1,xtype='ave'):
         print('Error: getspec: only ave or med allowd for xtype')
         return
 
-    # print('z',xerr.shape)
     ivar=np.nansum(ivar,axis=0)
-    # print(xerr.shape)
     xerr=np.select([ivar>1],[1/np.sqrt(ivar)],default=np.nan)
-    # print(xflux.shape)
-    # print(xsky.shape)
-    # print(xmask.shape)
     xsky_error=np.nansum(sky_ivar,axis=0)
     xsky_error=np.select([xsky_error>1],[1/np.sqrt(xsky_error)],default=np.nan)
     xspec=Table([wave,xflux,xerr,xsky,xsky_error,xmask,xlsf],names=['WAVE','FLUX','ERROR','SKY','SKY_ERROR','MASK','LSF'])
@@ -199,11 +191,12 @@ def do_one(filename,source_reg,source_reg_color,back_reg=None, back_reg_color=No
         print('Error: could not open %s' % filename)
         return
 
+    print('\n Starting :', filename)
 
     source_fibers=read_reg(source_reg,source_reg_color)
-    print(source_fibers)
 
     if len(source_fibers)==0:
+        print('Error: No good science fibers for source')
         return
 
     if xtype=='sum':
@@ -211,8 +204,10 @@ def do_one(filename,source_reg,source_reg_color,back_reg=None, back_reg_color=No
     else:
         xspec=get_spec(filename=filename,xfib=source_fibers,nfib=len(source_fibers),xtype=xtype)
 
+    print('Taking spectra from: ',list(source_fibers['fiberid']))
     if back_reg!=None:
         bfibers=read_reg(back_reg,back_reg_color)
+        print('Taking background from: ',list(bfibers['fiberid']))
         bspec=get_spec(filename=filename,xfib=bfibers,nfib=len(bfibers),xtype='med')
         xspec['SOURCE_FLUX']=xspec['FLUX']
         xspec['SOURCE_ERROR']=xspec['ERROR']
@@ -221,7 +216,6 @@ def do_one(filename,source_reg,source_reg_color,back_reg=None, back_reg_color=No
         xspec['BACK_FLUX']=bspec['FLUX']
         xspec['BACK_ERROR']=bspec['ERROR']
 
-    print('Taking spectra from\n',source_fibers['fiberid'])
     if xtype=='sum':
         xspec['FLUX']*=len(source_fibers)
         xspec['ERROR']*=len(source_fibers)
@@ -252,10 +246,13 @@ def do_one(filename,source_reg,source_reg_color,back_reg=None, back_reg_color=No
 
     # xspec.meta['comments']=['Filename %s' % filename,'RA %.5f' % ra, 'Dec %.5f' % dec, 'nfibers %d' % (len(fibers))]
 
+    outname='%s.txt'% outname
 
-    xspec.write('%s.txt'% outname,format='ascii.fixed_width_two_line',overwrite=True)
 
-    print('The output file is %s.txt' % (outname))
+    xspec.write(outname,format='ascii.fixed_width_two_line',overwrite=True)
+
+    print('The output file is %s' % (outname))
+    return outname
 
 
 

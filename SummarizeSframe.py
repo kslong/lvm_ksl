@@ -16,6 +16,12 @@ Command line usage (if any):
 
 Description:  
 
+    where:
+
+    exp_start is the number is the exposure to start with
+    exp_stop is the number of the exposure to stop with
+    delta is the number of exposures to skip in creating the output image
+
 Primary routines:
 
     doit
@@ -51,6 +57,7 @@ def read_drpall(drp_ver='1.0.3'):
             print('Error: Could not locate : ', xfile)
             return []
 
+    print('Opening : ', xfile)
     try:
         drpall=fits.open(xfile)
     except:
@@ -237,7 +244,7 @@ def make_med_spec(xtab,data_dir,outfile=''):
 
 
 
-def doit(exp_start=4000,exp_stop=8000,delta=5,exp_min=900.,out_name='',drp_ver='1.0.3'):
+def doit(exp_start=4000,exp_stop=8000,delta=5,exp_min=900.,out_name='',drp_ver='1.1.0'):
     xtop=find_top()
     xtab=read_drpall(drp_ver)
     ztab=select(xtab,exp_start,exp_stop,delta)
@@ -282,7 +289,7 @@ def steer(argv):
         delta=1
                 
 
-    doit(exp_start,exp_stop,delta,exp_min,out_name,drp_ver='1.0.3')
+    doit(exp_start,exp_stop,delta,exp_min,out_name,drp_ver='1.1.0')
 
 
 

@@ -6,18 +6,55 @@
 
 Synopsis:  
 
-Combine multiple LVM row-stacked spectra into a 
+Combine multiple LVM row-stacked (SFrame) spectra into a 
 sincle row-staked spectrum, by creating a grid 
-of fibegs that cover the entire area, and then
+of fibers that cover the entire area, and then
 assigning portions of the spectra of various fibers 
 to the final one.
 
 
 Command line usage (if any):
 
-    usage: rss_combine.py filename
+    usage: rss_combine.py [-orig] [-sum] [-outroot xxxx] filenames
+
+    where 
+        -outroot xxxx   sets the name for the output file
+        -orig           instead of creating set of output fibers on
+                        a regular grid, here
+                        the 'output' fiber positions are taken to
+                        be the average of the positions of the input
+                        fibers; the fractional contributions are still
+                        calculated.
+        -sum            instead of calculating fractional contributions
+                        to the various 'output' fibers and dividing 
+                        here the entire input fiber spectra  is added to one
+                        of the 'output' fibers (assuming there is a
+                        fiber which is near enough.  As in -orig, the
+                        output fiber locations are taken from the input
+                        fiber locations.  
+                   
 
 Description:  
+
+    The routine sums muliple RSS images to create a final output image,
+    with various options
+
+    With no switchhes the routine reads the input SFrames, and constructs
+    'output' fiber postions on a regular grid on the sky. Given the 
+    positions of these fibers it apportions flux from the original images
+    to the outuput fibers, based on the area of overlap.  
+
+    With the -orig switch, the output grid is constructed from the input 
+    grid, based on the average postion (ra, and dec) of each of the input
+    fibers.  The original spectra are still apportion based ont he overlaps.
+    This may be a better approach for a single tile than the regular grid
+    approach
+
+    With the -sum switch the postions of the rss fibers in the outuput image
+    are taken as above, but additionally instead of splitting the spectra
+    between output fibers, all of the flux from an imput fiber is assinged
+    to one ouput fiber.  This may be the best approach if the input SFrame
+    files were not dithered.
 
 Primary routines:
 
@@ -57,13 +94,24 @@ def get_size(xfiles,rad=0.25):
         ra.append(x['PRIMARY'].header['TESCIRA'])
         dec.append(x['PRIMARY'].header['TESCIDE'])
     xtab=Table([xfiles,ra,dec],names=['Filename','RA','Dec'])
+    ra_max=np.max(xtab['RA'])
+    ra_min=np.min(xtab['RA'])
+    dec_max=np.max(xtab['Dec'])
+    dec_min=np.min(xtab['Dec'])
+
+    ra_cen=0.5*(ra_max+ra_min)
+    dec_cen=0.5*(dec_max+dec_min)
+
+    delta_dec=dec_max-dec_min
+    delta_ra=(ra_max-ra_min)*np.cos(dec_cen/57.29578)
+    size=np.max([delta_ra,delta_dec])+2*rad
     # print(xtab)
-    ra_cen=np.average(xtab['RA'])
-    dec_cen=np.average(xtab['Dec'])
-    delta_dec=np.max(np.fabs(xtab['Dec']-dec_cen))
-    delta_ra=np.max(np.fabs(xtab['RA']-ra_cen))*np.cos(dec_cen/57.29578)
+    #old ra_cen=np.average(xtab['RA'])
+    #old dec_cen=np.average(xtab['Dec'])
+    # delta_dec=np.max(np.fabs(xtab['Dec']-dec_cen))
+    # delta_ra=np.max(np.fabs(xtab['RA']-ra_cen))*np.cos(dec_cen/57.29578)
     # print(delta_dec,delta_ra)
-    size=2*rad+np.max([delta_ra,delta_dec])
+    # size=2*rad+np.max([delta_ra,delta_dec])
     print('RA: %10.6f Dec: %10.6f size: %.1f' % (ra_cen,dec_cen,size))
     return ra_cen,dec_cen,size
     
@@ -109,6 +157,30 @@ def create_wcs(ra_deg, dec_deg,pos_ang, size_deg):
     wcs.wcs.ctype = ["RA---TAN", "DEC--TAN"]  # Tangential (gnomonic) projection
     
     return wcs
+
+def create_wcs_from_points(xpos,ypos,ra_deg,dec_deg):
+    '''
+    Create an wcs, from a series of points, and RA's a Dec's
+    where scale represents to conversion
+    '''
+    pix_coords=(xpos,ypos)
+    sky_coords = SkyCoord(ra=ra_deg, dec=dec_deg, unit="deg", frame="icrs")
+    wcs = fit_wcs_from_points(pix_coords, sky_coords, proj_point="center")
+    # Fit the WCS using fit_wcs_from_points
+    try:
+        wcs = fit_wcs_from_points(pix_coords, sky_coords, proj_point="center")
+        print("WCS successfully generated:")
+        print(wcs)
+        success=True
+    except Exception as e:
+        print(f"Failed to generate WCS: {e}")
+        success=False
+
+    if success==True:
+        return wcs
+    else:
+        return Null
+
 
 
 def generate_grid(wcs, spacing_arcsec):
@@ -287,8 +359,8 @@ def get_wcs(header):
 def prep_tables_square(wcs,filenames):
     '''
     This reads all of the files and finds the xy positions in a new WCS.  
-    This version uses a wcs that has already been creaed to get x,y positions
-    in that apace
+    This version uses a wcs that has already been created to get x,y positions
+    in that space
 
     This returns a list of tables
     '''
@@ -346,6 +418,35 @@ def prep_tables_square(wcs,filenames):
         one_tab=one_tab[one_tab['fibstatus']==0]
     return slit
 
+def get_nearest(main_table,xtab,dd=35):
+    '''
+    Assign the closest pixel to each fiber in xtab to
+    one in the final rss file.  But do not
+    add if there is no overlap at all
+
+    This is written to be analogous to frac_cale2
+    '''
+
+    dd2=dd*dd
+    xtables=[]
+    ff=np.array([1.])  # We are going to assign the flull vlaue of the flux to 1 fiber
+
+    for one_row in main_table:
+        xtab['d2']=(xtab['X']-one_row['X'])**2+(xtab['Y']-one_row['Y'])**2
+        qtab=xtab[xtab['d2']<dd2]
+        if len(qtab)>0:
+            qtab.sort(['d2'])
+            # So at this point we have the nearest fitst
+            qtab=Table(qtab[0]) # We only want one fiber
+            qtab['fib_master']=one_row['fiberid']
+            qtab['frac']=ff
+            xtables.append(qtab)
+    ztab=vstack(xtables) 
+    ztab.sort(['fib_master'])
+    return ztab
+
+
+
 
 def frac_calc2(main_table,xtab,dd=35.):
     '''
@@ -376,24 +477,105 @@ def frac_calc2(main_table,xtab,dd=35.):
     ztab.sort(['fib_master'])
     return ztab
 
+def gen_average_slit_tab(wcs,filenames):
+    '''
+    Create a slit_tab that contions the averagy ra's
+    and decs of each fiber which can be used to 
+    define a set of output fibers 
+    '''
+
+    ra=[]
+    dec=[]
+    base_tab=[]
+    for one_file in filenames:
+        x=fits.open(one_file)
+        ztab=Table(x['SLITMAP'].data)
+        ztab=ztab[ztab['telescope']=='Sci']
+        if len(base_tab)==0:
+            base_tab=ztab.copy()
+            base_tab['orig_fiberid']=base_tab['fiberid']
+        ra.append(np.array(ztab['ra']))
+        dec.append(np.array(ztab['dec']))
+    ra=np.array(ra)
+    xra=np.nanmedian(ra,axis=0)
+    xdec=np.nanmedian(dec,axis=0)
+    base_tab['ra']=xra
+    base_tab['dec']=xdec
+
+    ra_med=np.nanmedian(ra,axis=1)
+    dec_med=np.nanmedian(dec,axis=1)
+    ddd=np.nanmedian(dec_med)
+    ctheta=np.cos(np.deg2rad(ddd))
+    print(ctheta)
+
+    delta_ra=3600*(np.max(ra_med)-np.min(ra_med))
+    delta_dec=3600*(np.max(dec_med)-np.min(dec_med))
 
 
-def do_square(filenames,outroot=''):
+
+    print('Standard dev of offsets RA %.1f Dec %.1f' % (3600*np.std(ra_med)*ctheta,3600*np.std(dec_med)))
+    print('Max-min of offsets      RA %.1f Dec %.1f' % (delta_ra*ctheta,delta_dec))
+
+    ra_deg=np.array(base_tab['ra'])
+    dec_deg=np.array(base_tab['dec'])
+
+    x,y = wcs.world_to_pixel(SkyCoord(ra=ra_deg, dec=dec_deg, unit="deg"))
+
+    base_tab['X']=x
+    base_tab['Y']=y
+
+    center_x, center_y = wcs.wcs.crpix
+
+    print('hello',center_x,center_y)
+    print('hello',len(base_tab))
+
+    base_tab=base_tab[base_tab['X']>0]
+    base_tab=base_tab[base_tab['Y']>0]
+
+    print('hello',len(base_tab))
+
+
+    base_tab=base_tab[base_tab['X']< 2 * center_x]
+    base_tab=base_tab[base_tab['Y']< 2 * center_y]
+    print('hello',len(base_tab))
+
+    # Having eliminated some fibers, we need to renumber the master fibers
+    base_tab['fiberid']=np.arange(len(base_tab))+1
+
+    
+    print(x)
+
+    # Now we need to use the base_tab and calculate
+    return base_tab['fiberid','orig_fiberid','X','Y','ra','dec']
+
+
+
+def do_square(filenames,outroot='',fib_type='xy'):
     ''' 
     This is supposed to do the whole process
     '''
     # First get the new WCS
      
     ra_center,dec_center,diam=get_size(xfiles=filenames,rad=0.25)
+    print('ra,dec,size : %.2f %.2f %.2f' % (ra_center,dec_center,diam))
 
     # Now make a wcs
     wcs = create_wcs(ra_center, dec_center,0., diam)
 
     # Now create the new apetures; we need to do this here to we can set image sizes
 
-    new_slitmap_table=generate_grid(wcs,35.)
+    if fib_type=='xy':
+        new_slitmap_table=generate_grid(wcs,35.)
+    elif fib_type=='orig' or fib_type=='sum':
+        new_slitmap_table=gen_average_slit_tab(wcs,filenames)
+    else:
+        print('Error: Option for creating output fibers is unknwon : ',fib_type)
+        return
 
-    new_slitmap_table.info()
+
+
+    # new_slitmap_table.write('x%s.txt' % outroot,format='ascii.fixed_width_two_line',overwrite=True)
+    # new_slitmap_table.info()
 
     # Now create a table that contains the positions of all of the fibeers in the wc that was created
 
@@ -406,7 +588,10 @@ def do_square(filenames,outroot=''):
 
     zslit=[]
     for one_tab in slit:
-        one_tab=frac_calc2(new_slitmap_table,one_tab)
+        if fib_type=='sum':
+            one_tab=get_nearest(new_slitmap_table,one_tab)
+        else:
+            one_tab=frac_calc2(new_slitmap_table,one_tab)
         zslit.append(one_tab)
     print('test',len(slit))
 
@@ -428,20 +613,12 @@ def do_square(filenames,outroot=''):
     final.append(foo['SLITMAP'])
     print('Adding WCS')
     print(wcs)
-    # replace_header(foo['PRIMARY'].header,wcs)
-    # final['PRIMARY'].header['MOSAIC']='TRUE'
-    # 
 
     xheader = wcs.to_header()
     data = np.random.rand(6, 6)
     image_hdu = fits.ImageHDU(data=data, header=xheader, name="WCS_INFO")
     final.append(image_hdu)
     
-                 
-                 
-    
-
-    # final=copy_fits_file(filenames[0])
     shape=[len(new_slitmap_table),12401]
     zero_array = np.zeros(shape, dtype=np.float32)
 
@@ -461,10 +638,6 @@ def do_square(filenames,outroot=''):
     eflux=np.zeros_like(final['FLUX'].data)
     new_slitmap_table['EXPOSURE']=0.0
 
-
-
-    # final.info()
-    # zslit[0].info()
     i=0
     while i<len(filenames):
         x=fits.open(filenames[i])
@@ -503,15 +676,9 @@ def do_square(filenames,outroot=''):
     plt.hist(new_slitmap_table['EXPOSURE'].data,1000,range=(0,len(filenames)),cumulative=-1,density=True)
 
     
-    # plt.ylim(0,10)  
-    # print('At end  %e' % (np.nanmedian(final['FLUX'].data[102])))
-    # print('At exp  %e' % (np.nanmean(final['EXPOSURE'].data[102])))
     final['EXPOSURE'].data[final['EXPOSURE'].data==0]= 1.
     final['FLUX'].data/=final['EXPOSURE'].data
-    # final['SKY'].data/=final['EXPOSURE'].data
     final['IVAR'].data=final['EXPOSURE'].data*final['EXPOSURE'].data/(eflux)
-    # final['IVAR'].data=1./(eflux)
-    # final['SKY_IVAR'].data=final['EXPOSURE'].data*final['EXPOSURE'].data/(esflux)
 
     hdu = fits.BinTableHDU(new_slitmap_table.as_array(), name='SLITMAP')
     final['SLITMAP']=hdu
@@ -531,12 +698,14 @@ def do_square(filenames,outroot=''):
     if outroot=='':
         outroot='test_square'
 
+    new_slitmap_table.write('%s.tab' % outroot,format='ascii.fixed_width_two_line',overwrite=True)
     final.writeto(outroot+'.fits',overwrite=True)
     
 
 def steer(argv):
     xfiles=[]
     outroot='xtest'
+    fib_type='xy'
     i=1
     while i<len(argv):
         if argv[i][0:2]=='-h':
@@ -545,6 +714,10 @@ def steer(argv):
         elif argv[i]=='-outroot':
             i+=1
             outroot=argv[i]
+        elif argv[i][:5]=='-orig' and fib_type!='sum':
+            fib_type='orig'
+        elif argv[i]=='-sum':
+            fib_type=='sum'
         elif argv[i][0]=='-':
             print('Could not parse command line:',argv)
             return
@@ -568,7 +741,7 @@ def steer(argv):
         for one_file in files:
             print(one_file)
 
-    do_square(files,outroot)   
+    do_square(files,outroot,fib_type)   
     
 
 

@@ -39,7 +39,7 @@ from datetime import datetime
 from astropy.wcs import WCS
 
 
-def read_drpall(drp_ver='1.0.3'):
+def read_drpall(drp_ver='1.1.0'):
     DRPFILE='drpall-%s.fits' % (drp_ver)
     # First try to locate the DRP file locally, otherwise
     if os.path.isfile(DRPFILE):
@@ -123,7 +123,7 @@ def scifib(xtab,select='all',telescope=''):
     return ztab
 
 
-def get_med_spec(filename= '/Users/long/Projects/lvm_data/sas/sdsswork/lvm/spectro/redux/1.0.3/0011XX/11111/60192/lvmSFrame-00004336.fits'):
+def get_med_spec(filename= '/Users/long/Projects/lvm_data/sas/sdsswork/lvm/spectro/redux/1.1.0/0011XX/11111/60192/lvmSFrame-00004336.fits'):
 
     if filename.count('SFrame'):
         filename=filename.replace('SFrame','CFrame')
@@ -227,7 +227,7 @@ def make_med_spec(xtab,data_dir,outfile=''):
 
 
 
-def doit(exp_start=4000,exp_stop=8000,delta=5,exp_min=900.,out_name='',drp_ver='1.0.3'):
+def doit(exp_start=4000,exp_stop=8000,delta=5,exp_min=900.,out_name='',drp_ver='1.1.0'):
     xtop=find_top()
     xtab=read_drpall(drp_ver)
     ztab=select(xtab,exp_start,exp_stop,delta)
@@ -271,7 +271,7 @@ def steer(argv):
         delta=1
                 
 
-    doit(exp_start,exp_stop,delta,exp_min,out_name,drp_ver='1.0.3')
+    doit(exp_start,exp_stop,delta,exp_min,out_name,drp_ver='1.1.0')
 
 
 

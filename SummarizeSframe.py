@@ -12,12 +12,16 @@ number of files
 
 Command line usage (if any):
 
-    usage: SummarizeSFrame.py  exp_start expstop delta
+    usage: SummarizeSFrame.py  [-h] [-percent 50] [-emin 900] [-out whatever] exp_start expstop delta
 
 Description:  
 
     where:
 
+    -h prints this documentatikon
+    -percent is the percentile to use in the calculation, if missing use median or 50
+    -emin sets the mimimum exposure time to include; the default is 900
+    -out is name or rootname of output fits file
     exp_start is the number is the exposure to start with
     exp_stop is the number of the exposure to stop with
     delta is the number of exposures to skip in creating the output image
@@ -130,7 +134,7 @@ def scifib(xtab,select='all',telescope=''):
     return ztab
 
 
-def get_med_spec(filename= '/Users/long/Projects/lvm_data/sas/sdsswork/lvm/spectro/redux/1.0.3/0011XX/11111/60192/lvmSFrame-00004336.fits'):
+def get_med_spec(filename= '/Users/long/Projects/lvm_data/sas/sdsswork/lvm/spectro/redux/1.0.3/0011XX/11111/60192/lvmSFrame-00004336.fits',percentile=50):
     try:
         x=fits.open(filename)
     except:
@@ -153,8 +157,14 @@ def get_med_spec(filename= '/Users/long/Projects/lvm_data/sas/sdsswork/lvm/spect
     sci_sky=np.ma.masked_array(sci_sky,sci_mask)
     sci_var=np.ma.masked_array(sci_var,sci_mask)
 
-    sci_flux_med=np.ma.median(sci_flux,axis=0)
-    sci_sky_med=np.ma.median(sci_sky,axis=0)
+    if pecentile==50:
+        sci_flux_med=np.ma.median(sci_flux,axis=0)
+        sci_sky_med=np.ma.median(sci_sky,axis=0)
+    else:
+        sci_flux = np.ma.filled(sci_flux, np.nan)
+        sci_sky  = np.ma.filled(sci_sky, np.nan)
+        sci_flux_med=np.nanmedian(sci_flux,axis=0)
+        sci_sky_med=np.nanmedian(sci_sky,axis=0)
 
     # The inverse variance has to be multipled by the number of science fibers/(1.253)**2 to get the 
     # inverse variance of the mediane
@@ -244,13 +254,13 @@ def make_med_spec(xtab,data_dir,outfile=''):
 
 
 
-def doit(exp_start=4000,exp_stop=8000,delta=5,exp_min=900.,out_name='',drp_ver='1.1.0'):
+def doit(exp_start=4000,exp_stop=8000,delta=5,exp_min=900.,out_name='',drp_ver='1.1.0',percentile=50):
     xtop=find_top()
     xtab=read_drpall(drp_ver)
     ztab=select(xtab,exp_start,exp_stop,delta)
     
     if out_name=='':
-        out_name='XSframe_%d_%d_%d.fits' % (exp_start,exp_stop,delta)
+        out_name='XSframe_%d_%d_%d_%d.fits' % (exp_start,exp_stop,delta,percentile)
     make_med_spec(xtab=ztab,data_dir=xtop,outfile=out_name)
 
 def steer(argv):
@@ -262,6 +272,7 @@ def steer(argv):
     delta=-1
 
     exp_min=900
+    percent=50
     out_name=''
 
     i=1
@@ -275,6 +286,9 @@ def steer(argv):
         elif argv[i]=='-out':
             i+=1
             out_name=(argv[i])
+        elif argv[i][:5]=='-perc':
+            i+=1
+            percent=eval(argv[i])
         elif argv[i][0]=='-':
             print('Unknown option : ',argv)
         elif exp_start<0:
@@ -289,7 +303,7 @@ def steer(argv):
         delta=1
                 
 
-    doit(exp_start,exp_stop,delta,exp_min,out_name,drp_ver='1.1.0')
+    doit(exp_start,exp_stop,delta,exp_min,out_name,drp_ver='1.1.0',percentile=percent)
 
 
 

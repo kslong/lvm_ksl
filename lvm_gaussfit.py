@@ -295,42 +295,93 @@ def fit_double_gaussian_to_spectrum(spectrum_table, line, init_wavelength1, init
 
 
 
-def do_one(spectrum_table,xplot=False):
+def do_one(spectrum_table,vel=0.,xplot=False):
+    '''
+    Completely process a single spectrum
+    '''
+
+    
+    zz=1.+ (vel/3e5)
 
     records=[]
-    results,xspec=fit_double_gaussian_to_spectrum(spectrum_table, line='oii',init_wavelength1=3726.092, init_wavelength2=3729.875, init_fwhm=2, wavelength_min=3717, wavelength_max=3737, plot=xplot)
+    try:
+        
+        results,xspec=fit_double_gaussian_to_spectrum(spectrum_table, line='oii',init_wavelength1=zz*3726.092, init_wavelength2=zz*3729.875, init_fwhm=1, wavelength_min=zz*3717, wavelength_max=zz*3737, plot=xplot)
+        records.append(results)
+    except Exception as e:
+        print(f"Fitting OII; An exception occurred: {e}")
+        print(f"Exception type: {type(e).__name__}")
     
-    records.append(results)
+    try:
+        results,xspec=fit_gaussian_to_spectrum(spectrum_table, line='hb',init_wavelength=zz*4861, init_fwhm=1., wavelength_min=zz*4855, wavelength_max=zz*4870, plot=xplot)
+        records.append(results)
+    except Exception as e:
+        print(f"Fitting Hb; An exception occurred: {e}")
+        print(f"Exception type: {type(e).__name__}")
     
-    results,xspec=fit_gaussian_to_spectrum(spectrum_table, line='hb',init_wavelength=4863, init_fwhm=1., wavelength_min=4855, wavelength_max=4870, plot=xplot)
-    records.append(results)
+    try:
+        results,xspec=fit_gaussian_to_spectrum(spectrum_table, line='oiii_a',init_wavelength=zz*4959, init_fwhm=1., wavelength_min=zz*4949, wavelength_max=zz*4969, plot=xplot)
+        records.append(results)
+    except Exception as e:
+        print(f"Fitting [OIII]4959; An exception occurred: {e}")
+        print(f"Exception type: {type(e).__name__}")
     
-    results,xspec=fit_gaussian_to_spectrum(spectrum_table, line='oiii_a',init_wavelength=4959, init_fwhm=1., wavelength_min=4949, wavelength_max=4969, plot=xplot)
-    records.append(results)
     
-    results,xspec=fit_gaussian_to_spectrum(spectrum_table, line='oiii_b', init_wavelength=5007, init_fwhm=1., wavelength_min=4997, wavelength_max=5017, plot=xplot)
-    records.append(results)
+    try:
+        results,xspec=fit_gaussian_to_spectrum(spectrum_table, line='oiii_b', init_wavelength=zz*5007, init_fwhm=1., wavelength_min=zz*4997, wavelength_max=zz*5017, plot=xplot)
+        records.append(results)
+    except Exception as e:
+        print(f"Fitting [OIII]5007; An exception occurred: {e}")
+        print(f"Exception type: {type(e).__name__}")
 
     
-    results,xspec=fit_gaussian_to_spectrum(spectrum_table, line='ha', init_wavelength=6563, init_fwhm=1., wavelength_min=6555, wavelength_max=6570, plot=xplot)
-    records.append(results)
+    try:
+        results,xspec=fit_gaussian_to_spectrum(spectrum_table, line='ha', init_wavelength=zz*6563, init_fwhm=1., wavelength_min=zz*6555, wavelength_max=zz*6570, plot=xplot)
+        records.append(results)
+    except Exception as e:
+        print(f"Fitting Ha An exception occurred: {e}")
+        print(f"Exception type: {type(e).__name__}")
 
     
-    results,xspec=fit_gaussian_to_spectrum(spectrum_table, line='nii_a',init_wavelength=6548, init_fwhm=1., wavelength_min=6538, wavelength_max=6558, plot=xplot)
-    records.append(results)
+    try:
+        results,xspec=fit_gaussian_to_spectrum(spectrum_table, line='nii_a',init_wavelength=zz*6548, init_fwhm=1., wavelength_min=zz*6538, wavelength_max=zz*6558, plot=xplot)
+        records.append(results)
+    except Exception as e:
+        print(f"Fitting [NII]6548:  An exception occurred: {e}")
+        print(f"Exception type: {type(e).__name__}")
     
-    results,xspec=fit_gaussian_to_spectrum(spectrum_table, line='nii_b',init_wavelength=6584, init_fwhm=1., wavelength_min=6574, wavelength_max=6594, plot=xplot)
-    records.append(results)
+    try:
+        results,xspec=fit_gaussian_to_spectrum(spectrum_table, line='nii_b',init_wavelength=zz*6584, init_fwhm=1., wavelength_min=zz*6574, wavelength_max=zz*6594, plot=xplot)
+        records.append(results)
+    except Exception as e:
+        print(f"Fitting [NII]6584:  An exception occurred: {e}")
+        print(f"Exception type: {type(e).__name__}")
+    
             
-    results,xspec=fit_gaussian_to_spectrum(spectrum_table, line='sii_a',init_wavelength=6716, init_fwhm=1., wavelength_min=6706, wavelength_max=6726, plot=xplot)
-    records.append(results)
+    try:
+        results,xspec=fit_gaussian_to_spectrum(spectrum_table, line='sii_a',init_wavelength=zz*6716, init_fwhm=1., wavelength_min=zz*6706, wavelength_max=zz*6726, plot=xplot)
+        records.append(results)
+    except Exception as e:
+        print(f"Fitting [SII]6716:  An exception occurred: {e}")
+        print(f"Exception type: {type(e).__name__}")
     
-    results,xspec=fit_gaussian_to_spectrum(spectrum_table, line='sii_b',init_wavelength=6731, init_fwhm=1., wavelength_min=6721, wavelength_max=6741, plot=xplot)
-    records.append(results)
+    
+    try:
+        results,xspec=fit_gaussian_to_spectrum(spectrum_table, line='sii_b',init_wavelength=zz*6731, init_fwhm=1., wavelength_min=zz*6721, wavelength_max=zz*6741, plot=xplot)
+        records.append(results)
+    except Exception as e:
+        print(f"Fitting [SII]6731:  An exception occurred: {e}")
+        print(f"Exception type: {type(e).__name__}")
+    
 
 
-    ztab=hstack(records)
-    # print(ztab)
+    try:
+        ztab=hstack(records)
+        return ztab
+    except:
+        print('Nothing fit for this spectrum')
+        return []
+
     return ztab
     
 
@@ -341,9 +392,11 @@ def scifib(xtab,select='all',telescope=''):
     type or all from a telescope from the slitmap table
     of a calbrated file
     '''
-    # print(np.unique(xtab['fibstatus']))
-    # print(np.unique(xtab['targettype']))
-    ztab=xtab[xtab['fibstatus']==0]
+    try:
+        ztab=xtab[xtab['fibstatus']==0]
+    except:
+        print('This table does not contain fibstatus, returning all rows')
+        return xtab
     if select=='all':
         ztab=ztab[ztab['targettype']!='standard']
     else:
@@ -356,10 +409,23 @@ def scifib(xtab,select='all',telescope=''):
     print('Found %d fibers' % len(ztab))
     return ztab
 
+def check_for_nan(flux,max_frac=0.5):
+    '''
+    Check an array for nans. Some number of which are allowed
+    '''
+    unique_elements, counts = np.unique(np.isnan(flux), return_counts=True)
+    if True in unique_elements:
+        nan_count = counts[unique_elements == True][0]
+    else:
+        return False
+
+    if nan_count>max_frac*len(flux):
+        return  True
+    else:
+        return False
 
 
-
-def do_all(filename='data/lvmSFrame-00009088.fits'):
+def do_all(filename='data/lvmSFrame-00009088.fits',vel=0.0):
     try:
         x=fits.open(filename)
     except:
@@ -380,16 +446,44 @@ def do_all(filename='data/lvmSFrame-00009088.fits'):
     for i in range(len(good)):
         j=good['fiberid'][i]-1
         one_spec=Table([wave,flux[j]],names=['WAVE','FLUX'])
-        rtab=do_one(spectrum_table=one_spec,xplot=False)
-        rtab['fiberid']=good['fiberid'][i]
-        rtab['ra']=good['ra'][i]
-        rtab['dec']=good['dec'][i]
-
-        records.append(rtab)
+        if check_for_nan(flux[j])==False:
+            rtab=do_one(spectrum_table=one_spec,vel=vel,xplot=False)
+            if len(rtab)>0:
+                rtab['fiberid']=good['fiberid'][i]
+                rtab['ra']=good['ra'][i]
+                rtab['dec']=good['dec'][i]
+                records.append(rtab)
+            else:
+                print('Nothing fit for fiber %d at %.2f %.2f'  % (good['fiberid'][i],good['ra'][i],good['dec'][i]))
+        else:
+            print('Too many nans for  fiber %d at %.2f %.2f'  % (good['fiberid'][i],good['ra'][i],good['dec'][i]))
 
     results=vstack(records)
     outname=filename.split('/')[-1]
     outname=outname.replace('.fits','.txt')
+
+    columns=results.colnames
+    for one in columns:
+        if one.count('flux'):
+            results[one].format='.2e'
+        elif one.count('wave'):
+            results[one].format='.2f'
+        elif one.count('fwhm'):
+            results[one].format='.2f'
+        elif one.count('rmse'):
+            results[one].format='.2e'
+        elif one.count('back'):
+            results[one].format='.2e'
+        elif one.count('ra'):
+            results[one].format='.5f'
+        elif one.count('dec'):
+            results[one].format='.5f'
+        elif one.count('fiberid'):
+            results[one].format='d'
+        else:
+            print('Did not reformat ',one)
+
+
 
     results.write(outname,format='ascii.fixed_width_two_line',overwrite=True)
     return results
@@ -406,10 +500,38 @@ def analyze(xtab):
     print('Of these, %d spectra also have o2 measured' % len(xx))
     print('Measured means having an error calculated')
         
-def doit(filename):
-    results=do_all(filename)
+
+def steer(argv):
+    filename=''
+    lmc=262.
+    smc=146.
+
+    vel=0
+    i=1
+    while i<len(argv):
+        if argv[i][:2]=='-h':
+            print(__doc__)
+            return
+        elif argv[i]=='-lmc':
+            vel=lmc
+        elif argv[i]=='-smc':
+            vel=smc
+        elif argv[i]=='-v':
+            i+=1
+            vel=eval(argv[i])
+        elif argv[i][0]=='-':
+            print('Unknown options :',argv)
+            return
+        elif filename=='':
+            filename=argv[i]
+        else:
+            print('Unknown options :',argv)
+            return
+        i+=1
+    results=do_all(filename,vel)
     analyze(results)
     return
+
 
 
 
@@ -417,6 +539,6 @@ def doit(filename):
 if __name__ == "__main__":
     import sys
     if len(sys.argv)>1:
-        doit(sys.argv[1])
+        steer(sys.argv)
     else:
         print (__doc__)

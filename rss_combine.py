@@ -549,6 +549,20 @@ def gen_average_slit_tab(wcs,filenames):
     return base_tab['fiberid','orig_fiberid','X','Y','ra','dec']
 
 
+def check_for_nan(flux,max_frac=0.5):
+    '''
+    Check an array for nans. Some number of which are allowed
+    '''
+    unique_elements, counts = np.unique(np.isnan(flux), return_counts=True)
+    if True in unique_elements:
+        nan_count = counts[unique_elements == True][0]
+    else:
+        return False
+
+    if nan_count>max_frac*len(flux):
+        return  True
+    else:
+        return False
 
 def do_square(filenames,outroot='',fib_type='xy'):
     ''' 
@@ -674,6 +688,15 @@ def do_square(filenames,outroot='',fib_type='xy'):
         i+=1
    
     plt.hist(new_slitmap_table['EXPOSURE'].data,1000,range=(0,len(filenames)),cumulative=-1,density=True)
+
+    new_slitmap_table['fibstatus']=0
+    new_slitmap_table['targettype']='science'
+
+    for row in new_slitmap_table:
+        xflux=final['FLUX'].data[row['fiberid']-1]
+        if check_for_nan(xflux):
+            row['fibstatus']=1.
+            print('There are issues with fiberid ',row['fiberid'])
 
     
     final['EXPOSURE'].data[final['EXPOSURE'].data==0]= 1.

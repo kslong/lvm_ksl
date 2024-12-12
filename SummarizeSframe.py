@@ -157,14 +157,21 @@ def get_med_spec(filename= '/Users/long/Projects/lvm_data/sas/sdsswork/lvm/spect
     sci_sky=np.ma.masked_array(sci_sky,sci_mask)
     sci_var=np.ma.masked_array(sci_var,sci_mask)
 
-    if pecentile==50:
+    # foo=np.ma.median(sci_sky,axis=0)
+    # print(foo.shape)
+    # print(foo)
+    if percentile==50:
+        # print('using median')
         sci_flux_med=np.ma.median(sci_flux,axis=0)
         sci_sky_med=np.ma.median(sci_sky,axis=0)
     else:
+        # print('Using percentile %d' % percentile)
         sci_flux = np.ma.filled(sci_flux, np.nan)
         sci_sky  = np.ma.filled(sci_sky, np.nan)
-        sci_flux_med=np.nanmedian(sci_flux,axis=0)
-        sci_sky_med=np.nanmedian(sci_sky,axis=0)
+        sci_flux_med=np.nanpercentile(sci_flux,percentile,axis=0)
+        sci_sky_med=np.nanpercentile(sci_sky,percentile,axis=0)
+        # print(sci_flux_med.shape)
+        # print(sci_flux_med)
 
     # The inverse variance has to be multipled by the number of science fibers/(1.253)**2 to get the 
     # inverse variance of the mediane
@@ -189,7 +196,7 @@ def get_med_spec(filename= '/Users/long/Projects/lvm_data/sas/sdsswork/lvm/spect
     return wav, sci_flux_med, sci_sky_med, sci_var_med
 
 
-def make_med_spec(xtab,data_dir,outfile=''):
+def make_med_spec(xtab,data_dir,outfile='',percentile=50):
     i=0
     select=[]
     xfiles=[]
@@ -208,7 +215,7 @@ def make_med_spec(xtab,data_dir,outfile=''):
     xsci_sky=[]
     xsci_var=[]
     while i<len(xfiles):
-        wav,sci_flux,sci_sky,sci_var=get_med_spec(xfiles[i])
+        wav,sci_flux,sci_sky,sci_var=get_med_spec(xfiles[i],percentile)
         xsci_flux.append(sci_flux)
         xsci_sky.append(sci_sky)
         xsci_var.append(sci_var)
@@ -260,8 +267,8 @@ def doit(exp_start=4000,exp_stop=8000,delta=5,exp_min=900.,out_name='',drp_ver='
     ztab=select(xtab,exp_start,exp_stop,delta)
     
     if out_name=='':
-        out_name='XSframe_%d_%d_%d_%d.fits' % (exp_start,exp_stop,delta,percentile)
-    make_med_spec(xtab=ztab,data_dir=xtop,outfile=out_name)
+        out_name='XSFrame_%d_%d_%d_%d.fits' % (exp_start,exp_stop,delta,percentile)
+    make_med_spec(xtab=ztab,data_dir=xtop,outfile=out_name,percentile=percentile)
 
 def steer(argv):
     '''

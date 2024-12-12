@@ -61,7 +61,7 @@ def read_drpall(drp_ver='1.1.0'):
     return  drp_tab
 
 
-def select(ztab,exp_start=4000,exp_stop=8000,delta=5,exp_min=900.):
+def xselect(ztab,exp_start=4000,exp_stop=8000,delta=5,exp_min=900.):
     '''
     select every nth exposure between two start and stop times
     in a drpall table
@@ -247,12 +247,14 @@ def sum_frames(xfiles):
             print('%d of %d files have been processed' % (i,len(xfiles)))
 
     xsum/=xnorm
+    print('Finished xsum',xsum.shape)
     return xsum
 
 def doit(exp_start=4000,exp_stop=8000,delta=5,exp_min=900.,out_name='',drp_ver='1.1.0'):
-    xtop=find_top()
+    data_dir=find_top()
     xtab=read_drpall(drp_ver)
-    xtab=select(xtab,exp_start,exp_stop,delta)
+    print('got drp all')
+    xtab=xselect(xtab,exp_start,exp_stop,delta)
     # At this point we have the portion of the drp all file that contains the exposures we want to sum
     i=0
     select=[]
@@ -267,6 +269,7 @@ def doit(exp_start=4000,exp_stop=8000,delta=5,exp_min=900.,out_name='',drp_ver='
             xfiles.append(xfile)
         i+=1
 
+    print(xfiles)
     results=sum_frames(xfiles)
 
     # At this point we have the results and we just need to build an ouput file
@@ -275,10 +278,13 @@ def doit(exp_start=4000,exp_stop=8000,delta=5,exp_min=900.,out_name='',drp_ver='
 
     hdu1 = fits.PrimaryHDU(data=None)
     hdu1.header['Title'] = 'CFrame_Summmary'
-    hdu2= fits.ImageHDU(data=xdummy['WAVE'].data,name='WAVE')
-    hdu3=xdummy['FLUX']
-    hdu3.data=results
-    hdul = fits.HDUList([hdu1, hdu2, hdu3])
+    hdu2=xdummy['FLUX']
+    hdu2.data=results
+    hdu3= fits.ImageHDU(data=xdummy['WAVE'].data,name='WAVE')
+    hdu4=xdummy['SLITMAP']
+    hdu5 = fits.BinTableHDU(xtab, name='drp_all')
+
+    hdul = fits.HDUList([hdu1, hdu2, hdu3,hdu4,hdu5])
 
     if out_name=='':
         out_name='XCframeSum_%d_%d_%d.fits' % (exp_start,exp_stop,delta)

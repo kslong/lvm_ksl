@@ -61,11 +61,11 @@ def read_drpall(filename='',drp_ver='1.1.0'):
         try:
             drp_tab=ascii.read(filename)
             return drp_tab
-        else:
+        except:
             print('Error: Could not locate : ', filename)
             return []
     
-    elif filename!='':
+    elif filename=='':
         DRPFILE='drpall-%s.fits' % (drp_ver)
     else:
         DRPFILE=filename
@@ -177,7 +177,7 @@ def sum_frames(xfiles):
     print('Finished xsum',xsum.shape)
     return xsum
 
-def files_select(filename='',exp_start=4000,exp_stop=8000,delta=5,exp_min=900.):
+def files_select(filename='',exp_start=4000,exp_stop=8000,delta=5,exp_min=900.,drp_ver='1.1.0'):
     '''
     Read the drp_all table and select files to process from this table
     '''
@@ -188,10 +188,11 @@ def files_select(filename='',exp_start=4000,exp_stop=8000,delta=5,exp_min=900.):
     return xtab
 
 
-def process_files(ztab):
+def process_files(xtab,out_name=''):
     '''
     Having decided what needs processing do the work
     '''
+    data_dir=find_top()
     i=0
     select=[]
     xfiles=[]
@@ -222,12 +223,6 @@ def process_files(ztab):
 
     hdul = fits.HDUList([hdu1, hdu2, hdu3,hdu4,hdu5])
 
-    if out_name=='':
-        out_name='XCframeSum_%d_%d_%d.fits' % (exp_start,exp_stop,delta)
-    
-    if out_name.count('.fits')==0:
-        out_name='%s.fits' % (out_name)
-
     hdul.writeto(out_name,overwrite=True)
     return
 
@@ -236,10 +231,17 @@ def doit(filename='',exp_start=4000,exp_stop=8000,delta=5,exp_min=900.,out_name=
     '''
     The main routine allowing one to process the data
     '''
-    xtab=files_select(filename,exp_start,exp_stop,delta,exp_min)
+    xtab=files_select(filename,exp_start,exp_stop,delta,exp_min,drp_ver)
+
+    if out_name=='':
+        out_name='XCframeSum_%d_%d_%d.fits' % (exp_start,exp_stop,delta)
+    
+    if out_name.count('.fits')==0:
+        out_name='%s.fits' % (out_name)
+
 
     if len(xtab)>0:
-        process_files(xtab)
+        process_files(xtab,out_name)
     return
 
 

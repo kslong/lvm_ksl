@@ -48,6 +48,7 @@ from astropy.table import join, Table
 import shutil
 from datetime import datetime
 from astropy.wcs import WCS
+import dask.array as da
 
 
 def read_drpall(filename='',drp_ver='1.1.0'):
@@ -177,6 +178,28 @@ def sum_frames(xfiles):
     print('Finished xsum',xsum.shape)
     return xsum
 
+
+def median_frames(xfiles):
+    '''
+    Given a bunch of rss files containing a flux extension, return
+    the median spectrum for each fiber
+    '''
+    print('There are %d files to process' % len(xfiles))
+    arrays=[]
+    i=0
+    for one in xfiles:
+        x=fits.open(one,memmap=True)
+        data = ['FLUX'].data
+        dask_array = da.from_array(data, chunks="auto")  # Create Dask array
+        arrays.append(dask_array)
+    # Stack the Dask arrays along a new axis (axis=0)
+    stacked = da.stack(arrays, axis=0)
+
+    # Compute the pixel-wise median while ignoring NaN values
+    nanmedian_image = da.nanmedian(stacked, axis=0).compute()
+
+    return nanmedian_image
+
 def files_select(filename='',exp_start=4000,exp_stop=8000,delta=5,exp_min=900.,drp_ver='1.1.0'):
     '''
     Read the drp_all table and select files to process from this table
@@ -188,7 +211,7 @@ def files_select(filename='',exp_start=4000,exp_stop=8000,delta=5,exp_min=900.,d
     return xtab
 
 
-def process_files(xtab,out_name=''):
+def process_files(xtab,out_name='',ave_med='ave'):
     '''
     Having decided what needs processing do the work
     '''
@@ -207,7 +230,14 @@ def process_files(xtab,out_name=''):
         i+=1
 
     print(xfiles)
-    results=sum_frames(xfiles)
+    if ave_med=='ave':
+        results=sum_frames(xfiles)
+    elif ave_med=='med':
+        results=median_frames(xfiles)
+    else:
+        print('Error: Unkown option: ',ave_med)
+        return
+
 
     # At this point we have the results and we just need to build an ouput file
 
@@ -227,14 +257,14 @@ def process_files(xtab,out_name=''):
     return
 
 
-def doit(filename='',exp_start=4000,exp_stop=8000,delta=5,exp_min=900.,out_name='',drp_ver='1.1.0'):
+def doit(filename='',exp_start=4000,exp_stop=8000,delta=5,exp_min=900.,out_name='',drp_ver='1.1.0',ave_med='ave'):
     '''
     The main routine allowing one to process the data
     '''
     xtab=files_select(filename,exp_start,exp_stop,delta,exp_min,drp_ver)
 
     if out_name=='':
-        out_name='XCframeSum_%d_%d_%d.fits' % (exp_start,exp_stop,delta)
+        out_name='XCframe_%s_%d_%d_%d.fits' % (ave_med,exp_start,exp_stop,delta)
     
     if out_name.count('.fits')==0:
         out_name='%s.fits' % (out_name)
@@ -257,12 +287,17 @@ def steer(argv):
     input_file=''
     out_name=''
     xver='1.1.0'
+    ave_med='ave'
 
     i=1
     while i<len(argv):
         if argv[i][:2]=='-h':
             print(__doc__)
             return
+        elif argv[i]=='-med':
+            ave_med='med'
+        elif argv[i]=='-ave':
+            ave_med='ave'
         elif argv[i]=='-emin':
             i+=1
             exp_min=int(argv[i])
@@ -289,7 +324,7 @@ def steer(argv):
         delta=1
                 
 
-    doit(input_file,exp_start,exp_stop,delta,exp_min,out_name,xver)
+    doit(input_file,exp_start,exp_stop,delta,exp_min,out_name,xver,ave_med)
 
 
 

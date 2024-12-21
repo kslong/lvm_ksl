@@ -10,7 +10,9 @@ Combine multiple LVM row-stacked (SFrame) spectra into a
 sincle row-staked spectrum, by creating a grid 
 of fibers that cover the entire area, and then
 assigning portions of the spectra of various fibers 
-to the final one.
+to the final one.  Alternatively, combine the
+exposures for a single tile into one rss image with
+"fibers" centered on the mean postion of the exposures.
 
 
 Command line usage (if any):
@@ -50,11 +52,34 @@ Description:
     This may be a better approach for a single tile than the regular grid
     approach
 
-    With the -sum switch the postions of the rss fibers in the outuput image
+    With the -sum switch the positions of the rss fibers in the outuput image
     are taken as above, but additionally instead of splitting the spectra
     between output fibers, all of the flux from an imput fiber is assinged
     to one ouput fiber.  This may be the best approach if the input SFrame
     files were not dithered.
+
+    A single fits file is produced.  
+
+    * The primary header is simply taken from one of the imnput images
+    * FLUX  - the flux is stored here, note that the number of rows will
+        now depend on how many artificial fibers were created
+    * IVAR  - the final inverse variance as calculated by converting the 
+        inverse variance of the individual exposures to variance and
+        the combining the varianance depending on what fraction of
+        the flux from an input fiber was written into an output fiber.
+        We did not use inverse variance weighting in
+        creating the fluxes so we cannot simply sum the inverse variances.
+    * MASK - currently all zeros
+    * WAVE - the standard set of wavelengtths
+    * SLITMAP - a version of the slitmap file, that gives the ra's and dec's of
+        the fibers, and enough other information so that the DAP should run.
+        The SLITMAP also contains the X, Y positions of the fibers on
+        the WCS defined below.
+    * WCS_INFO - an extension that contains the WCS that contains the
+        WCS that was created to redifine the fiber positions.  It is possile
+        to use this to create an "image" on the sky, but one can equally ge
+    * EXPOSURE - the effective number of expousres that went into
+        each fiber.
 
 Primary routines:
 
@@ -149,7 +174,7 @@ def create_wcs(ra_deg, dec_deg,pos_ang, size_deg):
     # Set reference coordinates (RA and DEC) at the center
     wcs.wcs.crval = [ra_deg, dec_deg]
     wcs.wcs.cd = np.array([
-        [pixel_scale * cos_theta, -pixel_scale * sin_theta],
+        [-pixel_scale * cos_theta, -pixel_scale * sin_theta],
         [pixel_scale * sin_theta,  pixel_scale * cos_theta]
         ])
     
@@ -170,7 +195,7 @@ def create_wcs_from_points(xpos,ypos,ra_deg,dec_deg):
     try:
         wcs = fit_wcs_from_points(pix_coords, sky_coords, proj_point="center")
         print("WCS successfully generated:")
-        print(wcs)
+        # print(wcs)
         success=True
     except Exception as e:
         print(f"Failed to generate WCS: {e}")
@@ -202,7 +227,7 @@ def generate_grid(wcs, spacing_arcsec):
     pixel_spacing_x = np.sqrt(cd_matrix[0, 0]**2 + cd_matrix[0, 1]**2)  # Scale along x-axis
     pixel_spacing_y = np.sqrt(cd_matrix[1, 0]**2 + cd_matrix[1, 1]**2)  # Scale along y-axis'
 
-    print(pixel_spacing_x,pixel_spacing_y) # This the pixel scale in arcsec
+    # print(pixel_spacing_x,pixel_spacing_y) # This the pixel scale in arcsec
     
     # cdelt = wcs.wcs.cdelt  # Pixel scale in degrees
     spacing_deg = spacing_arcsec / 3600.0  # Convert spacing to degrees
@@ -215,15 +240,15 @@ def generate_grid(wcs, spacing_arcsec):
     # Define the array size based on CRPIX
     array_size_x = int(2 * crpix[0])  # Assuming array size is 2 * CRPIX
     array_size_y = int(2 * crpix[1])  # Assuming array size is 2 * CRPIX
-    print(crpix[0],crpix[1])
-    print(array_size_x,array_size_y)
+    # print(crpix[0],crpix[1])
+    # print(array_size_x,array_size_y)
 
     # Define grid extents
     x_center, y_center = crpix  # Reference pixel is the center (1-based)
     x = np.arange(0, array_size_x, spacing_deg / pixel_spacing_x) - (array_size_x / 2) + x_center
     y = np.arange(0, array_size_y, spacing_deg /  pixel_spacing_y) - (array_size_y / 2) + y_center
-    print(len(x),len(y))
-    print(np.min(x),np.max(x))
+    # print(len(x),len(y))
+    # print(np.min(x),np.max(x))
     xx, yy = np.meshgrid(x, y)
 
     # Convert the pixel coordinates to RA and Dec
@@ -411,8 +436,6 @@ def prep_tables_square(wcs,filenames):
         one_tab['X']=x_pixels
         one_tab['Y']=y_pixels
         j=100
-        print('XXX',one_tab['ra'][j],one_tab['dec'][j],one_tab['X'][j],one_tab['Y'][j])
-        # print('stat ',np.nanmin(one_tab['X']),np.nanmax(one_tab['X']),np.nanmin(one_tab['Y']),np.nanmax(one_tab['Y']))
     for one_tab in slit:
         one_tab=one_tab[one_tab['telescope']=='Sci']
         one_tab=one_tab[one_tab['fibstatus']==0]
@@ -506,7 +529,7 @@ def gen_average_slit_tab(wcs,filenames):
     dec_med=np.nanmedian(dec,axis=1)
     ddd=np.nanmedian(dec_med)
     ctheta=np.cos(np.deg2rad(ddd))
-    print(ctheta)
+    # print(ctheta)
 
     delta_ra=3600*(np.max(ra_med)-np.min(ra_med))
     delta_dec=3600*(np.max(dec_med)-np.min(dec_med))
@@ -526,24 +549,20 @@ def gen_average_slit_tab(wcs,filenames):
 
     center_x, center_y = wcs.wcs.crpix
 
-    print('hello',center_x,center_y)
-    print('hello',len(base_tab))
 
     base_tab=base_tab[base_tab['X']>0]
     base_tab=base_tab[base_tab['Y']>0]
 
-    print('hello',len(base_tab))
 
 
     base_tab=base_tab[base_tab['X']< 2 * center_x]
     base_tab=base_tab[base_tab['Y']< 2 * center_y]
-    print('hello',len(base_tab))
 
     # Having eliminated some fibers, we need to renumber the master fibers
     base_tab['fiberid']=np.arange(len(base_tab))+1
 
     
-    print(x)
+    # print(x)
 
     # Now we need to use the base_tab and calculate
     return base_tab['fiberid','orig_fiberid','X','Y','ra','dec']
@@ -597,7 +616,7 @@ def do_square(filenames,outroot='',fib_type='xy'):
 
     # Now calculate the fractions
 
-    slit[0].info()
+    # slit[0].info()
 
 
     zslit=[]
@@ -609,7 +628,7 @@ def do_square(filenames,outroot='',fib_type='xy'):
         zslit.append(one_tab)
     print('test',len(slit))
 
-    zslit[0].info()
+    # zslit[0].info()
 
     # At this point contributions calculated for each final 'fiber'
 
@@ -645,7 +664,7 @@ def do_square(filenames,outroot='',fib_type='xy'):
     final['MASK'].data=zero_array
     
     
-    final.info()
+    # final.info()
  
     # Now fill the arrays
 
@@ -658,33 +677,29 @@ def do_square(filenames,outroot='',fib_type='xy'):
         q=zslit[i]       
         for one_row in q:
             new_slitmap_table['EXPOSURE'][one_row['fib_master']-1]+=one_row['frac']
-            flux=x['FLUX'].data[one_row['fiberid']-1]
-            # sky=x['SKY'].data[one_row['fiberid']-1]
+            xmask=x['MASK'].data[one_row['fiberid']-1]
+            flux=np.select([xmask==0],[x['FLUX'].data[one_row['fiberid']-1]],default=0)
+            xexposure=np.select([xmask==0],[1.],default=0.0)
+            non_finite_mask=~np.isfinite(flux)
+            non_finite_sum=np.sum(non_finite_mask)
+            if non_finite_sum>0:
+                print('Found non_finite %d values' % non_finite_sum)
             vflux=x['IVAR'].data[one_row['fiberid']-1]
-            # vsflux=x['SKY_IVAR'].data[one_row['fiberid']-1]
             if i==0:
                 final['FLUX'].data[one_row['fib_master']-1]+=one_row['frac']*flux
-                # final['SKY'].data[one_row['fib_master']-1]+=one_row['frac']*sky
-                final['EXPOSURE'].data[one_row['fib_master']-1]+=one_row['frac']
+                final['EXPOSURE'].data[one_row['fib_master']-1]+=one_row['frac']*xexposure
+                # final['EXPOSURE'].data[one_row['fib_master']-1]+=one_row['frac']
                 eflux[one_row['fib_master']-1]+=one_row['frac']/vflux
-                # esflux[one_row['fib_master']-1]+=one_row['frac']/vsflux
-                if one_row['fib_master']==103:
-                    print('got for %d %f %e %e -> %e' % (i,one_row['frac'],np.nanmedian(final['FLUX'].data[one_row['fib_master']-1]),
-                                                np.nanmedian(vflux), np.nanmedian(eflux[one_row['fib_master']-1])
-                                               ))
             else:
                 # print('ok',one_row['fiberid']-1,one_row['fibstatus'])
                 if np.all(np.isnan(flux))== False:
                     valid_mask=~np.isnan(flux)
                     final['FLUX'].data[one_row['fib_master']-1][valid_mask]+=one_row['frac']*flux[valid_mask]
-                    # final['SKY'].data[one_row['fib_master']-1][valid_mask]+=one_row['frac']*sky[valid_mask]
-                    final['EXPOSURE'].data[one_row['fib_master']-1][valid_mask]+=one_row['frac']
+                    final['EXPOSURE'].data[one_row['fib_master']-1][valid_mask]+=one_row['frac']*xexposure
+                    # final['EXPOSURE'].data[one_row['fib_master']-1][valid_mask]+=one_row['frac']
                     eflux[one_row['fib_master']-1][valid_mask]+=one_row['frac']*1./vflux[valid_mask]
-                    # esflux[one_row['fib_master']-1][valid_mask]+=one_row['frac']/vsflux[valid_mask]
-                    if one_row['fib_master']==103:
-                        print('got for %d %f %e %e -> %e' % (i,one_row['frac'],np.nanmedian(final['FLUX'].data[one_row['fib_master']-1]),
-                                                np.nanmedian(vflux), np.nanmedian(eflux[one_row['fib_master']-1])
-                                               ))
+        print('Median Stats XXXXXX  %e %e %f' % 
+          (np.nanmedian(final['FLUX'].data),np.nanmedian(final['IVAR'].data),np.nanmedian(final['EXPOSURE'].data)))
         i+=1
    
     plt.hist(new_slitmap_table['EXPOSURE'].data,1000,range=(0,len(filenames)),cumulative=-1,density=True)
@@ -699,7 +714,9 @@ def do_square(filenames,outroot='',fib_type='xy'):
             print('There are issues with fiberid ',row['fiberid'])
 
     
+    print('EXPOSURE summary  %g %g %g' % (np.median(final['EXPOSURE'].data), np.min(final['EXPOSURE'].data), np.max(final['EXPOSURE'].data)))
     final['EXPOSURE'].data[final['EXPOSURE'].data==0]= 1.
+
     final['FLUX'].data/=final['EXPOSURE'].data
     final['IVAR'].data=final['EXPOSURE'].data*final['EXPOSURE'].data/(eflux)
 
@@ -715,8 +732,15 @@ def do_square(filenames,outroot='',fib_type='xy'):
     
 
     # final['SLITMAP'].data=new_slitmap_table
+    print('Min    Stats at end  %e %e %f' % 
+          (np.nanmin(final['FLUX'].data),np.nanmin(final['IVAR'].data),np.nanmin(final['EXPOSURE'].data)))
+    print('Max    Stats at end  %e %e %f' % 
+          (np.nanmax(final['FLUX'].data),np.nanmax(final['IVAR'].data),np.nanmax(final['EXPOSURE'].data)))
 
-    print('At end  %e %e -> %e' % (np.nanmedian(final['FLUX'].data[102]),np.nanmedian(eflux[102]),np.nanmedian(final['IVAR'].data[102])))
+    print('Median Stats at end  %e %e %f' % 
+          (np.nanmedian(final['FLUX'].data),np.nanmedian(final['IVAR'].data),np.nanmedian(final['EXPOSURE'].data)))
+    print('Median STD   at end  %e %e %f' % 
+          (np.nanstd(final['FLUX'].data),np.nanstd(final['IVAR'].data),np.nanstd(final['EXPOSURE'].data)))
 
     if outroot=='':
         outroot='test_square'

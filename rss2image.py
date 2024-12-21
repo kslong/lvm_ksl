@@ -188,12 +188,15 @@ def create_wcs_from_points(xpos,ypos,ra_deg,dec_deg):
 
 
 
-def get_flux(rss,wmin=6000,wmax=6300,xtype='sum'):
+def get_flux(rss,wmin=6000,wmax=6300,xtype='sum',ext='FLUX'):
     '''
-    get the mean, madian, or sum of the flux in 
+    get the mean, madian, or sum of the 'flux'in 
     a wavelenght interval  a 'standard rss file.
     This returns values for all of the spectra, and so can
     include rows of poor fibers and from all telescopes
+
+    This was originally set always to get the FLUS
+    but can obtain any extension that exits
 
     A table containg the row number, and the value
     '''
@@ -203,11 +206,12 @@ def get_flux(rss,wmin=6000,wmax=6300,xtype='sum'):
     wtab=wtab[wtab['WAVE']<wmax]
     imin=wtab['i'][0]
     imax=wtab['i'][-1]
-    # print(wtab['i'][0],wtab['i'][-1])
-    zarray=rss['FLUX'].data
-    # print(zarray.shape)
+    try:
+        zarray=rss[ext].data
+    except:
+        print('Could not obatin data from extension %s' % (ext))
+        raise IOError
     farray=zarray[:,imin:imax]
-    # print(farray.shape)
     if xtype=='sum':
         flux=np.nansum(farray,axis=1)
     elif xtype=='med':
@@ -237,7 +241,7 @@ def get_wcs(header):
 
 
 
-def do_one(filename='data/lvmSFrame-00007373.fits',wrange=[6550,6570],crange=None,outroot='',xscale=1,xsize=0.5,pos_type='slit'):
+def do_one(filename='data/lvmSFrame-00007373.fits',wrange=[6550,6570],crange=None,outroot='',xscale=1,xsize=0.5,pos_type='slit',ext='FLUX'):
     '''
     This is the primary driving routine
     '''
@@ -283,32 +287,6 @@ def do_one(filename='data/lvmSFrame-00007373.fits',wrange=[6550,6570],crange=Non
         print('There is no point in contuing, so returning')
 
 
-
-
-
-    # This will need to be modified for an arbitrary see of data
-
-    # create_wcs=False
-
-
-    # try:
-    #     if phead['MOSAIC']=='TRUE':
-    #         print('Working from header wcs')
-    #         xwcs=WCS(phead)
-    #         print(xwcs)
-    #         # xra=wcs.wcs.crval[0]
-    #         # xdec=wcs.wcs.crval[1]
-    #         #print('fooey',xra,xdec)
-    # except:
-    #     create_wcs=True
-        
-        
-    # if create_wcs==True:
-    #     xra=phead['POSCIRA']
-    #     xdec=phead['POSCIDE']
-    #     wcs=create_wcs_manually(xra,xdec,xscale,xsize)
-
-
     xra=wcs.wcs.crval[0]
     xdec=wcs.wcs.crval[1]
 
@@ -322,11 +300,22 @@ def do_one(filename='data/lvmSFrame-00007373.fits',wrange=[6550,6570],crange=Non
     wmin*=redshift_correction
     wmax*=redshift_correction
 
-    nwave,xflux=get_flux(x,wmin,wmax,xtype='sum')
+    print('# wmin and wmax for image: %.1f %.1f' % (wmin,wmax))
+
+    try:
+        if ext=='FLUX':
+            nwave,xflux=get_flux(x,wmin,wmax,xtype='sum',ext=ext)
+        else:
+            nwave,xflux=get_flux(x,wmin,wmax,xtype='med',ext=ext)
+    except:
+        print('Failed to retrieve data')
+        return
+
 
     if crange!=None:
         cmin=crange[0]
         cmax=crange[1]
+        print('# wmin and wmax for background: %.1f %.1f' % (cmin,cmax))
         nback,xback=get_flux(x,cmin,cmax,xtype='med')
         xflux['FLUX']-=nwave*xback['FLUX']
 
@@ -336,12 +325,7 @@ def do_one(filename='data/lvmSFrame-00007373.fits',wrange=[6550,6570],crange=Non
 
     percentiles=calculate_percentiles(xflux['FLUX'],[5,95])
 
-
-    
     qtab=join(qtab,xflux,keys='Row',join_type='left')
-    # print('AFTER join')
-    # qtab.info()
-    # print('Whatever')
 
     # So at this point I have the final WCS, and I have the fluxes, I need to calculate the xy postions of the fibers that I still have in terms of the WCS that I have generated
     print('This is the WCS we are using')
@@ -382,6 +366,8 @@ def do_one(filename='data/lvmSFrame-00007373.fits',wrange=[6550,6570],crange=Non
     if outroot=='':
         outroot='test'
     output_file=outroot.replace('.fits','')+'.fits'
+    if ext!='FLUX':
+        output_file=output_file.replace('.fits','.%s.fits' % ext)
     hdulist.writeto(output_file, overwrite=True)
     print('\nFinal stats: mean %.2e median %.2e STD %.2e ' % (xmean,xmed,xstd))
 
@@ -398,10 +384,13 @@ def steer(argv):
     image_type='ha'
     xfits=''
     sub_back=True
+    ext='FLUX'
 
     xha=['ha',[6560,6566],[6590,6630]]
     xs2=['sii',[6710,6735],[6740,6760]]
     xxx=['x',[8000,9000],[6000,7000]]
+
+    files=[]
 
 
     i=1
@@ -418,17 +407,21 @@ def steer(argv):
                 i+=1
                 xxx[1][1]=eval(argv[i])
                 sub_back=False
+        elif argv[i]=='-ext':
+            i+=1
+            ext=argv[i]
         elif argv[i]=='-no_back':
             sub_back=False
         elif argv[i][0]=='-':
             print('Error: Unknown switch %s ' % argv[i])
             return
-        elif xfits=='':
-            xfits=argv[i]
-        # print(argv[i])
+        elif argv[i].count('fits'):
+            files.append(argv[i])
+        else:
+            print('Error: Could not interpret command line :',argv)
         i+=1
 
-    if xfits=='':
+    if len(files)==0:
         print('Error: not enough arguments: ', argv)
         return
 
@@ -447,17 +440,18 @@ def steer(argv):
 
             
 
-    words=xfits.split('/')
-    froot=words[-1].replace('.fits','')
-    froot=froot.replace('lvmSFrame-000','')
-    xoutroot='image_%s_%s' % (froot,qband[0])
+    for xfits in files:
+        words=xfits.split('/')
+        froot=words[-1].replace('.fits','')
+        froot=froot.replace('lvmSFrame-000','')
+        xoutroot='image_%s_%s' % (froot,qband[0])
 
 
-    if sub_back:
-        do_one(xfits,wrange=qband[1],crange=qband[1],outroot=xoutroot,xscale=1,xsize=0.5,pos_type='slit')
-    else:
-        xoutroot='%s_no_back' % xoutroot
-        do_one(xfits,wrange=qband[1],crange=None,outroot=xoutroot,xscale=1,xsize=0.5,pos_type='slit')
+        if sub_back | (ext !='FLUX'):
+            do_one(xfits,wrange=qband[1],crange=qband[2],outroot=xoutroot,xscale=1,xsize=0.5,pos_type='slit',ext=ext)
+        else:
+            xoutroot='%s_no_back' % xoutroot
+            do_one(xfits,wrange=qband[1],crange=None,outroot=xoutroot,xscale=1,xsize=0.5,pos_type='slit',ext=ext)
 
     return
 

@@ -29,6 +29,9 @@ Primary routines:
 
 Notes:
 
+    This uses glob to locate the files, and if there are multiple files it looks
+    for the one that is mot recent
+
 History:
 
 231223 ksl Coding begun

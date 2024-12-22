@@ -34,11 +34,16 @@ Command line usage (if any):
                         fiber which is near enough.  As in -orig, the
                         output fiber locations are taken from the input
                         fiber locations.  
+        -med            By default the routine takes all of the
+                        images, apportions the fluxes from each
+                        of the images onto a new grid, and ultimately
+                        averages the images created.  With this
+                        switch, the median is created.
                    
 
 Description:  
 
-    The routine sums muliple RSS images to create a final output image,
+    The routine sums multiple RSS images to create a final output image,
     with various options
 
     With no switchhes the routine reads the input SFrames, and constructs
@@ -78,14 +83,26 @@ Description:
     * WCS_INFO - an extension that contains the WCS that contains the
         WCS that was created to redifine the fiber positions.  It is possile
         to use this to create an "image" on the sky, but one can equally ge
-    * EXPOSURE - the effective number of expousres that went into
-        each fiber.
+    * EXPOSURE - the effective number of exposres that went into
+        each fiber. 
 
 Primary routines:
 
-    doit
+    do_combine
 
 Notes:
+
+    The final image is not weighted by the errors.  All of the imput
+    images are treated identically.
+
+    There is not attempt to scale the images to one another globally,
+    though one might argue that would be a good idea.
+
+    It is apparent the when one uses the mean, and that exposure is
+    somehow different, the effects of bad pixels are more apparent
+    than when one uses the median.
+
+
                                        
 History:
 
@@ -387,7 +404,7 @@ def prep_tables_square(wcs,filenames):
     This version uses a wcs that has already been created to get x,y positions
     in that space
 
-    This returns a list of tables
+    This returns a list of tables one for each file
     '''
     ra=[]
     dec=[]
@@ -583,7 +600,7 @@ def check_for_nan(flux,max_frac=0.5):
     else:
         return False
 
-def do_square(filenames,outroot='',fib_type='xy'):
+def do_combine(filenames,outroot='',fib_type='xy',c_type='mean'):
     ''' 
     This is supposed to do the whole process
     '''
@@ -607,17 +624,14 @@ def do_square(filenames,outroot='',fib_type='xy'):
 
 
 
-    # new_slitmap_table.write('x%s.txt' % outroot,format='ascii.fixed_width_two_line',overwrite=True)
-    # new_slitmap_table.info()
 
-    # Now create a table that contains the positions of all of the fibeers in the wc that was created
+    # Now create a list of tables that contains the positions of all of the fibeers in the wc that was created
 
     slit=prep_tables_square(wcs, filenames)
 
     # Now calculate the fractions
 
-    # slit[0].info()
-
+    print('Apportioning fractional fluxes to final fiber positions')
 
     zslit=[]
     for one_tab in slit:
@@ -626,15 +640,11 @@ def do_square(filenames,outroot='',fib_type='xy'):
         else:
             one_tab=frac_calc2(new_slitmap_table,one_tab)
         zslit.append(one_tab)
-    print('test',len(slit))
 
-    # zslit[0].info()
-
-    # At this point contributions calculated for each final 'fiber'
+    # zslit is a list of tables, now with added columns indicating how to approtion the data from indvidual files into the final image
 
     print('The number of files being combined:',len(slit))
 
-    # Now create a new fits file, we can modify
 
     foo=fits.open(filenames[0])
     final = fits.HDUList()
@@ -645,7 +655,7 @@ def do_square(filenames,outroot='',fib_type='xy'):
     final.append(foo['WAVE'])
     final.append(foo['SLITMAP'])
     print('Adding WCS')
-    print(wcs)
+    # print(wcs)
 
     xheader = wcs.to_header()
     data = np.random.rand(6, 6)
@@ -653,10 +663,10 @@ def do_square(filenames,outroot='',fib_type='xy'):
     final.append(image_hdu)
     
     shape=[len(new_slitmap_table),12401]
-    zero_array = np.zeros(shape, dtype=np.float32)
+    xzero_array = np.zeros(shape, dtype=np.float32)
 
-    final['FLUX'].data=zero_array
-    final['IVAR'].data=zero_array
+    final['FLUX'].data=xzero_array.copy()
+    final['IVAR'].data=xzero_array.copy()
 
     final=add_extension_with_same_shape(final, 'FLUX','EXPOSURE')
     
@@ -664,12 +674,59 @@ def do_square(filenames,outroot='',fib_type='xy'):
     final['MASK'].data=zero_array
     
     
-    # final.info()
- 
-    # Now fill the arrays
 
     eflux=np.zeros_like(final['FLUX'].data)
     new_slitmap_table['EXPOSURE']=0.0
+
+    # now we want to crate various arrays that indicate how each input file would be split into the new filters system
+    VERY_BIG = 1e50
+    VERY_SMALL = 1e-50
+
+    fl=[]
+    vf=[]
+    xm=[]
+
+    print('Begin accumulating data')
+
+    i=0
+    while i < len(filenames):
+
+        print('\nStart    %s' % (filenames[i]))
+        x=fits.open(filenames[i])
+        print('Flux  %10.3e %10.3e %10.e %10.3e'  % (np.nanmedian(x['FLUX'].data),np.nanstd(x['FLUX'].data),np.nanmin(x['FLUX'].data),np.nanmax(x['FLUX'].data)))
+        print('Ivar  %10.3e %10.3e %10.e %10.3e'  % (np.nanmedian(x['IVAR'].data),np.nanstd(x['IVAR'].data),np.nanmin(x['IVAR'].data),np.nanmax(x['IVAR'].data)))
+
+        q=zslit[i]       
+        xflux=xzero_array.copy()
+        xvar=xzero_array.copy()
+        xexp=xzero_array.copy()
+        # q contains the fraction allocation 
+        for one_row in q:
+            new_slitmap_table['EXPOSURE'][one_row['fib_master']-1]+=one_row['frac']
+            xmask=x['MASK'].data[one_row['fiberid']-1]
+            one_flux=np.select([xmask==0],[x['FLUX'].data[one_row['fiberid']-1]],default=0)
+            one_invar=np.select([xmask==0],[x['IVAR'].data[one_row['fiberid']-1]],default=VERY_SMALL)
+            one_exp=np.select([xmask==0],[1.],default=0.0)
+            non_finite_mask=~np.isfinite(one_flux)
+            non_finite_sum=np.sum(non_finite_mask)
+            if non_finite_sum>0:
+                print('Found non_finite %d values' % non_finite_sum)
+            one_vflux=x['IVAR'].data[one_row['fiberid']-1]
+            # so one_flux, one_exp, and one_var represent one row in the flux, var, and expososure arrays
+            xflux[one_row['fib_master']-1]+=one_flux*one_row['frac']
+            xvar[one_row['fib_master']-1]+=one_row['frac']/one_invar  
+            xexp[one_row['fib_master']-1]+=one_row['frac']*one_exp
+            
+        fl.append(xflux)
+        vf.append(xvar)
+        xm.append(xexp)
+        print('Finished %s' % (filenames[i]))
+        i+=1
+
+
+    print('\nEnd Flux  %10.3e %10.3e %10.e %10.3e'  % (np.nanmedian(fl),np.nanstd(fl),np.nanmin(fl),np.nanmax(fl)))
+    print('End Var   %10.3e %10.3e %10.e %10.3e\n'  % (np.nanmedian(vf),np.nanstd(vf),np.nanmin(vf),np.nanmax(vf)))
+
 
     i=0
     while i<len(filenames):
@@ -720,6 +777,41 @@ def do_square(filenames,outroot='',fib_type='xy'):
     final['FLUX'].data/=final['EXPOSURE'].data
     final['IVAR'].data=final['EXPOSURE'].data*final['EXPOSURE'].data/(eflux)
 
+    print('Old')
+    # final['SLITMAP'].data=new_slitmap_table
+    print('Min    Stats at end  %e %e %f' % 
+          (np.nanmin(final['FLUX'].data),np.nanmin(final['IVAR'].data),np.nanmin(final['EXPOSURE'].data)))
+    print('Max    Stats at end  %e %e %f' % 
+          (np.nanmax(final['FLUX'].data),np.nanmax(final['IVAR'].data),np.nanmax(final['EXPOSURE'].data)))
+
+    print('Median Stats at end  %e %e %f' % 
+          (np.nanmedian(final['FLUX'].data),np.nanmedian(final['IVAR'].data),np.nanmedian(final['EXPOSURE'].data)))
+    print('Median STD   at end  %e %e %f' % 
+          (np.nanstd(final['FLUX'].data),np.nanstd(final['IVAR'].data),np.nanstd(final['EXPOSURE'].data)))
+
+    # This begins the new method
+
+    exp_stack=np.stack(xm)
+    esum=np.nansum(exp_stack,axis=0)
+    final['EXPOSURE'].data=esum
+
+
+    flux_stack=np.stack(fl)
+    print('xxxx %s',c_type)
+    if c_type=='med':
+        print('Producing the median image')
+        fmed=np.nanmedian(flux_stack,axis=0)
+        final['FLUX'].data=fmed
+    else:
+        print('Producing the average image')
+        fsum = np.nansum(flux_stack, axis=0)  
+        final['FLUX'].data=fsum/final['EXPOSURE'].data
+
+    var_stack=np.stack(vf)
+    print('xshape',var_stack.shape)
+    vsum=np.nansum(var_stack, axis=0)
+    final['IVAR'].data=final['EXPOSURE'].data*final['EXPOSURE'].data/vsum
+
     hdu = fits.BinTableHDU(new_slitmap_table.as_array(), name='SLITMAP')
     final['SLITMAP']=hdu
 
@@ -731,6 +823,7 @@ def do_square(filenames,outroot='',fib_type='xy'):
     final['WCS_INFO'].header['XNAXIS2']=int(nymax)
     
 
+    print('New')
     # final['SLITMAP'].data=new_slitmap_table
     print('Min    Stats at end  %e %e %f' % 
           (np.nanmin(final['FLUX'].data),np.nanmin(final['IVAR'].data),np.nanmin(final['EXPOSURE'].data)))
@@ -741,6 +834,9 @@ def do_square(filenames,outroot='',fib_type='xy'):
           (np.nanmedian(final['FLUX'].data),np.nanmedian(final['IVAR'].data),np.nanmedian(final['EXPOSURE'].data)))
     print('Median STD   at end  %e %e %f' % 
           (np.nanstd(final['FLUX'].data),np.nanstd(final['IVAR'].data),np.nanstd(final['EXPOSURE'].data)))
+
+    print('\nCombined  FLUX  %10.3e %10.3e %10.e %10.3e'  % (np.nanmedian(final['FLUX'].data),np.nanstd(final['FLUX'].data),np.nanmin(final['FLUX'].data),np.nanmax(final['FLUX'].data)))
+    print('Combined  IVAR  %10.3e %10.3e %10.e %10.3e\n'  % (np.nanmedian(final['IVAR'].data),np.nanstd(final['IVAR'].data),np.nanmin(final['IVAR'].data),np.nanmax(final['IVAR'].data)))
 
     if outroot=='':
         outroot='test_square'
@@ -753,6 +849,7 @@ def steer(argv):
     xfiles=[]
     outroot='xtest'
     fib_type='xy'
+    c_type='mean'
     i=1
     while i<len(argv):
         if argv[i][0:2]=='-h':
@@ -765,6 +862,8 @@ def steer(argv):
             fib_type='orig'
         elif argv[i]=='-sum':
             fib_type=='sum'
+        elif argv[i][0:4]=='-med':
+            c_type='med'
         elif argv[i][0]=='-':
             print('Could not parse command line:',argv)
             return
@@ -783,12 +882,14 @@ def steer(argv):
 
     if len(files)==0:
         print('There are no files to combine: ',argv)
+        return
     else:
-        print('Combining %d files' % len(files))
+        print('Creating new rss file from  %d files' % len(files))
         for one_file in files:
             print(one_file)
+        print('\n')
 
-    do_square(files,outroot,fib_type)   
+    do_combine(files,outroot,fib_type,c_type)   
     
 
 

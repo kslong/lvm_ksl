@@ -6,31 +6,54 @@
 
 Synopsis:  
 
-Generate a fits file condaining an image of an RSS file
-over a limited wavelength range
+Generate a fits file containing an image of an RSS file
+toral flux over a limited wavelength range
 
 It should handle CFrame or SFrame data, but was
 written to handle frames writtne with rss_combine
 
+By default this routine is designeed to create and image of
+the FLUX extension, but it can create and image of 
+any other extension that has the same shape as the 
+FLUX extension.
+
 
 Command line usage (if any):
 
-    usage: rss2image.py [-no_back]  [-band filter] filename
+    usage: rss2image.py [-no_back]  [-band filter] [-ext IVAR] filename(s)
 
     where image_type indicates a predefined filter to plot.  The
     currenly allowed bands are
 
     * ha
     * sii
+    * oiii
     * x
 
-    -no_back means not to subtract background from the image
+    The routine attempts to understand whether the rss image
+    refers to the LMC or SMC, and is so adds proper offsets
+    to any band.
+
+    -no_back means not to subtract background from the image. 
+        Without this for the defined filters, an adjacent
+        background will be subtracted, based on the median
+        in the backgound band
 
     for band x, there are aditional parameters to be entered, e.g.
 
     -band x 6700 6800  will produce an image of the average flux
         between 6700 and 6800 A. For this no backgournd is
         obtained
+    -band x 6700 6800 6900 7000  will produce an image of the average flux
+        between 6700 and 6800 A, and backgrand  will be obtained
+
+    -ext IVAR  will cause the routine to select an extension other than, 
+        e.g IVAR that is in the fits files to create an image of.  The 
+        wave bands are still used, so the default is to do the
+        ha region.  The image median value for, in this case, IVAR
+
+    If standard SF or CF are provided the routine will look for the
+    exposure number and use this to create the name.
 
 
 
@@ -243,7 +266,13 @@ def get_wcs(header):
 
 def do_one(filename='data/lvmSFrame-00007373.fits',wrange=[6550,6570],crange=None,outroot='',xscale=1,xsize=0.5,pos_type='slit',ext='FLUX'):
     '''
-    This is the primary driving routine
+    This is the primary routine.  
+
+    The routine first generates a WCS for the output image.  If the RSS spectrum were produced by rss_combine, the routine loooks
+    for the ra's and decs of fibers, and the XY positions of that were added to generate the positions.  If this is a standard SF or CF
+    file the WCS is generated from POSCIRA and POSCIDE in the header.
+
+
     '''
 
 
@@ -281,10 +310,10 @@ def do_one(filename='data/lvmSFrame-00007373.fits',wrange=[6550,6570],crange=Non
             print('Generated WCS from primary header')
             have_wcs=True
         except:
-            print('Could not generate wcs from primary header :')
+            print('Could not generate wcs from primary header')
 
     if have_wcs==False:
-        print('There is no point in contuing, so returning')
+        print('There is no point in continueing, so returning')
 
 
     xra=wcs.wcs.crval[0]
@@ -366,8 +395,8 @@ def do_one(filename='data/lvmSFrame-00007373.fits',wrange=[6550,6570],crange=Non
     if outroot=='':
         outroot='test'
     output_file=outroot.replace('.fits','')+'.fits'
-    if ext!='FLUX':
-        output_file=output_file.replace('.fits','.%s.fits' % ext)
+    # if ext!='FLUX':
+    #     output_file=output_file.replace('.fits','.%s.fits' % ext)
     hdulist.writeto(output_file, overwrite=True)
     print('\nFinal stats: mean %.2e median %.2e STD %.2e ' % (xmean,xmed,xstd))
 
@@ -388,7 +417,9 @@ def steer(argv):
 
     xha=['ha',[6560,6566],[6590,6630]]
     xs2=['sii',[6710,6735],[6740,6760]]
-    xxx=['x',[8000,9000],[6000,7000]]
+    x03=['oiii',[5003,5011],[5015,5035]]
+    xxx=['x',[-1,-1],[-1,-1]]
+    xhold=[]
 
     files=[]
 
@@ -401,12 +432,6 @@ def steer(argv):
         elif argv[i]=='-band':
             i+=1
             image_type=argv[i]
-            if image_type=='x':
-                i+=1
-                xxx[1][0]=eval(argv[i])
-                i+=1
-                xxx[1][1]=eval(argv[i])
-                sub_back=False
         elif argv[i]=='-ext':
             i+=1
             ext=argv[i]
@@ -417,6 +442,11 @@ def steer(argv):
             return
         elif argv[i].count('fits'):
             files.append(argv[i])
+        elif image_type=='x':
+            try:
+              xhold.append(eval(argv[i]))
+            except:
+                print('Error: Could not interpret command line :',argv)
         else:
             print('Error: Could not interpret command line :',argv)
         i+=1
@@ -425,7 +455,26 @@ def steer(argv):
         print('Error: not enough arguments: ', argv)
         return
 
-    xbands=[xha,xs2,xxx]
+    if image_type=='x':
+        xdef=False
+        if len(xhold)==2:
+            xxx[1][0]=xhold[0]
+            xxx[1][1]=xhold[1]
+            sub_back=False
+            xdef=True
+        if len(xhold)==4:
+            xxx[1][0]=xhold[0]
+            xxx[1][1]=xhold[1]
+            xxx[2][0]=xhold[2]
+            xxx[2][1]=xhold[3]
+            sub_back=True 
+            xdef=True
+        if xdef==False:
+            print('User band requested but cannot understand the desired wavelengths: ',xhold)
+            return
+
+
+    xbands=[xha,xs2,x03,xxx]
     # xbands contains 3 possible intervals, and nomially I chose one of thes
 
     found_band=False
@@ -444,9 +493,14 @@ def steer(argv):
         words=xfits.split('/')
         froot=words[-1].replace('.fits','')
         froot=froot.replace('lvmSFrame-000','')
-        xoutroot='image_%s_%s' % (froot,qband[0])
-
-
+        froot=froot.replace('lvmCFrame-000','')
+        if qband[0]=='x':
+            ave_wave=0.5*(xhold[0]+xhold[1])
+            xoutroot='FLUX_%s_%d' % (froot,ave_wave)
+        else:
+            xoutroot='FLUX_%s_%s' % (froot,qband[0])
+        if ext!='FLUX':
+            xoutroot.replace('FLUX',ext)
         if sub_back | (ext !='FLUX'):
             do_one(xfits,wrange=qband[1],crange=qband[2],outroot=xoutroot,xscale=1,xsize=0.5,pos_type='slit',ext=ext)
         else:

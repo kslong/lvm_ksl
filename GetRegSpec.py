@@ -152,12 +152,14 @@ def get_spec(filename,xfib,xtype='ave'):
 
     extensions=[]
     sky_exists=False
-    for one in x:
-        one_name=one.header.get('EXTNAME')
+    i=1
+    while i <len(x):
+        one_name=x[i].header.get('EXTNAME')
         print(one_name)
         if one_name.count('SKY'):
             sky_exists=True
             print('Sky Exists')
+        i+=1
 
 
 
@@ -174,36 +176,42 @@ def get_spec(filename,xfib,xtype='ave'):
     flux=x['FLUX'].data[xxfib['fiberid']-1]
     ivar=x['IVAR'].data[xxfib['fiberid']-1]
     mask=x['MASK'].data[xxfib['fiberid']-1]
-    sky=x['SKY'].data[xxfib['fiberid']-1]
-    sky_ivar=x['SKY_IVAR'].data[xxfib['fiberid']-1]
-    lsf=x['LSF'].data[xxfib['fiberid']-1]
+    if sky_exists:
+        sky=x['SKY'].data[xxfib['fiberid']-1]
+        sky_ivar=x['SKY_IVAR'].data[xxfib['fiberid']-1]
+        lsf=x['LSF'].data[xxfib['fiberid']-1]
 
 
     if xtype=='ave':
         xflux=np.nanmean(flux,axis=0)
-        xsky=np.nanmean(sky,axis=0)
         xmask=np.sum(mask,axis=0)
-        xlsf=np.nanmean(lsf,axis=0)
+        if sky_exists:
+            xsky=np.nanmean(sky,axis=0)
+            xlsf=np.nanmean(lsf,axis=0)
     elif xtype=='med':
         xflux=np.nanmedian(flux,axis=0)
-        xsky=np.nanmedian(sky,axis=0)
         xmask=np.sum(mask,axis=0)
-        xlsf=np.nanmedian(lsf,axis=0)
+        if sky_exists:
+            xsky=np.nanmedian(sky,axis=0)
+            xlsf=np.nanmedian(lsf,axis=0)
     else:
         print('Error: getspec: only ave or med allowd for xtype')
         return
 
     ivar=np.nansum(ivar,axis=0)
     xerr=np.select([ivar>1],[1/np.sqrt(ivar)],default=np.nan)
-    xsky_error=np.nansum(sky_ivar,axis=0)
-    xsky_error=np.select([xsky_error>1],[1/np.sqrt(xsky_error)],default=np.nan)
-    xspec=Table([wave,xflux,xerr,xsky,xsky_error,xmask,xlsf],names=['WAVE','FLUX','ERROR','SKY','SKY_ERROR','MASK','LSF'])
+    if sky_exists:
+        xsky_error=np.nansum(sky_ivar,axis=0)
+        xsky_error=np.select([xsky_error>1],[1/np.sqrt(xsky_error)],default=np.nan)
+        xspec=Table([wave,xflux,xerr,xsky,xsky_error,xmask,xlsf],names=['WAVE','FLUX','ERROR','SKY','SKY_ERROR','MASK','LSF'])
+        xspec['SKY'].format='.3e'
+        xspec['SKY_ERROR'].format='.3e'
+        xspec['LSF'].format='.2f'
+    else:
+        xspec=Table([wave,xflux,xerr,xmask],names=['WAVE','FLUX','ERROR','MASK'])
     xspec['WAVE'].format='.1f'
     xspec['FLUX'].format='.3e'
     xspec['ERROR'].format='.3e'
-    xspec['SKY'].format='.3e'
-    xspec['SKY_ERROR'].format='.3e'
-    xspec['LSF'].format='.2f'
     return xspec
 
 
@@ -252,10 +260,15 @@ def do_one(filename,source_reg,source_reg_color,back_reg=None, back_reg_color=No
             xspec['SOURCE_FLUX']*=len(source_fibers)
             xspec['SOURCE_ERROR']*=len(source_fibers)
 
-    exposure=x['PRIMARY'].header['EXPOSURE']
-
-
-    outname='%s_%05d' % (root,exposure)
+    if filename.count('SFra'):
+        exposure=x['PRIMARY'].header['EXPOSURE']
+        outname='%s_%05d' % (root,exposure)
+    else:
+        word=filename.split('/')
+        xroot=word[-1]
+        xroot=xroot.replace('.fits','')
+        xroot=xroot.replace('.gz','')
+        outname='%s_%s' % (root,xroot)
 
     if xtype=='med':
         outname='%s_med' % (outname)

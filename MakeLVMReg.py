@@ -7,7 +7,7 @@
 Synopsis:  
 
 Create a region file containing a region for each fiber in and exposure. 
-Alloow for the possibility of changing the color for at least one circulare
+Allow for the possibility of changing the color for at least one circulare
 region
 
 

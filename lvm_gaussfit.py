@@ -12,7 +12,14 @@ the scince fibers of a sky-subtracted LVM exposure
 
 Command line usage (if any):
 
-    usage: lvm_gaussfit.py filename
+    usage: lvm_bootstrap.py [-lmc] [-smc] [-out root] filename
+
+    where 
+
+    -lmc or -smc applies a velocity offset for fitting
+    -out root sets the rootname for the output file
+    filename is the aname of an SFrame compatiable file
+
 
 Description:  
 
@@ -39,6 +46,11 @@ from astropy.io import fits
 import numpy as np
 from astropy.modeling import models, fitting
 
+
+import numpy as np
+from scipy.optimize import curve_fit
+import astropy.units as u
+from astropy.table import Table
 
 
 def fit_gaussian_to_spectrum(spectrum_table, line, init_wavelength, init_fwhm, wavelength_min, wavelength_max, plot=False):
@@ -342,7 +354,6 @@ def do_one(spectrum_table,vel=0.,xplot=False):
         print(f"Fitting Ha An exception occurred: {e}")
         print(f"Exception type: {type(e).__name__}")
 
-    
     try:
         results,xspec=fit_gaussian_to_spectrum(spectrum_table, line='nii_a',init_wavelength=zz*6548, init_fwhm=1., wavelength_min=zz*6538, wavelength_max=zz*6558, plot=xplot)
         records.append(results)
@@ -383,6 +394,33 @@ def do_one(spectrum_table,vel=0.,xplot=False):
         return []
 
     return ztab
+    
+def do_individual(filenames,vel,xplot=False):
+    '''
+    This is to proces individual spectra
+    '''
+    xresults=[]
+    for one_file in filenames:
+        try:
+            xtab=ascii.read(one_file)
+            results=do_one(xtab,vel,xplot)
+            word=one_file.split('/')
+            root=word[-1]
+            root=root.replace('.txt','')
+            print(results)
+            results['Object']=root
+            xresults.append(results)
+        except:
+            print('Could not analyze %s' % one_file)
+
+    ftab=vstack(xresults)
+    if len(filenames)==1:
+        outname='Gfit_%s.txt' % root
+    else:
+        outname='Gfits.txt'
+    ftab.write(outname,format='ascii.fixed_width_two_line',overwrite=True)
+    
+   
     
 
 
@@ -425,7 +463,7 @@ def check_for_nan(flux,max_frac=0.5):
         return False
 
 
-def do_all(filename='data/lvmSFrame-00009088.fits',vel=0.0):
+def do_all(filename='data/lvmSFrame-00009088.fits',vel=0.0,outname=''):
     try:
         x=fits.open(filename)
     except:
@@ -459,8 +497,12 @@ def do_all(filename='data/lvmSFrame-00009088.fits',vel=0.0):
             print('Too many nans for  fiber %d at %.2f %.2f'  % (good['fiberid'][i],good['ra'][i],good['dec'][i]))
 
     results=vstack(records)
-    outname=filename.split('/')[-1]
-    outname=outname.replace('.fits','.txt')
+
+    if outname=='':
+        outname=filename.split('/')[-1]
+        outname=outname.replace('.fits','.txt')
+    else:
+        outname=outname+'.txt'
 
     columns=results.colnames
     for one in columns:
@@ -505,6 +547,9 @@ def steer(argv):
     filename=''
     lmc=262.
     smc=146.
+    outname=''
+    fitsfiles=[]
+    specfiles=[]
 
     vel=0
     i=1
@@ -516,20 +561,31 @@ def steer(argv):
             vel=lmc
         elif argv[i]=='-smc':
             vel=smc
+        elif argv[i][0:4]=='-out':
+            i+=1
+            outname=argv[i]
         elif argv[i]=='-v':
             i+=1
             vel=eval(argv[i])
         elif argv[i][0]=='-':
             print('Unknown options :',argv)
             return
-        elif filename=='':
-            filename=argv[i]
+        elif argv[i].count('.fits'):
+            fitsfiles.append(argv[i])
+        elif argv[i].count('.txt'):
+            specfiles.append(argv[i])
         else:
             print('Unknown options :',argv)
             return
         i+=1
-    results=do_all(filename,vel)
-    analyze(results)
+
+    for one_file in fitsfiles:
+        results=do_all(one_file,vel)
+        analyze(results)
+
+    if len(specfiles)>0:
+        do_individual(specfiles,vel)
+
     return
 
 

@@ -111,6 +111,8 @@ def doit(xfiles):
     xtab=Table([xfiles,mjd,drp,commit,fluxcal,ra,dec,tile,obj],names=['Filename','MJD','DRP','Commit','FluxCal','RA','Dec','Tile_ID','Object'])
     xtab.sort((['Filename']))
     print(xtab)
+    xtab.write('DataSum.txt',format='ascii.fixed_width_two_line',overwrite=True)
+    print('Full summary in DataSum.txt')
 
 
 

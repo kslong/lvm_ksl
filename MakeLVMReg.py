@@ -6,16 +6,20 @@
 
 Synopsis:  
 
-Create a region file containing a region for each fiber in and exposure. 
-Alloow for the possibility of changing the color for at least one circulare
-region
+Read an rss file and create a region file containing all the fibers, and
+read in a separate region file with one or more sources defined as 
+regions with different colors.  Write out a new region file thaqt
+contains all of the fiber positions, and use the second region file
+to set the colors of the fibers.
 
 
 Command line usage (if any):
 
-    usage: MakeLVMReg.py -h -root whatever -circle ra dec size -circle ra dec size  file1  file 2
+    usage: MakeLVMReg.py -h *.fits whatever.reg or whatever.reg.txt
 
 Description:  
+
+    
 
 Primary routines:
 
@@ -32,15 +36,128 @@ History:
 
 
 # from lvm_ksl import GetSpec
+import os
 import sys
-from astropy.io import fits
+from astropy.io import fits, ascii
 from astropy.table import Table
 import numpy as np
 from astropy.coordinates import SkyCoord
 import astropy.units as u
+from astropy.coordinates import Angle
 
+def check_positions_in_rectangle(table, center_ra, center_dec, width, height, theta):
+    """
+    Check which positions in an astropy table fall within a rotated rectangle on the sky.
+    
+    Parameters
+    ----------
+    table : astropy.table.Table
+        Table containing positions. Must have columns 'RA' and 'Dec' in degrees
+    center_ra : float
+        Right ascension of rectangle center in degrees
+    center_dec : float
+        Declination of rectangle center in degrees
+    width : float
+        Width of rectangle in arcseconds
+    height : float
+        Height of rectangle in arcseconds
+    theta : float
+        Position angle in degrees from North (positive toward East)
+        
+    Returns
+    -------
+    table : astropy.table.Table
+        Input table with new boolean column 'in_rectangle' added
+    """
+    # Convert everything to radians for calculations
+    try:
+        ra_rad = np.radians(table['RA'])
+        dec_rad = np.radians(table['Dec'])
+    except:
+        ra_rad = np.radians(table['ra'])
+        dec_rad = np.radians(table['dec'])
+    
 
+    center_ra_rad = np.radians(center_ra)
+    center_dec_rad = np.radians(center_dec)
+    theta_rad = np.radians(theta)
+    
+    # Convert width/height to radians
+    width_rad = np.radians(width/3600.0)  # convert arcsec to degrees then radians
+    height_rad = np.radians(height/3600.0)
+    
+    # Calculate position differences, accounting for cos(dec) in RA
+    delta_ra = (ra_rad - center_ra_rad) * np.cos(center_dec_rad)
+    delta_dec = dec_rad - center_dec_rad
+    
+    # Rotate coordinates to rectangle frame (positive theta rotates toward East)
+    x = delta_ra * np.cos(-theta_rad) + delta_dec * np.sin(-theta_rad)
+    y = -delta_ra * np.sin(-theta_rad) + delta_dec * np.cos(-theta_rad)
+    
+    # Check if points are within rectangle bounds
+    in_rectangle = (np.abs(x) <= width_rad/2) & (np.abs(y) <= height_rad/2)
+    
+    # Add result to table
+    table['in_area'] = in_rectangle
+    
+    return table
 
+def check_positions_in_ellipse(table, center_ra, center_dec, semi_major, semi_minor, theta):
+    """
+    Check which positions fall within a rotated ellipse on the sky.
+    
+    Parameters
+    ----------
+    table : astropy.table.Table
+        Table containing positions. Must have columns 'RA' and 'Dec' in degrees
+    center_ra : float
+        Right ascension of ellipse center in degrees
+    center_dec : float
+        Declination of ellipse center in degrees
+    semi_major : float
+        Semi-major axis in arcseconds
+    semi_minor : float
+        Semi-minor axis in arcseconds
+    theta : float
+        Position angle in degrees from North (positive toward East)
+        
+    Returns
+    -------
+    table : astropy.table.Table
+        Input table with new boolean column 'in_ellipse' added
+    """
+    # Convert to radians
+    # Convert everything to radians for calculations
+    try:
+        ra_rad = np.radians(table['RA'])
+        dec_rad = np.radians(table['Dec'])
+    except:
+        ra_rad = np.radians(table['ra'])
+        dec_rad = np.radians(table['dec'])
+    
+    center_ra_rad = np.radians(center_ra)
+    center_dec_rad = np.radians(center_dec)
+    theta_rad = np.radians(theta)
+    
+    # Convert axes to radians
+    a_rad = np.radians(semi_major/3600.0)
+    b_rad = np.radians(semi_minor/3600.0)
+    
+    # Calculate position differences
+    delta_ra = (ra_rad - center_ra_rad) * np.cos(center_dec_rad)
+    delta_dec = dec_rad - center_dec_rad
+    
+    # Rotate coordinates (positive theta rotates toward East)
+    x = delta_ra * np.cos(-theta_rad) + delta_dec * np.sin(-theta_rad)
+    y = -delta_ra * np.sin(-theta_rad) + delta_dec * np.cos(-theta_rad)
+    
+    # Check if points are within ellipse using normalized equation
+    in_ellipse = (x/a_rad)**2 + (y/b_rad)**2 <= 1
+    
+    # Add result to table
+    table['in_area'] = in_ellipse
+    
+    return table
 
 header='''
 # Region file format: DS9 version 4.1
@@ -224,20 +341,40 @@ def do_simple(filename,outroot='',color='yellow',target_type='science'):
     return xtab,exposure
                     
     
-def do_one(filename,ra,dec,size,outroot=''):
+
+
+    
+def do_one(filename,qtab,outroot=''):
     icolor=['red','green','blue','cyan','magenta','black','white']
     xtab,exposure=get_good_fibers(filename,color='yellow',target_type='science')
-    i=0
-    while i<len(size):
-        ra_deg,dec_deg=radec2deg(ra[i],dec[i])
-        xtab=add_circular_region(xtab,ra_deg,dec_deg,size[i],icolor[i])
-        i+=1
-    if outroot=='':
-        outname='SlitMap_%05d' % exposure
-    else:
-        outname='%s_%05d' % (outroot,exposure)
-    outfile=outname+'.reg'
-    write_reg(outfile,xtab,color='yellow')
+
+    # Create some sort of root for the file names
+    word=filename.split('/')
+    root=word[-1].replace('.fits','')
+    if outroot!='':
+        root='%s_%s' % (root,outroot)
+    
+    for one_row in qtab:
+        print(one_row)
+        if one_row['RegType']=='box':
+            ftab=check_positions_in_rectangle(xtab, center_ra=one_row['RA'], center_dec=one_row['Dec'], width=one_row['Major'], height=one_row['Minor'], theta=one_row['Theta'])
+        elif one_row['RegType']=='ellipse':
+            ftab=check_positions_in_ellipse(xtab, center_ra=one_row['RA'], center_dec=one_row['Dec'], semi_major=one_row['Major'], semi_minor=one_row['Minor'], theta=one_row['Theta'])
+        elif one_row['RegType']=='circle':
+            ftab=check_positions_in_ellipse(xtab, center_ra=one_row['RA'], center_dec=one_row['Dec'], semi_major=one_row['Major'], semi_minor=one_row['Major'], theta=0.0)
+        elif one_row['RegType']=='annulus':
+            # the copy statement below is necessary because without this, qtab and ftab are pointed to the same exact table.
+            ftab=check_positions_in_ellipse(xtab, center_ra=one_row['RA'], center_dec=one_row['Dec'], semi_major=one_row['Major'], semi_minor=one_row['Major'], theta=0.0)
+            qtab=ftab.copy()
+            ftab=check_positions_in_ellipse(xtab, center_ra=one_row['RA'], center_dec=one_row['Dec'], semi_major=one_row['Minor'], semi_minor=one_row['Minor'], theta=0.0)
+            ftab['in_area']=np.select([qtab['in_area']==True],[False],default=ftab['in_area'])
+        outfile='%s.%s.reg' % (root,one_row['Source_name'])
+        print('Writing outfile: ',outfile)
+        ftab['color']='yellow'
+        ftab['color'][ftab['in_area']==True]='red'
+        write_reg(outfile,ftab,color='yellow')
+
+
     return outfile
 
 
@@ -253,10 +390,9 @@ def steer(argv):
 
     MakeReg.py  n103b.txt file 1 file 2 
     '''
-    ra=[]  
-    dec=[]  
-    size=[]  
     filename=[]
+    regfile=''
+    masterfile=''
     outroot=''
     icolor=['red','green','blue','cyan','magenta','black','white']
 
@@ -268,29 +404,39 @@ def steer(argv):
         elif argv[i]=='-root':
             i+=1
             outroot=argv[i]
-        elif argv[i]=='-circle':
-            print('gotcha')
-            i+=1
-            ra.append(argv[i])
-            i+=1
-            dec.append(argv[i])
-            i+=1
-            size.append(eval(argv[i]))
-        elif argv[i][0]=='-' and ra==None:
+        elif argv[i][0]=='-':
             print('Error: cannot parse command line :',argv)
             return
         elif argv[i].count('fits'):
             filename.append(argv[i])
-        elif ra==None:
-            ra=argv[i]
-        elif dec==None:
-            dec=argv[i]
-        elif size==None:
-            size=eval(argv[i])
+        elif regfile=='' and argv[i].count('.reg'):
+            regfile=argv[i]
+        elif regfile=='' and masterfile=='':
+            masterfile=argv[i]
         i+=1
 
+    # We want to work with a masterfile
+
+
+    if regfile!='' and masterfile=='':
+        print('Making masterfile')
+        os.system('reg2master.py %s tmp_reg.txt' % regfile)
+        masterfile='tmp_reg.txt'
+    if masterfile=='':
+        print('There is confusion: No masterfile input or created ', argv)
+        return
+    try: 
+        xtab=ascii.read(masterfile)
+    except:
+        print('Could not read the masterfile :',masterfile)
+        return
+
+
+
+
+
     for one_file in filename:
-        do_one(one_file,ra,dec,size,outroot='')
+        do_one(one_file,xtab,outroot='')
 
     return
 

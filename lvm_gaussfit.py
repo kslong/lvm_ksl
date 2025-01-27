@@ -12,7 +12,14 @@ the scince fibers of a sky-subtracted LVM exposure
 
 Command line usage (if any):
 
-    usage: lvm_gaussfit.py filename
+    usage: lvm_bootstrap.py [-lmc] [-smc] [-out root] filename
+
+    where 
+
+    -lmc or -smc applies a velocity offset for fitting
+    -out root sets the rootname for the output file
+    filename is the aname of an SFrame compatiable file
+
 
 Description:  
 
@@ -38,7 +45,12 @@ from astropy.table import Table,vstack, hstack
 from astropy.io import fits
 import numpy as np
 from astropy.modeling import models, fitting
+from glob import glob
 
+
+from scipy.optimize import curve_fit
+import astropy.units as u
+from datetime import datetime
 
 
 def fit_gaussian_to_spectrum(spectrum_table, line, init_wavelength, init_fwhm, wavelength_min, wavelength_max, plot=False):
@@ -248,7 +260,7 @@ def fit_double_gaussian_to_spectrum(spectrum_table, line, init_wavelength1, init
     rmse = np.sqrt(np.mean((spectrum_table['FLUX'][mask] - y_fit)**2))
     
     # Create a new table with the wavelengths of interest and the fitted values
-    fit_table = Table([x, y_fit], names=('WAVE', 'Fit'))
+    fit_table = Table([x, y,y_fit], names=('WAVE', 'FLUX','Fit'))
     
     # Plot the results if requested
     if plot:
@@ -293,28 +305,37 @@ def fit_double_gaussian_to_spectrum(spectrum_table, line, init_wavelength1, init
     
     return qtab, fit_table
 
+def save_fit(line='oi',ftab=None,xdir='Gauss_dir'):
+    '''
+    Save the fit to a directory
+    '''
+    if os.path.isdir(xdir)==False:
+        os.makedirs(xdir,exist_ok=True)
+    ftab.write('%s/%s.txt' % (xdir,line), format='ascii.fixed_width_two_line',overwrite=True)
 
-
-def do_one(spectrum_table,vel=0.,xplot=False):
+def do_one(spectrum_table,vel=0.,xplot=False,xfit=False):
     '''
     Completely process a single spectrum
     '''
+
 
     
     zz=1.+ (vel/3e5)
 
     records=[]
     try:
-        
         results,xspec=fit_double_gaussian_to_spectrum(spectrum_table, line='oii',init_wavelength1=zz*3726.092, init_wavelength2=zz*3729.875, init_fwhm=1, wavelength_min=zz*3717, wavelength_max=zz*3737, plot=xplot)
         records.append(results)
+        save_fit('oii',xspec)
     except Exception as e:
         print(f"Fitting OII; An exception occurred: {e}")
         print(f"Exception type: {type(e).__name__}")
+
     
     try:
         results,xspec=fit_gaussian_to_spectrum(spectrum_table, line='hb',init_wavelength=zz*4861, init_fwhm=1., wavelength_min=zz*4855, wavelength_max=zz*4870, plot=xplot)
         records.append(results)
+        save_fit('hb',xspec)
     except Exception as e:
         print(f"Fitting Hb; An exception occurred: {e}")
         print(f"Exception type: {type(e).__name__}")
@@ -322,6 +343,7 @@ def do_one(spectrum_table,vel=0.,xplot=False):
     try:
         results,xspec=fit_gaussian_to_spectrum(spectrum_table, line='oiii_a',init_wavelength=zz*4959, init_fwhm=1., wavelength_min=zz*4949, wavelength_max=zz*4969, plot=xplot)
         records.append(results)
+        save_fit('oiii_a',xspec)
     except Exception as e:
         print(f"Fitting [OIII]4959; An exception occurred: {e}")
         print(f"Exception type: {type(e).__name__}")
@@ -329,6 +351,7 @@ def do_one(spectrum_table,vel=0.,xplot=False):
     
     try:
         results,xspec=fit_gaussian_to_spectrum(spectrum_table, line='oiii_b', init_wavelength=zz*5007, init_fwhm=1., wavelength_min=zz*4997, wavelength_max=zz*5017, plot=xplot)
+        save_fit('oiii_b',xspec)
         records.append(results)
     except Exception as e:
         print(f"Fitting [OIII]5007; An exception occurred: {e}")
@@ -337,15 +360,16 @@ def do_one(spectrum_table,vel=0.,xplot=False):
     
     try:
         results,xspec=fit_gaussian_to_spectrum(spectrum_table, line='ha', init_wavelength=zz*6563, init_fwhm=1., wavelength_min=zz*6555, wavelength_max=zz*6570, plot=xplot)
+        save_fit('ha',xspec)
         records.append(results)
     except Exception as e:
         print(f"Fitting Ha An exception occurred: {e}")
         print(f"Exception type: {type(e).__name__}")
 
-    
     try:
         results,xspec=fit_gaussian_to_spectrum(spectrum_table, line='nii_a',init_wavelength=zz*6548, init_fwhm=1., wavelength_min=zz*6538, wavelength_max=zz*6558, plot=xplot)
         records.append(results)
+        save_fit('nii_a',xspec)
     except Exception as e:
         print(f"Fitting [NII]6548:  An exception occurred: {e}")
         print(f"Exception type: {type(e).__name__}")
@@ -353,6 +377,7 @@ def do_one(spectrum_table,vel=0.,xplot=False):
     try:
         results,xspec=fit_gaussian_to_spectrum(spectrum_table, line='nii_b',init_wavelength=zz*6584, init_fwhm=1., wavelength_min=zz*6574, wavelength_max=zz*6594, plot=xplot)
         records.append(results)
+        save_fit('nii_b',xspec)
     except Exception as e:
         print(f"Fitting [NII]6584:  An exception occurred: {e}")
         print(f"Exception type: {type(e).__name__}")
@@ -361,6 +386,7 @@ def do_one(spectrum_table,vel=0.,xplot=False):
     try:
         results,xspec=fit_gaussian_to_spectrum(spectrum_table, line='sii_a',init_wavelength=zz*6716, init_fwhm=1., wavelength_min=zz*6706, wavelength_max=zz*6726, plot=xplot)
         records.append(results)
+        save_fit('sii_a',xspec)
     except Exception as e:
         print(f"Fitting [SII]6716:  An exception occurred: {e}")
         print(f"Exception type: {type(e).__name__}")
@@ -369,11 +395,60 @@ def do_one(spectrum_table,vel=0.,xplot=False):
     try:
         results,xspec=fit_gaussian_to_spectrum(spectrum_table, line='sii_b',init_wavelength=zz*6731, init_fwhm=1., wavelength_min=zz*6721, wavelength_max=zz*6741, plot=xplot)
         records.append(results)
+        save_fit('sii_b',xspec)
     except Exception as e:
         print(f"Fitting [SII]6731:  An exception occurred: {e}")
         print(f"Exception type: {type(e).__name__}")
     
 
+    #250110 - Add more lines
+    
+    try:
+        results,xspec=fit_gaussian_to_spectrum(spectrum_table, line='heii',init_wavelength=zz*4686, init_fwhm=1., wavelength_min=zz*4666, wavelength_max=zz*4706, plot=xplot)
+        records.append(results)
+        save_fit('heii',xspec)
+    except Exception as e:
+        print(f"Fitting heii; An exception occurred: {e}")
+        print(f"Exception type: {type(e).__name__}")
+    
+    
+    try:
+        results,xspec=fit_gaussian_to_spectrum(spectrum_table, line='hei',init_wavelength=zz*5876, init_fwhm=1., wavelength_min=zz*5856, wavelength_max=zz*5896, plot=xplot)
+        records.append(results)
+        save_fit('hei',xspec)
+    except Exception as e:
+        print(f"Fitting hei; An exception occurred: {e}")
+        print(f"Exception type: {type(e).__name__}")
+    
+
+    
+    try:
+        results,xspec=fit_gaussian_to_spectrum(spectrum_table, line='oiii_4363',init_wavelength=zz*4363, init_fwhm=1., wavelength_min=zz*4343, wavelength_max=zz*4383, plot=xplot)
+        records.append(results)
+        save_fit('oiii_4363',xspec)
+    except Exception as e:
+        print(f"Fitting hei; An exception occurred: {e}")
+        print(f"Exception type: {type(e).__name__}")
+    
+
+    
+    try:
+        results,xspec=fit_gaussian_to_spectrum(spectrum_table, line='siii_a',init_wavelength=zz*9068, init_fwhm=1., wavelength_min=zz*9048, wavelength_max=zz*9088, plot=xplot)
+        records.append(results)
+        save_fit('siii_a',xspec)
+    except Exception as e:
+        print(f"Fitting siii_a; An exception occurred: {e}")
+        print(f"Exception type: {type(e).__name__}")
+    
+    
+    try:
+        results,xspec=fit_gaussian_to_spectrum(spectrum_table, line='siii_b',init_wavelength=zz*9531, init_fwhm=1., wavelength_min=zz*9511, wavelength_max=zz*9551, plot=xplot)
+        records.append(results)
+        save_fit('siii_b',xspec)
+    except Exception as e:
+        print(f"Fitting siii_b; An exception occurred: {e}")
+        print(f"Exception type: {type(e).__name__}")
+    
 
     try:
         ztab=hstack(records)
@@ -383,6 +458,76 @@ def do_one(spectrum_table,vel=0.,xplot=False):
         return []
 
     return ztab
+    
+def do_individual(filenames,vel,outname,xplot=False,xfit=False):
+    '''
+    This is to process individual spectra from an astropy table
+    containing a WAVE and FLUX column
+    '''
+    xresults=[]
+    xbad=[]
+    xgood=[]
+    if len(filenames)==1:
+        xfit=True
+
+    plot_dir='Gauss_plot'
+
+    os.makedirs(plot_dir,exist_ok=True)
+
+    for one_file in filenames:
+        try:
+            xtab=ascii.read(one_file)
+            foo=xtab['WAVE']
+            foo=xtab['FLUX']
+        except:
+            xbad.append(one_file)
+            continue
+        try:
+            xtab=ascii.read(one_file)
+            results=do_one(xtab,vel,xplot,xfit)
+            word=one_file.split('/')
+            root=word[-1]
+            root=root.replace('.txt','')
+            print(results)
+            results['Object']=root
+            xresults.append(results)
+            xgood.append(one_file)
+            plot_all()
+            word=one_file.split('/')
+            proot=word[-1].replace('.txt','')
+            plot_name='%s/%s.png' % (plot_dir,proot)
+            print(plot_name)
+            plt.savefig(plot_name)
+        except:
+            print('Could not analyze %s' % one_file)
+            xbad.append(one_file)
+
+    if len(xgood)>0:
+        for one_file in xgood:
+            print('Successfully fit %s' % one_file)
+    if len(xbad)>0:
+        print('!! Failed to fit %s' % one_file)
+    if len(xresults)==0:
+        print('Duh')
+        return
+    ftab=vstack(xresults)
+
+    current_date = datetime.now()
+    formatted_date = current_date.strftime("%d%m%y")
+    if outname=='':
+        outname=formatted_date
+
+    if len(filenames)==1:
+        outname='Gauss_%s.txt' % root
+        ftab.write(outname,format='ascii.fixed_width_two_line',overwrite=True)
+    else:
+        outname='Gauss_%s.txt' % outname
+        ftab.write(outname,format='ascii.fixed_width_two_line',overwrite=True)
+
+
+
+    
+   
     
 
 
@@ -425,7 +570,10 @@ def check_for_nan(flux,max_frac=0.5):
         return False
 
 
-def do_all(filename='data/lvmSFrame-00009088.fits',vel=0.0):
+def do_all(filename='data/lvmSFrame-00009088.fits',vel=0.0,outname=''):
+    '''
+    Do all of the spectra in a rss fits file
+    '''
     try:
         x=fits.open(filename)
     except:
@@ -459,8 +607,12 @@ def do_all(filename='data/lvmSFrame-00009088.fits',vel=0.0):
             print('Too many nans for  fiber %d at %.2f %.2f'  % (good['fiberid'][i],good['ra'][i],good['dec'][i]))
 
     results=vstack(records)
-    outname=filename.split('/')[-1]
-    outname=outname.replace('.fits','.txt')
+
+    if outname=='':
+        outname=filename.split('/')[-1]
+        outname=outname.replace('.fits','.txt')
+    else:
+        outname=outname+'.txt'
 
     columns=results.colnames
     for one in columns:
@@ -499,12 +651,44 @@ def analyze(xtab):
     xx=xx[xx['eflux_oii_b']!=999.]
     print('Of these, %d spectra also have o2 measured' % len(xx))
     print('Measured means having an error calculated')
+
+def plot_one(qtab,name='ha'):
+    '''
+    Make a very simple comparison of the quality of a fit
+    '''
+    plt.plot(qtab['WAVE'],qtab['FLUX'],label=name)
+    plt.plot(qtab['WAVE'],qtab['Fit'])
+    plt.legend()
         
+def plot_all(qdir='Gauss_dir'):
+    '''
+    Read in a bunch of fits and plot them all in one big
+    plot, assuming all of the fits have been saved to a directoryt
+    '''
+    files=glob('%s/*.txt' % qdir)
+    files=np.sort(files)
+    print(len(files))
+    plt.figure(1,(12,12))
+    plt.clf()
+    i=0
+    while i<len(files):
+        plt.subplot(4,4,i+1)
+        one_file=files[i]
+        xtab=ascii.read(one_file)
+        word=one_file.split('/')
+        name=word[-1].replace('.txt','')
+        print(name)
+        plot_one(xtab,name)
+        i+=1
+    plt.tight_layout()
 
 def steer(argv):
     filename=''
     lmc=262.
     smc=146.
+    outname=''
+    fitsfiles=[]
+    specfiles=[]
 
     vel=0
     i=1
@@ -516,20 +700,31 @@ def steer(argv):
             vel=lmc
         elif argv[i]=='-smc':
             vel=smc
+        elif argv[i][0:4]=='-out':
+            i+=1
+            outname=argv[i]
         elif argv[i]=='-v':
             i+=1
             vel=eval(argv[i])
         elif argv[i][0]=='-':
             print('Unknown options :',argv)
             return
-        elif filename=='':
-            filename=argv[i]
+        elif argv[i].count('.fits'):
+            fitsfiles.append(argv[i])
+        elif argv[i].count('.txt'):
+            specfiles.append(argv[i])
         else:
             print('Unknown options :',argv)
             return
         i+=1
-    results=do_all(filename,vel)
-    analyze(results)
+
+    for one_file in fitsfiles:
+        results=do_all(one_file,vel,outname)
+        analyze(results)
+
+    if len(specfiles)>0:
+        do_individual(specfiles,vel,outname)
+
     return
 
 

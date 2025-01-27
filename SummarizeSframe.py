@@ -12,13 +12,14 @@ number of files
 
 Command line usage (if any):
 
-    usage: SummarizeSFrame.py  [-h] [-percent 50] [-emin 900] [-out whatever] exp_start expstop delta
+    usage: SummarizeSFrame.py  [-h] [-ver drp_ver][-percent 50] [-emin 900] [-out whatever] exp_start expstop delta
 
 Description:  
 
     where:
 
     -h prints this documentatikon
+    -ver drp_ver where drp_ver is a version run of the drp, e.g the current default 1.1.1
     -percent is the percentile to use in the calculation, if missing use median or 50
     -emin sets the mimimum exposure time to include; the default is 900
     -out is name or rootname of output fits file
@@ -49,6 +50,50 @@ from datetime import datetime
 from astropy.wcs import WCS
 
 
+from astropy.coordinates import SkyCoord,  Galactocentric
+import astropy.units as u
+
+def augment_drp_all(xtab):
+
+    drp_all=xtab
+    sci_ra=drp_all['sci_ra']
+    sci_dec=drp_all['sci_dec']
+    skye_ra=drp_all['skye_ra']
+    skye_dec=drp_all['skye_dec']
+    skyw_ra=drp_all['skyw_ra']
+    skyw_dec=drp_all['skyw_dec']
+    
+    sci_coord = SkyCoord(ra=sci_ra*u.degree, dec=sci_dec*u.degree, frame='icrs')
+    skye_coord = SkyCoord(ra=skye_ra*u.degree, dec=skye_dec*u.degree, frame='icrs')            
+    skyw_coord = SkyCoord(ra=skyw_ra*u.degree, dec=skyw_dec*u.degree, frame='icrs') 
+    de = sci_coord.separation(skye_coord).degree
+    dw = sci_coord.separation(skyw_coord).degree    
+    galactic_lat=sci_coord.galactic.b.degree
+    lmc=262.
+    smc=146.
+    lmc_pos=SkyCoord(ra=80.89416666666668*u.degree,dec=-69.75618*u.degree,frame='icrs')
+    lmc_sep=lmc_pos.separation(sci_coord)
+    lmc_sep=lmc_sep.degree
+    smc_pos=SkyCoord(ra=13.1875*u.degree,dec=-72.8286*u.degree,frame='icrs')
+    smc_sep=smc_pos.separation(sci_coord)
+    smc_sep=smc_sep.degree
+
+
+    xlocal=np.select([np.fabs(galactic_lat)>10],['HighLat'],default='Plane')
+
+    xlocal=np.select([lmc_sep<8],['LMC'],default=xlocal)
+    xlocal=np.select([smc_sep<5],['SMC'],default=xlocal)
+    drp_all['Survey']=xlocal
+    near=np.select([de<dw],['SKY_EAST'],default='SKY_WEST')
+    far=np.select([de>=dw],['SKY_EAST'],default='SKY_WEST')
+    drp_all['Near']=near
+    drp_all['Far']=far
+    lmc=262.
+    smc=146.
+    drp_all['Redshift']=np.select([drp_all['Survey']=='LMC',drp_all['Survey']=='SMC'],[lmc,smc],default=0.0)
+    return drp_all
+
+
 def read_drpall(drp_ver='1.0.3'):
     DRPFILE='drpall-%s.fits' % (drp_ver)
     # First try to locate the DRP file locally, otherwise
@@ -69,6 +114,7 @@ def read_drpall(drp_ver='1.0.3'):
         return []
 
     drp_tab=Table(drpall[1].data)
+    drp_tab=augment_drp_all(drp_tab)
     return  drp_tab
 
 
@@ -267,7 +313,7 @@ def doit(exp_start=4000,exp_stop=8000,delta=5,exp_min=900.,out_name='',drp_ver='
     ztab=select(xtab,exp_start,exp_stop,delta)
     
     if out_name=='':
-        out_name='XSFrame_%d_%d_%d_%d.fits' % (exp_start,exp_stop,delta,percentile)
+        out_name='XSFrame_%s_%d_%d_%d_%d.fits' % (drp_ver,exp_start,exp_stop,delta,percentile)
     make_med_spec(xtab=ztab,data_dir=xtop,outfile=out_name,percentile=percentile)
 
 def steer(argv):
@@ -282,6 +328,8 @@ def steer(argv):
     percent=50
     out_name=''
 
+    ver='1.1.0'
+
     i=1
     while i<len(argv):
         if argv[i][:2]=='-h':
@@ -293,6 +341,9 @@ def steer(argv):
         elif argv[i]=='-out':
             i+=1
             out_name=(argv[i])
+        elif argv[i]=='-ver']:
+            i+=1
+            ver=argv[i]
         elif argv[i][:5]=='-perc':
             i+=1
             percent=eval(argv[i])
@@ -310,7 +361,7 @@ def steer(argv):
         delta=1
                 
 
-    doit(exp_start,exp_stop,delta,exp_min,out_name,drp_ver='1.1.0',percentile=percent)
+    doit(exp_start,exp_stop,delta,exp_min,out_name,drp_ver=ver,percentile=percent)
 
 
 

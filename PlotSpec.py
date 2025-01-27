@@ -14,12 +14,14 @@ have been sky subtracted.
 
 Command line usage (if any):
 
-    usage: PlotSpec.py [-h] [-frac 0.1] spectrum [backspec]
+    usage: PlotSpec.py [-h] [-frac 0.1] -min whatever - max whateverspectrum [backspec]
 
     where frac controls the autoscaling for the 
         maximum value in each panel and
         backspec is an optional spectrum to 
             be subtracted from the intial spectrum
+        -min fixes the lower limit in all panels
+        -max fixes the upper limit in all panels
 Description:  
 
 Primary routines:
@@ -61,6 +63,19 @@ def do_one_region(spectab,wmin=3600,wmax=4100,frac=0.1):
         plt.ylim(ymin,frac*ymax)
     return
 
+
+def do_one_region_fixed(spectab,wmin=3600,wmax=4100,ymin=0, ymax=1e-13):
+    extra=10
+    xx=spectab[spectab['WAVE']>wmin-extra]
+    xx=xx[xx['WAVE']<wmax+extra]
+    mask=np.isfinite(xx['FLUX'])
+    xx=xx[mask]
+    good=np.where(mask)[0]
+    plt.plot(xx['WAVE'],xx['FLUX'])
+    plt.xlim(wmin-extra,wmax+extra)
+    plt.ylim(ymin,ymax)
+    return
+
 def xmark(line='[SIII]',w=9069.3,frac=0.8):
 
     ymin,ymax=plt.ylim()
@@ -68,10 +83,14 @@ def xmark(line='[SIII]',w=9069.3,frac=0.8):
     plt.text(w,frac *ymax,line,ha='center',color='red',clip_on=True)
 
 def do_lines():
+    '''
+    These are air waveleengs or should be
+    '''
     xmark('[OII]', 3728)
     xmark('[OIII]',4363.15,.6)
     xmark('[OIII]',5006.843)
     xmark('[OI]',6300.3)
+    xmark('[OI]',6363.77)
     xmark('[SIII]',9069.3)
     xmark('[SIII]',9532.3)
     xmark('HI',8862)
@@ -83,8 +102,8 @@ def do_lines():
     xmark('[SII]',6720)
     xmark(r'H$\alpha$/[NII]',6563)
     xmark(r'H$\beta$',4861)
-    xmark('[NeIII]',3868.69)
-    xmark('[NeIII]',3967)
+    xmark('[NeIII]',3869.06)
+    xmark('[NeIII]',3967.79)
     xmark(r'H$\delta$',4104.73)
     xmark(r'H$\gamma$',4340.46)
     xmark('HI', 9229.02)
@@ -110,7 +129,7 @@ def do_lines():
 
 
 
-def do_all(xtab,frac=0.1):
+def do_all(xtab,ptype='scale',ymin=0.0,ymax=1e-14,frac=0.1):
     '''
     Create the figure
     '''
@@ -118,17 +137,23 @@ def do_all(xtab,frac=0.1):
     
     wmin=3600
     wmax=9500
+    wmax=9559
     delta=750
     nmax=int((wmax-wmin)/delta)+1
-    print(nmax)
+    # print(nmax)
     i=0
     while i<nmax:
         plt.subplot(nmax,1,i+1)
-
-
         wwmin=wmin+i*delta
         wwmax=wwmin+delta
-        do_one_region(xtab,wwmin,wwmax,frac)
+        if ptype=='scale':
+            do_one_region(xtab,wwmin,wwmax,frac)
+        elif ptype=='fixed':
+            do_one_region_fixed(xtab,wwmin,wwmax,ymin, ymax)
+        else:
+            print('Error: Indecipheragle type of plot: ',ptype)
+            return
+
         do_lines()
         i+=1
     plt.tight_layout()
@@ -142,6 +167,9 @@ def steer(argv):
 
 
     frac=0.1
+    ymin=0.
+    ymax=0.
+    itype='scale'
     filename=''
     backname=''
 
@@ -153,6 +181,12 @@ def steer(argv):
         elif argv[i]=='-frac':
             i+=1
             frac=eval(argv[i])
+        elif argv[i]=='-min':
+            i+=1
+            ymin=eval(argv[i])
+        elif argv[i]=='-max':
+            i+=1
+            ymax=eval(argv[i])
         elif argv[i][0]=='-':
             print('Error: Unknown switch: ',argv)
             return
@@ -180,10 +214,13 @@ def steer(argv):
         xtab['FLUX']-=btab['FLUX']
 
 
+    
+    if ymax>0.0:
+        itype='fixed'
 
 
 
-    do_all(xtab,frac=frac)
+    do_all(xtab,ptype=itype,ymin=ymin,ymax=ymax,frac=frac)
     words=filename.split('/')
     outname=words[-1].replace('.txt','')
     outname=outname.replace('.tab','')

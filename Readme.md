@@ -16,13 +16,9 @@ To obtain the best information available currently, ksl has written a subsidiary
 
 Here is a brief description of each program:
 
-* xcal.py adds the ra and decs for individual fibers in a calibrated exposure. It also adds information needed to create a WCS that is used by kslmap to create an image of an RSS file with good astrometry. The LVM DRP (data analysis pipelines) crates files with names like lvmCFrame-00009240.fits which contain the row stacked flux-calibrated spectra, where 9240 is the exposure number. xcal.py files will have names like XCFrame-00009240.fits
-
 * kslmap.py creates 'images" of an exposure from either the lvm drp created reduced data or the xcal data. 
 
-* PlotClosest.py creates an ansci table fo the fiber closest to a given ra and dec.  It can run on either the direct output of xcal.py or on the direct output of the lvmdrp.  
-
-* fib2radec.py creates an astropy table giving the RA and Dec of each fibeer in a calbirated LVM imaage; if the guide star data are avalible the program will use information from that ,but if not it will use data in the calbrated file to determin the ra's and dec's of each fiber.
+* PlotClosest.py creates an ansci table for the fiber closest to a given ra and dec.  It can run on either the direct output of xcal.py or on the direct output of the lvmdrp.  
 
 The remaining programs are mainly intended for use when one has a local version of the LVM DRP installed, or for work on sky subtraction
 
@@ -45,3 +41,11 @@ the last one created.
 
 
 The repository will likely contain other routines as time goes forward.  Hopefully, they will be docuemnted, but usually there is at least some indication of what they do in the headers information at the top of the routines.
+
+Some modeules are obsolete; these should have been moved to the deprecated subdirectory
+
+* xcal.py adds the ra and decs for individual fibers in a calibrated exposure. It also adds information needed to create a WCS that is used by kslmap to create an image of an RSS file with good astrometry. The LVM DRP (data analysis pipelines) creates files with names like lvmCFrame-00009240.fits which contain the row stacked flux-calibrated spectra, where 9240 is the exposure number. xcal.py files will have names like XCFrame-00009240.fits
+
+
+* fib2radec.py creates an astropy table giving the RA and Dec of each fibeer in a calbirated LVM imaage; if the guide star data are avalible the program will use information from that ,but if not it will use data in the calbrated file to determin the ra's and dec's of each fiber.
+

@@ -10,7 +10,7 @@ Retrieve drp output data from Utah to a local computer
 
 Command line usage (if any):
 
-    usage: GetFromUtah.py [-h] [-cp] [-CFrame]  mjd expstart [expstop]
+    usage: GetFromUtah.py [-h] [-cp] [-CFrame]  -drp 1.1.1 mjd expstart [expstop]
 
     where:
 
@@ -18,6 +18,7 @@ Command line usage (if any):
     -cp copies the retrieved data to a local directory
     -CFrame causes the CFrame data to be retrieved instead of the 
         SFrame data
+    -drp whatever wistchedst the default location to a different processing version
     mjd is the mjd of the observations one wants to retrieve
     expstart is the first exposure to retrieve
     expstart, if given means to retrieve exposures from expstart to
@@ -131,6 +132,9 @@ def steer(argv):
             ftype='CFrame'
         elif argv[i]=='-cp':
             copy=True
+        elif argv[i]=='-drp':
+            i+=1
+            drp_ver=argv[i]
         elif argv[i][0]=='-':
             print('Unknown switch: ',argv)
             return

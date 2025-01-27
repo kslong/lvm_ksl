@@ -6,16 +6,20 @@
 
 Synopsis:  
 
-Create a region file containing a region for each fiber in and exposure. 
-Allow for the possibility of changing the color for at least one circulare
-region
+Read an rss file and create a region file containing all the fibers, and
+read in a separate region file with one or more sources defined as 
+regions with different colors.  Write out a new region file thaqt
+contains all of the fiber positions, and use the second region file
+to set the colors of the fibers.
 
 
 Command line usage (if any):
 
-    usage: MakeLVMReg.py -h -root whatever -circle ra dec size -circle ra dec size  file1 file2 ...
+    usage: MakeLVMReg.py -h *.fits whatever.reg or whatever.reg.txt
 
 Description:  
+
+    
 
 Primary routines:
 
@@ -424,7 +428,7 @@ def steer(argv):
     try: 
         xtab=ascii.read(masterfile)
     except:
-        print('Could not read the masterfule :',masterfile)
+        print('Could not read the masterfile :',masterfile)
         return
 
 

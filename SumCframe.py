@@ -159,7 +159,7 @@ def sum_frames(xfiles):
     Given a bunch of rss files containing a FLUX extension, this
     returns the average spectrum for each fiber
     '''
-    print('There are %d files to process' % len(xfiles))
+    print('There are %d files to average ' % len(xfiles))
     i=0
     for one in xfiles:
         x=fits.open(one)
@@ -184,12 +184,12 @@ def median_frames(xfiles):
     Given a bunch of rss files containing a flux extension, return
     the median spectrum for each fiber
     '''
-    print('There are %d files to process' % len(xfiles))
+    print('There are %d files to median filter' % len(xfiles))
     arrays=[]
     i=0
     for one in xfiles:
         x=fits.open(one,memmap=True)
-        data = ['FLUX'].data
+        data = x['FLUX'].data
         dask_array = da.from_array(data, chunks="auto")  # Create Dask array
         arrays.append(dask_array)
     # Stack the Dask arrays along a new axis (axis=0)
@@ -271,7 +271,8 @@ def doit(filename='',exp_start=4000,exp_stop=8000,delta=5,exp_min=900.,out_name=
 
 
     if len(xtab)>0:
-        process_files(xtab,out_name)
+        process_files(xtab,out_name,ave_med)
+
     return
 
 

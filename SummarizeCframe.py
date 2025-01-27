@@ -107,13 +107,14 @@ def read_drpall(drp_ver='1.1.0'):
 
     try:
         drpall=fits.open(xfile)
+        print('Succesfully opened ',xfile)
     except:
         print('Error: Locared but could not read  : ', xfile)
         return []
 
     drp_tab=Table(drpall[1].data)
 
-    drp_tab=aubment_drp_all(drp_tab)
+    drp_tab=augment_drp_all(drp_tab)
     return  drp_tab
 
 
@@ -312,7 +313,7 @@ def steer(argv):
         elif argv[i]=='-emin':
             i+=1
             exp_min=int(argv[i])
-        elif argv[i]=='-ver']:
+        elif argv[i]=='-ver':
             i+=1
             ver=argv[i]
         elif argv[i]=='-out':

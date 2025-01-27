@@ -341,7 +341,7 @@ def steer(argv):
         elif argv[i]=='-out':
             i+=1
             out_name=(argv[i])
-        elif argv[i]=='-ver']:
+        elif argv[i]=='-ver':
             i+=1
             ver=argv[i]
         elif argv[i][:5]=='-perc':

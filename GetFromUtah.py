@@ -88,10 +88,10 @@ def download_drp_product(drpver, tileid, mjd, expnum, channel=None, kind="SFrame
     kind : str, optional
         LVM DRP product kind/species ('CFrame', 'SFrame'), by default 'SFrame'
     """
+    print('what',drpver,tileid,mjd,expnum,channel,kind)
     if kind in ["Frame", "FFrame"]:
         kind = f"{kind}-{channel}" if channel in "brz" else f"{kind}-?"
     
-    a = Access(release='sdsswork')
     try:
         a.remote()
         a.add('lvm_frame', drpver=drpver, mjd=mjd, tileid=tileid, expnum=expnum, kind=kind)
@@ -109,7 +109,7 @@ def steer(argv):
     GetFromUtah -cp mjd exp_start exp_stop 
 
     '''
-    drp_ver="1.1.0"
+    drp_ver="1.1.1"
     copy=False
     xtile=1028683
     xtile='*'

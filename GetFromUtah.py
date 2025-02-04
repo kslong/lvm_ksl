@@ -91,6 +91,9 @@ def download_drp_product(drpver, tileid, mjd, expnum, channel=None, kind="SFrame
     print('what',drpver,tileid,mjd,expnum,channel,kind)
     if kind in ["Frame", "FFrame"]:
         kind = f"{kind}-{channel}" if channel in "brz" else f"{kind}-?"
+
+    a=Access(release='sdsswork')
+    q=open('Failed.txt','a')
     
     try:
         a.remote()
@@ -100,6 +103,9 @@ def download_drp_product(drpver, tileid, mjd, expnum, channel=None, kind="SFrame
         print(f"Downloaded product of {kind = } for {mjd = } - {expnum = }")
     except Exception as e:
         print(f"Error: failed downloading product of {kind = } for {mjd = } - {expnum = }: {e}")
+        q.write(f"Error: failed downloading product of {kind = } for {mjd = } - {expnum = }: {e}")
+
+    q.close()
 
 
 def steer(argv):

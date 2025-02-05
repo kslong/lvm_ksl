@@ -123,6 +123,8 @@ from astropy.wcs.utils import fit_wcs_from_points
 from astropy.wcs import WCS
 from scipy.interpolate import griddata
 from astropy.coordinates import SkyCoord
+import os
+import psutil
 
 
 def get_size(xfiles,rad=0.25):
@@ -601,6 +603,61 @@ def check_for_nan(flux,max_frac=0.5):
     else:
         return False
 
+def remap_one(filename,q,shape):
+    '''
+    where filename is one file to read
+    1 is the associated row of the frac table
+    shape is the shape of the output 
+    array
+    '''
+
+    if os.path.isdir('tmp')==False:
+        os.makedirs('tmp')
+    
+    VERY_BIG = 1e50
+    VERY_SMALL = 1e-50
+
+    xzero_array = np.zeros(shape, dtype=np.float32)
+
+    print('\nStart    %s' % (filename))
+    x=fits.open(filename)
+    print('Flux  %10.3e %10.3e %10.e %10.3e'  % (np.nanmedian(x['FLUX'].data),np.nanstd(x['FLUX'].data),np.nanmin(x['FLUX'].data),np.nanmax(x['FLUX'].data)))
+    zmax=np.nanmax(x['IVAR'].data)
+    print('Ivar  %10.3e %10.3e %10.e %10.3e'  % (np.nanmedian(x['IVAR'].data),zmax*np.nanstd(x['IVAR'].data/zmax),np.nanmin(x['IVAR'].data),np.nanmax(x['IVAR'].data)))
+
+
+    xflux=xzero_array.copy()
+    xvar=xzero_array.copy()
+    xexp=xzero_array.copy()
+    # q contains the fraction allocation 
+    for one_row in q:
+        xmask=x['MASK'].data[one_row['fiberid']-1]
+        one_flux=np.select([xmask==0],[x['FLUX'].data[one_row['fiberid']-1]],default=0)
+        one_invar=np.select([xmask==0],[x['IVAR'].data[one_row['fiberid']-1]],default=VERY_SMALL)
+        one_exp=np.select([xmask==0],[1.],default=0.0)
+        non_finite_mask=~np.isfinite(one_flux)
+        non_finite_sum=np.sum(non_finite_mask)
+        if non_finite_sum>0:
+            print('Found non_finite %d values' % non_finite_sum)
+        one_vflux=x['IVAR'].data[one_row['fiberid']-1]
+        # so one_flux, one_exp, and one_var represent one row in the flux, var, and expososure arrays
+        xflux[one_row['fib_master']-1]+=one_flux*one_row['frac']
+        xvar[one_row['fib_master']-1]+=one_row['frac']/one_invar  
+        xexp[one_row['fib_master']-1]+=one_row['frac']*one_exp
+            
+    x['FLUX'].data=xflux
+    x['IVAR'].data=xvar
+    x=add_extension_with_same_shape(x, 'FLUX','EXPOSURE')
+    x['EXPOSURE'].data=xexp
+    xfilename=filename.split('/')[-1]
+    x.writeto('tmp/%s' % xfilename,overwrite=True)
+    x.close()
+
+    return xflux,xvar,xexp
+
+
+
+
 def do_combine(filenames,outroot='',fib_type='xy',c_type='mean'):
     ''' 
     The main routine that carries out the entire process.
@@ -696,53 +753,57 @@ def do_combine(filenames,outroot='',fib_type='xy',c_type='mean'):
     VERY_BIG = 1e50
     VERY_SMALL = 1e-50
 
-    fl=[]
-    vf=[]
-    xm=[]
-
     print('Begin accumulating data')
 
     i=0
     while i < len(filenames):
-
-        print('\nStart    %s' % (filenames[i]))
-        x=fits.open(filenames[i])
-        print('Flux  %10.3e %10.3e %10.e %10.3e'  % (np.nanmedian(x['FLUX'].data),np.nanstd(x['FLUX'].data),np.nanmin(x['FLUX'].data),np.nanmax(x['FLUX'].data)))
-        zmax=np.nanmax(x['IVAR'].data)
-        print('Ivar  %10.3e %10.3e %10.e %10.3e'  % (np.nanmedian(x['IVAR'].data),zmax*np.nanstd(x['IVAR'].data/zmax),np.nanmin(x['IVAR'].data),np.nanmax(x['IVAR'].data)))
-
-        q=zslit[i]       
-        xflux=xzero_array.copy()
-        xvar=xzero_array.copy()
-        xexp=xzero_array.copy()
-        # q contains the fraction allocation 
+        q=zslit[i]
         for one_row in q:
             new_slitmap_table['EXPOSURE'][one_row['fib_master']-1]+=one_row['frac']
-            xmask=x['MASK'].data[one_row['fiberid']-1]
-            one_flux=np.select([xmask==0],[x['FLUX'].data[one_row['fiberid']-1]],default=0)
-            one_invar=np.select([xmask==0],[x['IVAR'].data[one_row['fiberid']-1]],default=VERY_SMALL)
-            one_exp=np.select([xmask==0],[1.],default=0.0)
-            non_finite_mask=~np.isfinite(one_flux)
-            non_finite_sum=np.sum(non_finite_mask)
-            if non_finite_sum>0:
-                print('Found non_finite %d values' % non_finite_sum)
-            one_vflux=x['IVAR'].data[one_row['fiberid']-1]
-            # so one_flux, one_exp, and one_var represent one row in the flux, var, and expososure arrays
-            xflux[one_row['fib_master']-1]+=one_flux*one_row['frac']
-            xvar[one_row['fib_master']-1]+=one_row['frac']/one_invar  
-            xexp[one_row['fib_master']-1]+=one_row['frac']*one_exp
-            
+        xflux,xvar,xexp=remap_one(filenames[i],q,shape)
+        # fl.append(xflux)
+        # vf.append(xvar)
+        # xm.append(xexp)
+        print('Finished %s' % (filenames[i]),flush=True)
+        mem=psutil.virtual_memory()
+        print(f'Total Memory: {mem.total/1e9:.2f} GB')
+        print(f' Used Memory: {mem.used/1e9:.2f} GB')
+
+        i+=1
+
+
+    # Now read them all back
+    print('Now read the data back')
+
+    fl=[]
+    vf=[]
+    xm=[]
+
+
+    i=0
+    while i<len(filenames):
+        xfile=filenames[i].split('/')[-1]
+        xfile='tmp/%s' % xfile
+        print('Reading ',xfile)
+        x=fits.open(xfile)
+        xflux=x['FLUX'].data
+        xvar=x['IVAR'].data
+        xexp=x['EXPOSURE'].data
+
+        print('toasty %10.3e %10.3e %10.3e' % (np.nanmedian(xflux),np.nanmedian(xvar),np.nanmedian(xexp)))
+        
         fl.append(xflux)
         vf.append(xvar)
         xm.append(xexp)
-        j=0
-        total_memory=0
-        while j<len(fl):
-            total_memory+=fl[j].nbytes
-            j+=1
-        print('Finished %s %.2f GB ' % (filenames[i],total_memory/(1024**3)),flush=True)
-        x.close()
+            
+
+        print(f'Total Memory: {mem.total/1e9:.2f} GB')
+        print(f' Used Memory: {mem.used/1e9:.2f} GB')
+
         i+=1
+
+    print('Read all the the data back')
+
 
 
 

@@ -123,6 +123,7 @@ from astropy.wcs.utils import fit_wcs_from_points
 from astropy.wcs import WCS
 from scipy.interpolate import griddata
 from astropy.coordinates import SkyCoord
+from lvm_ksl.CheckData import xcheck
 
 
 def get_size(xfiles,rad=0.25):
@@ -856,6 +857,22 @@ def steer(argv):
             print(one_file)
         print('\n')
 
+    xtab=xcheck(files)
+    ftab=xtab[xtab['FluxCal']=='False']
+    if len(ftab)>0:
+        print('!!! There %d  are files that have not been flux calibrated' % (len(ftab)))
+        print(ftab)
+        print('!!! Fix this before proeeeding')
+        return
+
+    xver,counts=np.unique(xtab['DRP'],return_counts=True)
+    if len(xver)>1:
+        print('Warning - Multiple DRP versions are being processed')
+        k=0
+        while k<len(xver):
+            print('Ver %20s  Number %3d' % (xver[k],counts[k]))
+            k+=1
+        print('Continuing')
     do_combine(files,outroot,fib_type,c_type)   
     
 

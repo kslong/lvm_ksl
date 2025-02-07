@@ -48,7 +48,7 @@ import numpy as np
 
 
 
-def doit(xfiles):
+def xcheck(xfiles):
     drp=[]
     commit=[]
     fluxcal=[]
@@ -57,6 +57,8 @@ def doit(xfiles):
     tile=[]
     obj=[]
     mjd=[]
+    exptime=[]
+    unit=[]
     for one in xfiles:
         try:
             f=fits.open(one)
@@ -106,13 +108,24 @@ def doit(xfiles):
         except:
             obj.append('Unknown')
 
+        try:
+            unit.append(xhead['BUNIT'])
+        except:
+            unit.append('Unknown')
+
+
+        try:
+            exptime.append(xhead['EXPTIME'])
+        except:
+            exptime.append('Unknown')
+
+
     # print(len(xfiles),len(drp),len(fluxcal),len(ra),len(dec),len(tile),len(obj))
 
-    xtab=Table([xfiles,mjd,drp,commit,fluxcal,ra,dec,tile,obj],names=['Filename','MJD','DRP','Commit','FluxCal','RA','Dec','Tile_ID','Object'])
+    xtab=Table([xfiles,mjd,drp,commit,fluxcal,unit,ra,dec,tile,exptime,obj],names=['Filename','MJD','DRP','Commit','FluxCal','BUNIT','RA','Dec','Tile_ID','EXPTIME','Source_name'])
     xtab.sort((['Filename']))
     print(xtab)
-    xtab.write('DataSum.txt',format='ascii.fixed_width_two_line',overwrite=True)
-    print('Full summary in DataSum.txt')
+    return xtab
 
 
 
@@ -132,7 +145,9 @@ def steer(argv):
         i+=1
 
     if len(filenames)>0:
-        doit(filenames)
+        xtab=xcheck(filenames)
+        xtab.write('DataSum.txt',format='ascii.fixed_width_two_line',overwrite=True)
+        print('Full summary in DataSum.txt')
     else:
         print('Weird - No fits files to examine: ',argv)
 

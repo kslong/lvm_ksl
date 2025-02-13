@@ -748,7 +748,7 @@ def remap_one(filename,q,final_slitmap,shape):
         one_vflux=x['IVAR'].data[one_row['fiberid']-1]
         # so one_flux, one_exp, and one_var represent one row in the flux, var, and expososure arrays
         xflux[one_row['fib_master']-1]+=one_flux*one_row['frac']
-        xvar[one_row['fib_master']-1]+=one_row['frac']/one_invar  
+        xvar[one_row['fib_master']-1]+=one_row['frac']*one_invar  
         xexp[one_row['fib_master']-1]+=one_row['frac']*one_exp
         xtab['frac'][one_row['fib_master']-1]+=one_row['frac']
             
@@ -981,7 +981,7 @@ def do_combine(filenames,outroot='',fib_type='xy',c_type='ave'):
     xvar=process_remapped_images(file_list=xfiles, extension='IVAR', xproc='sum',memory_limit=1_000_000_000)
     final['FLUX'].data=xfl
     final['EXPOSURE'].data=xexp
-    final['IVAR'].data=final['EXPOSURE'].data*final['EXPOSURE'].data/xvar
+    final['IVAR'].data=xvar
 
 
     print('Finished creating output arrays.\n')

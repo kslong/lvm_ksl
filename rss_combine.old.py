@@ -123,107 +123,7 @@ from astropy.wcs.utils import fit_wcs_from_points
 from astropy.wcs import WCS
 from scipy.interpolate import griddata
 from astropy.coordinates import SkyCoord
-import os
-import psutil
-
-def xcheck(xfiles):
-    '''
-    Check the input files for obvious problemss
-    '''
-    drp=[]
-    commit=[]
-    fluxcal=[]
-    ra=[]
-    dec=[]
-    tile=[]
-    obj=[]
-    mjd=[]
-    exptime=[]
-    unit=[]
-    for one in xfiles:
-        try:
-            f=fits.open(one)
-            xhead=f['PRIMARY'].header
-            # print('Got ;',one)
-        except:
-            print('Could not open ',one)
-            pass
-
-        try:
-            drp.append(xhead['drpver'])
-        except:
-            drp.append('Unknown')
-        try:
-            commit.append(xhead['COMMIT'])
-        except:
-            commit.append('Unknown')
-
-        try:
-            fluxcal.append(xhead['FLUXCAL'])
-        except:
-            fluxcal.append('Unknown')
-
-        try:
-            mjd.append(xhead['MJD'])
-        except:
-            mjd.append(-99)
-
-        try:
-            ra.append(xhead['POSCIRA'])
-        except:
-            ra.append(-37.0)
-
-        try:
-            dec.append(xhead['POSCIDE'])
-        except:
-            dec.append(-99.0)
-
-
-        try:
-            tile.append(xhead['TILE_ID'])
-        except:
-            tile.append('Unknown')
-
-        try:
-            obj.append(xhead['OBJECT'])
-        except:
-            obj.append('Unknown')
-
-        try:
-            unit.append(xhead['BUNIT'])
-        except:
-            unit.append('Unknown')
-
-
-        try:
-            exptime.append(xhead['EXPTIME'])
-        except:
-            exptime.append('Unknown')
-
-
-    # print(len(xfiles),len(drp),len(fluxcal),len(ra),len(dec),len(tile),len(obj))
-
-    xtab=Table([xfiles,mjd,drp,commit,fluxcal,unit,ra,dec,tile,exptime,obj],names=['Filename','MJD','DRP','Commit','FluxCal','BUNIT','RA','Dec','Tile_ID','EXPTIME','Source_name'])
-    xtab.sort((['Filename']))
-    print(xtab)
-    return xtab
-
-def check_array_info(arr):
-    array_type = "MaskedArray" if isinstance(arr, np.ma.MaskedArray) else "ndarray"
-    print( {"shape": arr.shape, "dtype": arr.dtype, "type": array_type})
-
-def check_memory(percentage=80.):
-    '''
-    Calculate the percentage of memory bening used and report a problem
-    if it is greater than a given percentage
-    '''
-    mem=psutil.virtual_memory()
-    frac=mem.used/mem.total*100
-    if frac>percentage:
-        print(f'Warning: Total Memory: {mem.total/1e9:.2f} GB')
-        print(f'Warning:  Used Memory: {mem.used/1e9:.2f} GB')
-        print(f'Warning %.2f of memor is being used' % (frac*100.))
-    return frac
+from lvm_ksl.CheckData import xcheck
 
 
 def get_size(xfiles,rad=0.25):
@@ -702,158 +602,7 @@ def check_for_nan(flux,max_frac=0.5):
     else:
         return False
 
-def remap_one(filename,q,final_slitmap,shape):
-    '''
-    where filename is one file to read
-    1 is the associated row of the frac table
-    shape is the shape of the output 
-    array
-    '''
-
-    # q.info()
-    # final_slitmap.info()
-
-    xtab=final_slitmap.copy()
-    xtab['frac']=0.0
-    qtab=q.copy()
-
-    if os.path.isdir('xtmp')==False:
-        os.makedirs('xtmp')
-    
-    VERY_BIG = 1e50
-    VERY_SMALL = 1e-50
-
-    xzero_array = np.zeros(shape, dtype=np.float32)
-
-    print('\nStart    %s' % (filename))
-    x=fits.open(filename)
-    print('Flux  %10.3e %10.3e %10.e %10.3e'  % (np.nanmedian(x['FLUX'].data),np.nanstd(x['FLUX'].data),np.nanmin(x['FLUX'].data),np.nanmax(x['FLUX'].data)))
-    zmax=np.nanmax(x['IVAR'].data)
-    print('Ivar  %10.3e %10.3e %10.e %10.3e'  % (np.nanmedian(x['IVAR'].data),zmax*np.nanstd(x['IVAR'].data/zmax),np.nanmin(x['IVAR'].data),np.nanmax(x['IVAR'].data)))
-
-
-    xflux=xzero_array.copy()
-    xvar=xzero_array.copy()
-    xexp=xzero_array.copy()
-    # q contains the fraction allocation 
-    for one_row in q:
-        xmask=x['MASK'].data[one_row['fiberid']-1]
-        one_flux=np.select([xmask==0],[x['FLUX'].data[one_row['fiberid']-1]],default=0)
-        one_invar=np.select([xmask==0],[x['IVAR'].data[one_row['fiberid']-1]],default=VERY_SMALL)
-        one_exp=np.select([xmask==0],[1.],default=0.0)
-        non_finite_mask=~np.isfinite(one_flux)
-        non_finite_sum=np.sum(non_finite_mask)
-        if non_finite_sum>0:
-            print('Found non_finite %d values' % non_finite_sum)
-        one_vflux=x['IVAR'].data[one_row['fiberid']-1]
-        # so one_flux, one_exp, and one_var represent one row in the flux, var, and expososure arrays
-        xflux[one_row['fib_master']-1]+=one_flux*one_row['frac']
-        xvar[one_row['fib_master']-1]+=one_row['frac']/one_invar  
-        xexp[one_row['fib_master']-1]+=one_row['frac']*one_exp
-        xtab['frac'][one_row['fib_master']-1]+=one_row['frac']
-            
-    # Set lines in ivar with no spectra to nan
-    n=0
-    while n<len(xtab):
-        if xtab['frac'][n]==0:
-            xflux[n]=np.nan
-            xvar[n]=np.nan
-        n+=1
-
-    x['FLUX'].data=xflux
-    x['IVAR'].data=xvar
-    n=0
-    x=add_extension_with_same_shape(x, 'FLUX','EXPOSURE')
-    x['EXPOSURE'].data=xexp
-
-    # We need to process the final_slit map table
-
-    # print('BEFORE')
-    # xtab.info()
-    xtab['fibstatus']=np.select([xtab['EXPOSURE']==0,xtab['frac']==0],[99,98],0)
-    # xtab.info()
-    # print('AFTER')
-
-    foo=fits.BinTableHDU(xtab)
-    x['SLITMAP'].data=foo.data 
-
-    xfilename=filename.split('/')[-1]
-    x.writeto('xtmp/%s' % xfilename,overwrite=True)
-    x.close()
-
-    return 
-
-def process_remapped_images(file_list, extension='FLUX', xproc='med',memory_limit=1_000_000_000):
-    """
-    Computes the median,average of an exension of  a list of FITS images while ignoring NaN and Inf values.
-    and limiting the total amount of memory used
-
-    Parameters:
-    - file_list (list of str): List of FITS filenames to process.
-    - extension name to process
-    - type of processing med=median, sum=sum, ave or anything else average
-    - memory_limit (int): Maximum memory usage in bytes (default: 1GB).
-    """
-
-    if not file_list:
-        raise ValueError("No FITS files provided.")
-
-    # Open first image to determine shape & dtype
-    with fits.open(file_list[0], memmap=True) as hdul:
-        shape = hdul[extension].data.shape  # (rows, cols)
-        dtype = hdul[extension].data.dtype  # Data type
-
-    # Estimate memory usage per row (in bytes)
-    row_size = np.prod(shape[1:]) * np.dtype(dtype).itemsize  # Size of one row
-    batch_size = max(1, memory_limit // (len(file_list) * row_size))  # Rows per batch
-
-    print(f"Processing extension {extension}in batches of {batch_size} rows...")
-
-    # Placeholder for median-filtered output
-    xximage = np.zeros(shape, dtype=np.float32)
-
-    # Process in batches
-    for i in range(0, shape[0], batch_size):
-        batch_stack = []
-
-        # Read a batch of rows from each image
-        for filename in file_list:
-
-            with fits.open(filename, memmap=True) as hdul:
-                batch_stack.append(hdul[extension].data[i:i+batch_size, :])  # Read batch
-
-        # Convert to NumPy array and mask invalid values (NaN, Inf)
-        batch_stack = np.array(batch_stack,dtype=np.float64)
-        # print("  Shape:", batch_stack.shape)
-        # print("  Dtype:", batch_stack.dtype)
-        # print("  Contains NaN:", np.isnan(batch_stack).any())
-        # print("  Contains Inf:", np.isinf(batch_stack).any())
-
-        batch_stack[~np.isfinite(batch_stack)] = np.nan
-
-        # Note that median for an even number of values aveages the two values closest to the medaina
-        if xproc=='med':
-            # print('Gotcha med')
-            xximage[i:i+batch_size, :] = np.nanmedian(batch_stack, axis=0)
-        elif xproc=='sum':
-            # print('Gotcha sum')
-            xximage[i:i+batch_size, :] = np.nansum(batch_stack, axis=0)
-        else:
-            # print('Gotcha ave')
-            xximage[i:i+batch_size, :] = np.nanmean(batch_stack, axis=0)
-
-        boogle=xximage[i:i+batch_size, :]
-        # print('GGG %s  %e %e %e' % (extension,np.nanmedian(boogle),np.nanmin(boogle),np.nanmax(boogle)))
-
-
-
-    # print('FINAL %s %e %e %e' %  (extension,np.nanmedian(xximage),np.nanmin(xximage),np.nanmax(xximage)))
-
-    # ximage is a normal array
-    return xximage
-
-
-def do_combine(filenames,outroot='',fib_type='xy',c_type='ave'):
+def do_combine(filenames,outroot='',fib_type='xy',c_type='mean'):
     ''' 
     The main routine that carries out the entire process.
 
@@ -870,7 +619,6 @@ def do_combine(filenames,outroot='',fib_type='xy',c_type='ave'):
     * to writhe everthing to and output fits file
 
     '''
-    print('\nCombining images using %s for fluxes' %  (c_type))
     # First get the new WCS
      
     ra_center,dec_center,diam=get_size(xfiles=filenames,rad=0.25)
@@ -889,7 +637,8 @@ def do_combine(filenames,outroot='',fib_type='xy',c_type='ave'):
         print('Error: Option for creating output fibers is unknwon : ',fib_type)
         return
 
-    # new_slitmap represents the beginning of the final SLIPMAP table
+
+
 
     # Now create a list of tables that contains the positions of all of the fibeers in the wc that was created
 
@@ -897,7 +646,7 @@ def do_combine(filenames,outroot='',fib_type='xy',c_type='ave'):
 
     # Now calculate the fractions
 
-    print('\nApportioning fractional contributions from individual to final virtual fiber positions')
+    print('Apportioning fractional contributions to final fiber positions')
 
     zslit=[]
     for one_tab in slit:
@@ -948,68 +697,99 @@ def do_combine(filenames,outroot='',fib_type='xy',c_type='ave'):
     VERY_BIG = 1e50
     VERY_SMALL = 1e-50
 
+    fl=[]
+    vf=[]
+    xm=[]
+
     print('Begin accumulating data')
 
     i=0
     while i < len(filenames):
-        print('starting to rmap  %s' % (filenames[i]),flush=True)
-        q=zslit[i]
+
+        print('\nStart    %s' % (filenames[i]))
+        x=fits.open(filenames[i])
+        print('Flux  %10.3e %10.3e %10.e %10.3e'  % (np.nanmedian(x['FLUX'].data),np.nanstd(x['FLUX'].data),np.nanmin(x['FLUX'].data),np.nanmax(x['FLUX'].data)))
+        zmax=np.nanmax(x['IVAR'].data)
+        print('Ivar  %10.3e %10.3e %10.e %10.3e'  % (np.nanmedian(x['IVAR'].data),zmax*np.nanstd(x['IVAR'].data/zmax),np.nanmin(x['IVAR'].data),np.nanmax(x['IVAR'].data)))
+
+        q=zslit[i]       
+        xflux=xzero_array.copy()
+        xvar=xzero_array.copy()
+        xexp=xzero_array.copy()
+        # q contains the fraction allocation 
         for one_row in q:
             new_slitmap_table['EXPOSURE'][one_row['fib_master']-1]+=one_row['frac']
-        remap_one(filenames[i],q,new_slitmap_table,shape)
-        print('Finished remapping %s\n' % (filenames[i]),flush=True)
+            xmask=x['MASK'].data[one_row['fiberid']-1]
+            one_flux=np.select([xmask==0],[x['FLUX'].data[one_row['fiberid']-1]],default=0)
+            one_invar=np.select([xmask==0],[x['IVAR'].data[one_row['fiberid']-1]],default=VERY_SMALL)
+            one_exp=np.select([xmask==0],[1.],default=0.0)
+            non_finite_mask=~np.isfinite(one_flux)
+            non_finite_sum=np.sum(non_finite_mask)
+            if non_finite_sum>0:
+                print('Found non_finite %d values' % non_finite_sum)
+            one_vflux=x['IVAR'].data[one_row['fiberid']-1]
+            # so one_flux, one_exp, and one_var represent one row in the flux, var, and expososure arrays
+            xflux[one_row['fib_master']-1]+=one_flux*one_row['frac']
+            xvar[one_row['fib_master']-1]+=one_row['frac']/one_invar  
+            xexp[one_row['fib_master']-1]+=one_row['frac']*one_exp
+            
+        fl.append(xflux)
+        vf.append(xvar)
+        xm.append(xexp)
+        j=0
+        total_memory=0
+        while j<len(fl):
+            total_memory+=fl[j].nbytes
+            j+=1
+        print('Finished %s %.2f GB ' % (filenames[i],total_memory/(1024**3)),flush=True)
+        x.close()
         i+=1
 
 
-    # Now read them all back
-    value=check_memory()
-    mem=psutil.virtual_memory()
-    print(f'Total Memory: {mem.total/1e9:.2f} GB')
-    print(f' Used Memory: {mem.used/1e9:.2f} GB')
-    print('This is %.2f percent of the available memory' % value)
 
-    print('\nNow read the data back, and construct the final rss spectra')
+    fl_nonfinite = np.count_nonzero(~np.isfinite(fl))
+    vf_nonfinite = np.count_nonzero(~np.isfinite(vf))
+    print('\nEnd Flux  %10.3e %10.3e %10.e %10.3e   Bad %d'  % (np.nanmedian(fl),np.nanstd(fl),np.nanmin(fl),np.nanmax(fl),fl_nonfinite))
+    finite_mask=np.isfinite(vf)
+    masked_array=np.ma.array(vf,mask=~finite_mask)
+    zmax=np.ma.max(masked_array)
 
-    xfiles=[]
-    for one_file in filenames:
-        xfile=one_file.split('/')[-1]
-        xfile='xtmp/%s' % xfile
-        xfiles.append(xfile)
+    print('End Var   %10.3e %10.3e %10.e %10.3e  Bad %d \n'  % (np.nanmedian(vf),zmax*np.ma.std(masked_array/zmax),np.nanmin(vf),zmax,vf_nonfinite))
 
-    xfl=process_remapped_images(file_list=xfiles, extension='FLUX', xproc=c_type,memory_limit=1_000_000_000)
-    xexp=process_remapped_images(file_list=xfiles, extension='EXPOSURE', xproc='sum',memory_limit=1_000_000_000)
-    xvar=process_remapped_images(file_list=xfiles, extension='IVAR', xproc='sum',memory_limit=1_000_000_000)
-    final['FLUX'].data=xfl
-    final['EXPOSURE'].data=xexp
-    final['IVAR'].data=final['EXPOSURE'].data*final['EXPOSURE'].data/xvar
-
-
-    print('Finished creating output arrays.\n')
-    value=check_memory()
-    mem=psutil.virtual_memory()
-    print(f'Total Memory: {mem.total/1e9:.2f} GB')
-    print(f' Used Memory: {mem.used/1e9:.2f} GB')
-    print('This is %.2f pecent of the available memory' % value)
 
 
     new_slitmap_table['fibstatus']=0
     new_slitmap_table['targettype']='science'
 
-    nbad=0
     for row in new_slitmap_table:
         xflux=final['FLUX'].data[row['fiberid']-1]
         if check_for_nan(xflux):
-            row['fibstatus']=95
-            nbad+=1
-    ngood=len(new_slitmap_table)-nbad
-    print('Of %d virtual fibers, %d were filled, and the %d were unfilled  ' % (len(new_slitmap_table),ngood,nbad))
+            row['fibstatus']=1.
+            print('There are issues with fiberid ',row['fiberid'])
 
-    
+
+    exp_stack=np.stack(xm)
+    esum=np.nansum(exp_stack,axis=0)
+    final['EXPOSURE'].data=esum
+
+
+    flux_stack=np.stack(fl)
+    if c_type=='med':
+        print('Producing the median image')
+        fmed=np.nanmedian(flux_stack,axis=0)
+        final['FLUX'].data=fmed
+    else:
+        print('Producing the average image')
+        fsum = np.nansum(flux_stack, axis=0)  
+        final['FLUX'].data=fsum/final['EXPOSURE'].data
+
+    var_stack=np.stack(vf)
+    vsum=np.nansum(var_stack, axis=0)
+    final['IVAR'].data=final['EXPOSURE'].data*final['EXPOSURE'].data/vsum
     final['MASK'].data=np.select([final['EXPOSURE'].data==0],[1],default=0)
 
     hdu = fits.BinTableHDU(new_slitmap_table.as_array(), name='SLITMAP')
     final['SLITMAP']=hdu
-
 
     # Before writing everythin out, we need to add the size to the hdr
 
@@ -1037,7 +817,7 @@ def steer(argv):
     xfiles=[]
     outroot='xtest'
     fib_type='xy'
-    c_type='ave'
+    c_type='mean'
     i=1
     while i<len(argv):
         if argv[i][0:2]=='-h':
@@ -1077,9 +857,7 @@ def steer(argv):
             print(one_file)
         print('\n')
 
-    # Do some checks on the files
     xtab=xcheck(files)
-
     ftab=xtab[xtab['FluxCal']=='False']
     if len(ftab)>0:
         print('!!! There %d  are files that have not been flux calibrated' % (len(ftab)))
@@ -1095,9 +873,6 @@ def steer(argv):
             print('Ver %20s  Number %3d' % (xver[k],counts[k]))
             k+=1
         print('Continuing')
-    else:
-        print('All files seem to be from the save DRP version and all are fluxe calibrated')
-
     do_combine(files,outroot,fib_type,c_type)   
     
 

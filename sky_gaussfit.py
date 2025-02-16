@@ -162,17 +162,17 @@ def do_one(spectrum_table,vel=0.,xplot=False,xfit=False):
 
 
     
-    try:
-        xname='sky6577'
-        xwcen=6577.2
-        xwmin=6572.
-        xwmax=6582.
-        results,xspec=fit_gaussian_to_spectrum(spectrum_table, line=xname,init_wavelength=xwcen, init_fwhm=1., wavelength_min=xwmin, wavelength_max=xwmax, plot=xplot)
-        records.append(results)
-        save_fit(xname,xspec)
-    except Exception as e:
-        print(f"Fitting %s:  An exception occurred: {e}" % xname)
-        print(f"Exception type: {type(e).__name__}")
+#    try:
+#        xname='sky6577'
+#        xwcen=6577.2
+#        xwmin=6572.
+#        xwmax=6582.
+#        results,xspec=fit_gaussian_to_spectrum(spectrum_table, line=xname,init_wavelength=xwcen, init_fwhm=1., wavelength_min=xwmin, wavelength_max=xwmax, plot=xplot)
+#        records.append(results)
+#        save_fit(xname,xspec)
+#    except Exception as e:
+#        print(f"Fitting %s:  An exception occurred: {e}" % xname)
+#        print(f"Exception type: {type(e).__name__}")
 
     
     xname='sky6912'

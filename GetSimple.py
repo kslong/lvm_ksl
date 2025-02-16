@@ -71,7 +71,7 @@ def steer(argv):
         if argv[i][0:2]=='-h':
             print(__doc__)
             return
-        elif argv[i]=='outdir':
+        elif argv[i]=='-outdir':
             i+=1
             path=argv[i]
         elif  argv[i][0]=='-':

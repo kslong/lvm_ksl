@@ -140,6 +140,7 @@ def xcheck(xfiles):
     mjd=[]
     exptime=[]
     unit=[]
+    helio=[]
     for one in xfiles:
         try:
             f=fits.open(one)
@@ -200,10 +201,15 @@ def xcheck(xfiles):
         except:
             exptime.append('Unknown')
 
+        try:
+            helio.append(xhead['WAVE HELIORV_SCI'])
+        except:
+            helio.append(-99.0)
+
 
     # print(len(xfiles),len(drp),len(fluxcal),len(ra),len(dec),len(tile),len(obj))
 
-    xtab=Table([xfiles,mjd,drp,commit,fluxcal,unit,ra,dec,tile,exptime,obj],names=['Filename','MJD','DRP','Commit','FluxCal','BUNIT','RA','Dec','Tile_ID','EXPTIME','Source_name'])
+    xtab=Table([xfiles,mjd,drp,commit,fluxcal,unit,helio,ra,dec,tile,exptime,obj],names=['Filename','MJD','DRP','Commit','FluxCal','BUNIT','RA','HeleoV','Dec','Tile_ID','EXPTIME','Source_name'])
     xtab.sort((['Filename']))
     print(xtab)
     return xtab

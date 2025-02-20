@@ -6,13 +6,13 @@
 
 Synopsis:  
 
-Parse the DAP output file, and produce an astropy 
+Parse the DAP output file or files, and produce an astropy 
 table with the information needed to make simple plots
 
 
 Command line usage (if any):
 
-    usage: DAP2tab.py filename
+    usage: DAP2tab.py [-h] filename(s)
 
 Description:  
 
@@ -55,6 +55,26 @@ def eval_sig2noise(xtab,sig=3):
         num=np.sum(sn>sig)
         print('%15s  %3d' % (one_line,num))
 
+def get_one_line(xtab,name='Halpha_6562.85',xname='ha'):
+    xline=xtab['id','flux_%s' % name,'e_flux_%s' % name,'vel_%s' % name,'e_vel_%s' % name,'disp_%s' % name,'e_disp_%s' % name]
+    xline.rename_column('flux_%s' % name,'flux_%s' % xname)
+    xline.rename_column('e_flux_%s' % name,'eflux_%s' % xname)
+    xline['flux_%s' % xname]*=1e-16
+    xline['eflux_%s' % xname]*=1e-16
+    word=name.split('_')
+    wave=eval(word[-1])
+    xline.rename_column('vel_%s' % name,'vel_%s' % xname)
+    xline.rename_column('e_vel_%s' % name,'e_vel_%s' % xname)
+
+    xline['wave_%s' % xname] = wave*(1.+ xline['vel_%s' % xname]/2.997e5)
+    xline['ewave_%s' % xname] = wave*(1+ xline['e_vel_%s' % xname]/2.997e5)
+
+    xline.rename_column('disp_%s' % name,'fwhm_%s' % xname)
+    xline['fwhm_%s' % xname]*=2.355
+    xline.rename_column('e_disp_%s' % name,'efwhm_%s' % xname)
+    xline['efwhm_%s' % xname]*=2.355
+    return xline
+
 
 
 def get_radec_fluxes(filename='DAP/dap-rsp108-sn20-00009083.dap.fits.gz'):
@@ -64,115 +84,188 @@ def get_radec_fluxes(filename='DAP/dap-rsp108-sn20-00009083.dap.fits.gz'):
     x=fits.open(filename)
     pt=Table(x['PT'].data)
     B=Table(x['NP_ELINES_B'].data)
-    
-    name='[OII]_3726.03'
-    xline=B['id','flux_%s' % name,'e_flux_%s' % name]
-    xname='o2a'
-    xline.rename_column('flux_%s' % name,'flux_%s' % xname)
-    xline.rename_column('e_flux_%s' % name,'e_flux_%s' % xname)    
-    
-    pt=join(pt,xline)
-    
-    name='[OII]_3728.82'
 
-    xline=B['id','flux_%s' % name,'e_flux_%s' % name]
-    xname='o2b'
-    xline.rename_column('flux_%s' % name,'flux_%s' % xname)
-    xline.rename_column('e_flux_%s' % name,'e_flux_%s' % xname)    
-    
-    pt=join(pt,xline)
+    dap_name='[OII]_3726.03'
+    gauss_name='o2a'
+    # xline=get_one_line(B,dap_name,gauss_name)
+    try:
+        xline=get_one_line(B,dap_name,gauss_name)
+        pt=join(pt,xline)
+    except:
+        print('Could not get %s -> %s' % (dap_name,gauss_name))
 
-    name='HeII_4685.68'
-    xline=B['id','flux_%s' % name,'e_flux_%s' % name]
-    xname='he2'
-    xline.rename_column('flux_%s' % name,'flux_%s' % xname)
-    xline.rename_column('e_flux_%s' % name,'e_flux_%s' % xname)    
+    dap_name='[OII]_3728.82'
+    gauss_name='o2b'
     
-    pt=join(pt,xline)
+    try:
+        xline=get_one_line(B,dap_name,gauss_name)
+        pt=join(pt,xline)
+    except:
+        print('Could not get %s -> %s' % (dap_name,gauss_name))
 
-    name='Hbeta_4861.36'
-    xline=B['id','flux_%s' % name,'e_flux_%s' % name]
-    xname='hb'
-    xline.rename_column('flux_%s' % name,'flux_%s' % xname)
-    xline.rename_column('e_flux_%s' % name,'e_flux_%s' % xname)    
+    dap_name='Hgamma_4340.49'
+    gauss_name='hgamma'
     
-    pt=join(pt,xline)    
+    try:
+        xline=get_one_line(B,dap_name,gauss_name)
+        pt=join(pt,xline)
+    except:
+        print('Could not get %s -> %s' % (dap_name,gauss_name))
 
-    name='[OIII]_5006.84'
-    xline=B['id','flux_%s' % name,'e_flux_%s' % name]
-    xname='o3'
-    xline.rename_column('flux_%s' % name,'flux_%s' % xname)
-    xline.rename_column('e_flux_%s' % name,'e_flux_%s' % xname)    
-    pt=join(pt,xline)
+
+    dap_name='HeII_4685.68'
+    gauss_name='he2'
+    
+    try:
+        xline=get_one_line(B,dap_name,gauss_name)
+        pt=join(pt,xline)
+    except:
+        print('Could not get %s -> %s' % (dap_name,gauss_name))
+
+    dap_name='Hbeta_4861.36'
+    gauss_name='hb'
+    
+    try:
+        xline=get_one_line(B,dap_name,gauss_name)
+        pt=join(pt,xline)
+    except:
+        print('Could not get %s -> %s' % (dap_name,gauss_name))
+
+    dap_name='[OIII]_5006.84'
+    gauss_name='o3'
+    
+    try:
+        xline=get_one_line(B,dap_name,gauss_name)
+        pt=join(pt,xline)
+    except:
+        print('Could not get %s -> %s' % (dap_name,gauss_name))
+
+    # Switch to R
 
     R=Table(x['NP_ELINES_R'].data)
 
-    name='[OI]_6300.3'
-    xline=R['id','flux_%s' % name,'e_flux_%s' % name]
-    xname='o1'
-    xline.rename_column('flux_%s' % name,'flux_%s' % xname)
-    xline.rename_column('e_flux_%s' % name,'e_flux_%s' % xname)    
-    pt=join(pt,xline)
+    dap_name='HeI_5876.0'
+    gauss_name='he1'
     
-    name='[NII]_6548.05'
-    xline=R['id','flux_%s' % name,'e_flux_%s' % name]
-    xname='n2a'
-    xline.rename_column('flux_%s' % name,'flux_%s' % xname)
-    xline.rename_column('e_flux_%s' % name,'e_flux_%s' % xname)    
-    pt=join(pt,xline)
-        
-    name='Halpha_6562.85'
-    xline=R['id','flux_%s' % name,'e_flux_%s' % name,'vel_%s' % name,'e_vel_%s' % name,'disp_%s' % name,'e_disp_%s' % name]
-    xname='ha'
-    xline.rename_column('flux_%s' % name,'flux_%s' % xname)
-    xline.rename_column('e_flux_%s' % name,'e_flux_%s' % xname)
-    xline.rename_column('vel_%s' % name,'vel_%s' % xname)
-    xline.rename_column('e_vel_%s' % name,'e_vel_%s' % xname)
-    xline.rename_column('disp_%s' % name,'disp_%s' % xname)
-    xline.rename_column('e_disp_%s' % name,'e_disp_%s' % xname)
-    
-    pt=join(pt,xline)
-        
-    name='[NII]_6583.45' 
-    xline=R['id','flux_%s' % name,'e_flux_%s' % name]
-    xname='n2b'
-    xline.rename_column('flux_%s' % name,'flux_%s' % xname)
-    xline.rename_column('e_flux_%s' % name,'e_flux_%s' % xname)    
-    pt=join(pt,xline)
+    try:
+        xline=get_one_line(R,dap_name,gauss_name)
+        pt=join(pt,xline)
+    except:
+        print('Could not get %s -> %s' % (dap_name,gauss_name))
 
-    name='[SII]_6716.44'
-    xline=R['id','flux_%s' % name,'e_flux_%s' % name]
-    xname='s2a'
-    xline.rename_column('flux_%s' % name,'flux_%s' % xname)
-    xline.rename_column('e_flux_%s' % name,'e_flux_%s' % xname)    
-    pt=join(pt,xline)
+
+    dap_name='[OI]_6300.3'
+    gauss_name='o1a'
     
-    name='[SII]_6730.82'
-    xline=R['id','flux_%s' % name,'e_flux_%s' % name]
-    xname='s2b'
-    xline.rename_column('flux_%s' % name,'flux_%s' % xname)
-    xline.rename_column('e_flux_%s' % name,'e_flux_%s' % xname)    
-    pt=join(pt,xline)
+    try:
+        xline=get_one_line(R,dap_name,gauss_name)
+        pt=join(pt,xline)
+    except:
+        print('Could not get %s -> %s' % (dap_name,gauss_name))
+
+    dap_name='[NII]_6548.05'
+    gauss_name='n2a'
+        
+    
+    try:
+        xline=get_one_line(R,dap_name,gauss_name)
+        pt=join(pt,xline)
+    except:
+        print('Could not get %s -> %s' % (dap_name,gauss_name))
+
+    dap_name='Halpha_6562.85'
+    gauss_name='ha'
+        
+    
+    try:
+        xline=get_one_line(R,dap_name,gauss_name)
+        pt=join(pt,xline)
+    except:
+        print('Could not get %s -> %s' % (dap_name,gauss_name))
+
+    dap_name='[NII]_6583.45' 
+    gauss_name='n2b'
+
+    
+    try:
+        xline=get_one_line(R,dap_name,gauss_name)
+        pt=join(pt,xline)
+    except:
+        print('Could not get %s -> %s' % (dap_name,gauss_name))
+
+    dap_name='[SII]_6716.44'
+    gauss_name='s2a'
+    
+    
+    try:
+        xline=get_one_line(R,dap_name,gauss_name)
+        pt=join(pt,xline)
+    except:
+        print('Could not get %s -> %s' % (dap_name,gauss_name))
+
+    dap_name='[SII]_6730.82'
+    gauss_name='s2b'
+    
+    try:
+        xline=get_one_line(R,dap_name,gauss_name)
+        pt=join(pt,xline)
+    except:
+        print('Could not get %s -> %s' % (dap_name,gauss_name))
+
+    dap_name='[CaII]_7291.46'
+    gauss_name='ca2_7291'
+    
+    try:
+        xline=get_one_line(R,dap_name,gauss_name)
+        pt=join(pt,xline)
+    except:
+        print('Could not get %s -> %s' % (dap_name,gauss_name))
+
+
+
+    dap_name='[OII]_7318.92'
+    gauss_name='o2_7320'
+
+    
+    try:
+        xline=get_one_line(R,dap_name,gauss_name)
+        pt=join(pt,xline)
+    except:
+        print('Could not get %s -> %s' % (dap_name,gauss_name))
+
+
+
+    # Switch to I 
 
     I=Table(x['NP_ELINES_I'].data)
 
-    name='[SIII]_9069.0' 
-    xline=I['id','flux_%s' % name,'e_flux_%s' % name]
-    xname='s3a'
-    xline.rename_column('flux_%s' % name,'flux_%s' % xname)
-    xline.rename_column('e_flux_%s' % name,'e_flux_%s' % xname)    
-    pt=join(pt,xline)
+    dap_name='[SIII]_9069.0' 
+    gauss_name='s3a'
     
-    name='[SIII]_9531.1'
-    xline=I['id','flux_%s' % name,'e_flux_%s' % name]
-    xname='s3b'
-    xline.rename_column('flux_%s' % name,'flux_%s' % xname)
-    xline.rename_column('e_flux_%s' % name,'e_flux_%s' % xname)    
-    pt=join(pt,xline)
+    try:
+        xline=get_one_line(I,dap_name,gauss_name)
+        pt=join(pt,xline)
+    except:
+        print('Could not get %s -> %s' % (dap_name,gauss_name))
 
+    
+    dap_name='[SIII]_9531.1'
+    gauss_name='s3b'
+
+    
+    try:
+        xline=get_one_line(I,dap_name,gauss_name)
+        pt=join(pt,xline)
+    except:
+        print('Could not get %s -> %s' % (dap_name,gauss_name))
+
+
+    # OK that this end now wrap up
     for one_name in pt.colnames:
-        if one_name.count('flux') or one_name.count('vel') or one_name.count('disp'):
-            pt[one_name].format='.2f'
+        if one_name.count('flux'):
+            pt[one_name].format='.3e'
+        elif one_name.count('fwhm') or one_name.count('vel') or one_name.count('wave'):
+            pt[one_name].format='.3f'
 
     pt['ra'].format='.5f'
     pt['dec'].format='.5f'

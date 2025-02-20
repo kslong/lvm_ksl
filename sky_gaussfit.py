@@ -51,32 +51,26 @@ from glob import glob
 from scipy.optimize import curve_fit
 import astropy.units as u
 from datetime import datetime
-from lvm_ksl.lvm_gaussfit import fit_gaussian_to_spectrum,fit_double_gaussian_to_spectrum,save_fit,scifib,check_for_nan,plot_one,plot_all
+from lvm_ksl.lvm_gaussfit import fit_gaussian_to_spectrum,fit_double_gaussian_to_spectrum,save_fit,scifib,check_for_nan,plot_one,plot_all,clean
 
 
-def do_one(spectrum_table,vel=0.,xplot=False,xfit=False):
+def do_one(spectrum_table,vel=0.,xplot=False):
     '''
     Completely process a single spectrum
     '''
 
-
+    clean()
     
     zz=1.+ (vel/3e5)
 
     records=[]
-    # try:
-    #     results,xspec=fit_double_gaussian_to_spectrum(spectrum_table, line='oii',init_wavelength1=zz*3726.092, init_wavelength2=zz*3729.875, init_fwhm=1, wavelength_min=zz*3717, wavelength_max=zz*3737, plot=xplot)
-    #     records.append(results)
-    #     save_fit('oii',xspec)
-    # except Exception as e:
-    #     print(f"Fitting OII; An exception occurred: {e}")
-    #     print(f"Exception type: {type(e).__name__}")
 
     
     try:
-        results,xspec=fit_gaussian_to_spectrum(spectrum_table, line='oi_a',init_wavelength=6300, init_fwhm=1., wavelength_min=6290, wavelength_max=6305, plot=xplot)
+        results,xspec=fit_gaussian_to_spectrum(spectrum_table, line='oi_a',init_wavelength=6300, init_fwhm=1., wavelength_min=6290, wavelength_max=6305)
         records.append(results)
-        save_fit('oi_a',xspec)
+        if xplot:
+            save_fit('oi_a',xspec)
     except Exception as e:
         print(f"Fitting oi_a; An exception occurred: {e}")
         print(f"Exception type: {type(e).__name__}")
@@ -84,9 +78,10 @@ def do_one(spectrum_table,vel=0.,xplot=False,xfit=False):
 
     
     try:
-        results,xspec=fit_gaussian_to_spectrum(spectrum_table, line='oi_b',init_wavelength=6300, init_fwhm=1., wavelength_min=6290, wavelength_max=6305, plot=xplot)
+        results,xspec=fit_gaussian_to_spectrum(spectrum_table, line='oi_b',init_wavelength=6300, init_fwhm=1., wavelength_min=6290, wavelength_max=6305)
         records.append(results)
-        save_fit('oi_b',xspec)
+        if xplot:
+            save_fit('oi_b',xspec)
     except Exception as e:
         print(f"Fitting oi_b; An exception occurred: {e}")
         print(f"Exception type: {type(e).__name__}")
@@ -94,9 +89,10 @@ def do_one(spectrum_table,vel=0.,xplot=False,xfit=False):
 
     
     try:
-        results,xspec=fit_gaussian_to_spectrum(spectrum_table, line='ha', init_wavelength=zz*6563, init_fwhm=1., wavelength_min=zz*6555, wavelength_max=zz*6570, plot=xplot)
-        save_fit('ha',xspec)
+        results,xspec=fit_gaussian_to_spectrum(spectrum_table, line='ha', init_wavelength=zz*6563, init_fwhm=1., wavelength_min=zz*6555, wavelength_max=zz*6570)
         records.append(results)
+        if xplot:
+            save_fit('ha',xspec)
     except Exception as e:
         print(f"Fitting Ha An exception occurred: {e}")
         print(f"Exception type: {type(e).__name__}")
@@ -104,17 +100,19 @@ def do_one(spectrum_table,vel=0.,xplot=False,xfit=False):
     
             
     try:
-        results,xspec=fit_gaussian_to_spectrum(spectrum_table, line='sii_a',init_wavelength=zz*6716, init_fwhm=1., wavelength_min=zz*6706, wavelength_max=zz*6726, plot=xplot)
+        results,xspec=fit_gaussian_to_spectrum(spectrum_table, line='sii_a',init_wavelength=zz*6716, init_fwhm=1., wavelength_min=zz*6706, wavelength_max=zz*6726)
         records.append(results)
-        save_fit('sii_a',xspec)
+        if xplot:
+            save_fit('sii_a',xspec)
     except Exception as e:
         print(f"Fitting [SII]6716:  An exception occurred: {e}")
         print(f"Exception type: {type(e).__name__}")
     
     try:
-        results,xspec=fit_gaussian_to_spectrum(spectrum_table, line='sii_b',init_wavelength=zz*6731, init_fwhm=1., wavelength_min=zz*6721, wavelength_max=zz*6741, plot=xplot)
+        results,xspec=fit_gaussian_to_spectrum(spectrum_table, line='sii_b',init_wavelength=zz*6731, init_fwhm=1., wavelength_min=zz*6721, wavelength_max=zz*6741)
         records.append(results)
-        save_fit('sii_b',xspec)
+        if xplot:
+            save_fit('sii_b',xspec)
     except Exception as e:
         print(f"Fitting [SII]6731:  An exception occurred: {e}")
         print(f"Exception type: {type(e).__name__}")
@@ -127,9 +125,10 @@ def do_one(spectrum_table,vel=0.,xplot=False,xfit=False):
         xwcen=6553.
         xwmin=6549.
         xwmax=6556.
-        results,xspec=fit_gaussian_to_spectrum(spectrum_table, line=xname,init_wavelength=xwcen, init_fwhm=1., wavelength_min=xwmin, wavelength_max=xwmax, plot=xplot)
+        results,xspec=fit_gaussian_to_spectrum(spectrum_table, line=xname,init_wavelength=xwcen, init_fwhm=1., wavelength_min=xwmin, wavelength_max=xwmax)
         records.append(results)
-        save_fit(xname,xspec)
+        if xplot:
+            save_fit(xname,xspec)
     except Exception as e:
         print(f"Fitting %s:  An exception occurred: {e}" % xname)
         print(f"Exception type: {type(e).__name__}")
@@ -140,9 +139,10 @@ def do_one(spectrum_table,vel=0.,xplot=False,xfit=False):
         xwcen=6533.04
         xwmin=6528.
         xwmax=6538.
-        results,xspec=fit_gaussian_to_spectrum(spectrum_table, line=xname,init_wavelength=xwcen, init_fwhm=1., wavelength_min=xwmin, wavelength_max=xwmax, plot=xplot)
+        results,xspec=fit_gaussian_to_spectrum(spectrum_table, line=xname,init_wavelength=xwcen, init_fwhm=1., wavelength_min=xwmin, wavelength_max=xwmax)
         records.append(results)
-        save_fit(xname,xspec)
+        if xplot:
+            save_fit(xname,xspec)
     except Exception as e:
         print(f"Fitting %s:  An exception occurred: {e}" % xname)
         print(f"Exception type: {type(e).__name__}")
@@ -153,26 +153,14 @@ def do_one(spectrum_table,vel=0.,xplot=False,xfit=False):
         xwcen=6577.2
         xwmin=6572.
         xwmax=6582.
-        results,xspec=fit_gaussian_to_spectrum(spectrum_table, line=xname,init_wavelength=xwcen, init_fwhm=1., wavelength_min=xwmin, wavelength_max=xwmax, plot=xplot)
+        results,xspec=fit_gaussian_to_spectrum(spectrum_table, line=xname,init_wavelength=xwcen, init_fwhm=1., wavelength_min=xwmin, wavelength_max=xwmax)
         records.append(results)
-        save_fit(xname,xspec)
+        if xplot:
+            save_fit(xname,xspec)
     except Exception as e:
         print(f"Fitting %s:  An exception occurred: {e}" % xname)
         print(f"Exception type: {type(e).__name__}")
 
-
-    
-#    try:
-#        xname='sky6577'
-#        xwcen=6577.2
-#        xwmin=6572.
-#        xwmax=6582.
-#        results,xspec=fit_gaussian_to_spectrum(spectrum_table, line=xname,init_wavelength=xwcen, init_fwhm=1., wavelength_min=xwmin, wavelength_max=xwmax, plot=xplot)
-#        records.append(results)
-#        save_fit(xname,xspec)
-#    except Exception as e:
-#        print(f"Fitting %s:  An exception occurred: {e}" % xname)
-#        print(f"Exception type: {type(e).__name__}")
 
     
     xname='sky6912'
@@ -180,9 +168,10 @@ def do_one(spectrum_table,vel=0.,xplot=False,xfit=False):
     xwmin=6907.
     xwmax=6917.
     try:
-        results,xspec=fit_gaussian_to_spectrum(spectrum_table, line=xname,init_wavelength=xwcen, init_fwhm=1., wavelength_min=xwmin, wavelength_max=xwmax, plot=xplot)
+        results,xspec=fit_gaussian_to_spectrum(spectrum_table, line=xname,init_wavelength=xwcen, init_fwhm=1., wavelength_min=xwmin, wavelength_max=xwmax)
         records.append(results)
-        save_fit(xname,xspec)
+        if xplot:
+            save_fit(xname,xspec)
     except Exception as e:
         print(f"Fitting %s:  An exception occurred: {e}" % xname)
         print(f"Exception type: {type(e).__name__}")
@@ -193,9 +182,10 @@ def do_one(spectrum_table,vel=0.,xplot=False,xfit=False):
     xwmin=6918.
     xwmax=6928.
     try:
-        results,xspec=fit_gaussian_to_spectrum(spectrum_table, line=xname,init_wavelength=xwcen, init_fwhm=1., wavelength_min=xwmin, wavelength_max=xwmax, plot=xplot)
+        results,xspec=fit_gaussian_to_spectrum(spectrum_table, line=xname,init_wavelength=xwcen, init_fwhm=1., wavelength_min=xwmin, wavelength_max=xwmax)
         records.append(results)
-        save_fit(xname,xspec)
+        if xplot:
+            save_fit(xname,xspec)
     except Exception as e:
         print(f"Fitting %s:  An exception occurred: {e}" % xname)
         print(f"Exception type: {type(e).__name__}")
@@ -206,9 +196,10 @@ def do_one(spectrum_table,vel=0.,xplot=False,xfit=False):
     xwmin=6934.
     xwmax=6944.
     try:
-        results,xspec=fit_gaussian_to_spectrum(spectrum_table, line=xname,init_wavelength=xwcen, init_fwhm=1., wavelength_min=xwmin, wavelength_max=xwmax, plot=xplot)
+        results,xspec=fit_gaussian_to_spectrum(spectrum_table, line=xname,init_wavelength=xwcen, init_fwhm=1., wavelength_min=xwmin, wavelength_max=xwmax)
         records.append(results)
-        save_fit(xname,xspec)
+        if xplot:
+            save_fit(xname,xspec)
     except Exception as e:
         print(f"Fitting %s:  An exception occurred: {e}" % xname)
         print(f"Exception type: {type(e).__name__}")
@@ -224,7 +215,7 @@ def do_one(spectrum_table,vel=0.,xplot=False,xfit=False):
     return ztab
 
 
-def do_individual(filenames,vel,outname,xplot=False,xfit=False):
+def do_individual(filenames,vel,outname,xplot=False):
     '''
     This is to process individual spectra from an astropy table
     containing a WAVE and FLUX column
@@ -232,8 +223,6 @@ def do_individual(filenames,vel,outname,xplot=False,xfit=False):
     xresults=[]
     xbad=[]
     xgood=[]
-    if len(filenames)==1:
-        xfit=True
 
     plot_dir='Gauss_plot'
 
@@ -249,7 +238,7 @@ def do_individual(filenames,vel,outname,xplot=False,xfit=False):
             continue
         try:
             xtab=ascii.read(one_file)
-            results=do_one(xtab,vel,xplot,xfit)
+            results=do_one(xtab,vel,xplot)
             word=one_file.split('/')
             root=word[-1]
             root=root.replace('.txt','')

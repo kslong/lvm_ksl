@@ -13,7 +13,7 @@ region for fiber.
 
 Command line usage (if any):
 
-    usage: GetRegSpec.py  [-h] [-root whatever] -median -sum filename[s] source_reg  [color] [back_reg] [back_color}
+    usage: GetRegSpec.py  [-h] [-root whatever] [-median]-sum filename[s] source_reg  [color] [back_reg] [back_color}
 
 
 
@@ -300,7 +300,7 @@ def steer(argv):
     '''
     This routine parses the command line
 
-    and then oversees the rest of the proces
+    and then oversees the rest of the process
 
 
     In future it would be better to split these

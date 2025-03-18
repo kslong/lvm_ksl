@@ -116,9 +116,11 @@ def process_one(mjd,i,clean):
 
         print("Starting reduction with log in xlog/log_{}.txt".format(i))
         with open("xlog/log_{}.txt".format(i), "w") as logfile:
-            xcommand=["drp", "run", "-m",str(mjd),"-e", str(i)]
+            # xcommand=["drp", "run", "-m",str(mjd),"-e", str(i)]
+            xcommand=["drp", "run", "-e", str(i)]
             if clean==True:
-                xcommand=["drp", "run", "-c","-m",str(mjd),"-e", str(i)]
+                # xcommand=["drp", "run", "-c","-m",str(mjd),"-e", str(i)]
+                xcommand=["drp", "run", "-c","-e", str(i)]
 
             print("Begin processing of ",i,"with command: ",xcommand)
             reduction_process = subprocess.run(xcommand, stdout=logfile, stderr=subprocess.STDOUT)

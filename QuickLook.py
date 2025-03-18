@@ -200,10 +200,12 @@ def limit_spectrum(wave,flux,wmin,wmax):
     return w,f
 
 def get_yscale(f,ymin,ymax):
-    med=np.median(f)
+    new_mask=np.isnan(f.data) 
+    f.mask = np.logical_or(f.mask, new_mask)
+    med=np.ma.median(f)
     zmin=ymin+med
     zmax=ymax+med
-    # print(zmin,zmax,med,ymin,ymax)
+    print('check',zmin,zmax,med,ymin,ymax)
     return zmin,zmax
 
 
@@ -294,7 +296,8 @@ def eval_qual_sframe(filename='data/lvmSFrame-00011061.fits',ymin=-0.2e-13,ymax=
     ax2.semilogy(wav,sci_flux_med+sci_sky_med,label='Science Total',zorder=2)
     ax2.semilogy(wav,sci_sky_med,label='Science Sky',zorder=1)
     ymin,ymax=plt.ylim()
-    ymax=np.max(sci_flux_med+sci_sky_med)
+    print('toot',ymin,ymax,np.ma.mean(sci_flux_med[~np.isnan(sci_flux_med)]))
+    ymax=np.nanmax(sci_flux_med+sci_sky_med)
     ax2.set_ylim(1e-3*ymax,1.1*ymax)
     ax2.set_xlim(3600,9600)
     ax2.legend()
@@ -305,7 +308,7 @@ def eval_qual_sframe(filename='data/lvmSFrame-00011061.fits',ymin=-0.2e-13,ymax=
     wmax=5100
 
     xwav,xsci_flux_med=limit_spectrum(wav,sci_flux_med,wmin,wmax)
-    xmedian=np.median(xsci_flux_med)
+    xmedian=np.nanmedian(xsci_flux_med)
     xsci_flux_med-=xmedian
     ax3.plot(xwav,xsci_flux_med,label='Sky-Subtracted Science',zorder=2)
 

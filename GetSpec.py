@@ -12,19 +12,21 @@ RA and DEC and a size
 
 Command line usage (if any):
 
-    usage: Getspec.py  [-h] [-root whatever] -median filename ra dec [rmin] [rmax]
+    usage: Getspec.py  [-h] [-root whatever] -median -sum filename ra dec [rmin] [rmax] [-back a1 a2]
 
 
 
     where 
     -h prints out this help
     -median constructs the median instead of the average spectrum
+    -sum constructs the sum instead of the median or average
     -root whatever prepends a root to the standard file name
     exp_no is the exposure
     ra and dec are the desired right ascension, written
         either in degrees or in h:m:s d:m:s
     [rmin] is and optional inner radius, and 
     [rmax] is an optinal outer radius
+    -back a1 a2 subtract a background
 
 Description:  
 
@@ -283,6 +285,9 @@ def steer(argv):
     size_max=0
     root='Spec'
     xtype='ave'
+    back=False
+    a1=0
+    a2=0
 
     i=1
     while i<len(argv):
@@ -297,6 +302,14 @@ def steer(argv):
             root=argv[i]
         elif argv[i][0:4]=='-med':
             xtype='med'
+        elif argv[i][0:4]=='-sum':
+            xtype='sum'
+        elif argv[i][0:5]=='-back':
+            back=True
+            i+=1
+            a1=eval(argv[i])
+            i+=1
+            a2=eval(argv[i])
         elif ra==None and argv[i][0]=='-':
             print('Error: Incorrect Command line: ',argv)
             return
@@ -358,9 +371,32 @@ def steer(argv):
     if len(fibers)==0:
         return
 
+    if xtype=='sum':
+        xspec=get_spec(filename=xfilename,xfib=fibers,nfib=len(fibers),xtype='ave')
+    else:
+        xspec=get_spec(filename=xfilename,xfib=fibers,nfib=len(fibers),xtype=xtype)
+
+    if back:
+        bfibers=get_annulus(xtab,ra,dec,a1,a2)
+        bspec=get_spec(filename=xfilename,xfib=bfibers,nfib=len(bfibers),xtype='med')
+        xspec['SOURCE_FLUX']=xspec['FLUX']
+        xspec['SOURCE_ERROR']=xspec['ERROR']
+        xspec['FLUX']-=bspec['FLUX']
+        xspec['ERROR']=np.sqrt(xspec['ERROR']*xspec['ERROR']+bspec['ERROR']*bspec['ERROR'])
+        xspec['BACK_FLUX']=bspec['FLUX']
+        xspec['BACK_ERROR']=bspec['ERROR']
 
     print('Taking spectra from\n',fibers['fiberid'])
-    xspec=get_spec(filename=xfilename,xfib=fibers,nfib=len(fibers),xtype=xtype)
+    if xtype=='sum':
+        xspec['FLUX']*=len(fibers)
+        xspec['ERROR']*=len(fibers)
+        xspec['SKY']*=len(fibers)
+        xspec['SKY_ERROR']*=len(fibers)
+        if back:
+            xspec['BACK_FLUX']*=len(fibers)
+            xspec['BACK_ERROR']*=len(fibers)
+            xspec['SOURCE_FLUX']*=len(fibers)
+            xspec['SOURCE_ERROR']*=len(fibers)
 
     exposure=x['PRIMARY'].header['EXPOSURE']
 
@@ -373,8 +409,14 @@ def steer(argv):
         outname='%s_%d' % (outname,size_max)
     if xtype=='med':
         outname='%s_med' % (outname)
+    elif xtype=='sum':
+        outname='%s_sum' % (outname)
     else:
         outname='%s_ave' % (outname)
+
+    if back:
+        outname='%s_back' % (outname)
+
 
     if size_max>0:
         write_reg('%s.reg' % outname,xtab=fibers,color='green')
@@ -382,6 +424,7 @@ def steer(argv):
         write_reg('%s.reg' % outname,xtab=fibers,color='yellow')
 
     xspec.meta['comments']=['Filename %s' % filename,'RA %.5f' % ra, 'Dec %.5f' % dec, 'nfibers %d' % (len(fibers))]
+
 
     xspec.write('%s.txt'% outname,format='ascii.fixed_width_two_line',overwrite=True)
 

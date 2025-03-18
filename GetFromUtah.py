@@ -10,7 +10,7 @@ Retrieve drp output data from Utah to a local computer
 
 Command line usage (if any):
 
-    usage: GetFromUtah.py [-h] [-cp] [-CFrame]  mjd expstart [expstop]
+    usage: GetFromUtah.py [-h] [-cp] [-CFrame]  -drp 1.1.1 mjd expstart [expstop]
 
     where:
 
@@ -18,6 +18,7 @@ Command line usage (if any):
     -cp copies the retrieved data to a local directory
     -CFrame causes the CFrame data to be retrieved instead of the 
         SFrame data
+    -drp whatever wistchedst the default location to a different processing version
     mjd is the mjd of the observations one wants to retrieve
     expstart is the first exposure to retrieve
     expstart, if given means to retrieve exposures from expstart to
@@ -87,10 +88,13 @@ def download_drp_product(drpver, tileid, mjd, expnum, channel=None, kind="SFrame
     kind : str, optional
         LVM DRP product kind/species ('CFrame', 'SFrame'), by default 'SFrame'
     """
+    print('what',drpver,tileid,mjd,expnum,channel,kind)
     if kind in ["Frame", "FFrame"]:
         kind = f"{kind}-{channel}" if channel in "brz" else f"{kind}-?"
+
+    a=Access(release='sdsswork')
+    q=open('Failed.txt','a')
     
-    a = Access(release='sdsswork')
     try:
         a.remote()
         a.add('lvm_frame', drpver=drpver, mjd=mjd, tileid=tileid, expnum=expnum, kind=kind)
@@ -99,6 +103,9 @@ def download_drp_product(drpver, tileid, mjd, expnum, channel=None, kind="SFrame
         print(f"Downloaded product of {kind = } for {mjd = } - {expnum = }")
     except Exception as e:
         print(f"Error: failed downloading product of {kind = } for {mjd = } - {expnum = }: {e}")
+        q.write(f"Error: failed downloading product of {kind = } for {mjd = } - {expnum = }: {e}")
+
+    q.close()
 
 
 def steer(argv):
@@ -108,7 +115,7 @@ def steer(argv):
     GetFromUtah -cp mjd exp_start exp_stop 
 
     '''
-    drp_ver="1.0.3"
+    drp_ver="1.1.1"
     copy=False
     xtile=1028683
     xtile='*'
@@ -131,6 +138,9 @@ def steer(argv):
             ftype='CFrame'
         elif argv[i]=='-cp':
             copy=True
+        elif argv[i]=='-drp':
+            i+=1
+            drp_ver=argv[i]
         elif argv[i][0]=='-':
             print('Unknown switch: ',argv)
             return

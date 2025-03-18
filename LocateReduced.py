@@ -24,6 +24,7 @@ Command line usage (if any):
 
 Description:
 
+
 Primary routines:
 
 
@@ -36,6 +37,9 @@ Notes:
     the file location from the drpall file
 
     The S/W release version is currently hardwired.
+
+    This routine only works locally.  It does NOT retrieve data from Utah to
+    one's local machine
 
 History:
 
@@ -61,10 +65,10 @@ from datetime import datetime
 
 
 
-def read_drpall(drp_ver='1.0.3'):
+def read_drpall(drp_ver='1.1.0'):
     DRPFILE='drpall-%s.fits' % (drp_ver)
     # First try to locate the DRP file locally, otherwise
-    if os.path.isfile(DRPFILE):
+    if os.path.isfile(DRPFILE) or os.path.islink(DRPFILE):
         xfile=DRPFILE
     else:
         BASEDIR='/uufs/chpc.utah.edu/common/home/sdss51/sdsswork/lvm/spectro/redux/%s/' % (drp_ver)

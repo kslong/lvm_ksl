@@ -297,10 +297,13 @@ def doit(filename,out_label='',wrange=[6560,6566],
     hdu = fits.PrimaryHDU(ima.astype(np.float32), header=header)
     hdul=fits.HDUList([hdu])
 
+    if os.path.isdir('./qdata/')==False:
+        os.mkdir('./qdata/')
+
     if out_label=='':
-            outfile='%s%05d_%04d_%04d.fits' % (xstart,expnum,wrange[0],wrange[1])
+            outfile='./qdata/%s%05d_%04d_%04d.fits' % (xstart,expnum,wrange[0],wrange[1])
     else:
-            outfile='%s%05d_%0s.fits' % (xstart,expnum,out_label)
+            outfile='./qdata/%s%05d_%0s.fits' % (xstart,expnum,out_label)
 
 
     hdul.writeto(outfile, overwrite=True)

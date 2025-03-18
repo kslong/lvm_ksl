@@ -29,6 +29,9 @@ Primary routines:
 
 Notes:
 
+    This uses glob to locate the files, and if there are multiple files it looks
+    for the one that is mot recent
+
 History:
 
 231223 ksl Coding begun
@@ -117,7 +120,9 @@ def find_em(exp_start=3596,exp_stop=3599,file_type='C'):
         names=['Exposure','Filename','nfiles','Creation_date','Location'])
 
     # print(xtab)
-    xtab.write('xfound_%05d_%05d.txt' % (exp_start,exp_stop),format='ascii.fixed_width_two_line',overwrite=True)
+    if os.path.isdir('./xlog')==False:
+        os.mkdir('./xlog')
+    xtab.write('./xlog/xfound_%05d_%05d.txt' % (exp_start,exp_stop),format='ascii.fixed_width_two_line',overwrite=True)
 
     return xtab
 

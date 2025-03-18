@@ -86,7 +86,7 @@ def get_radec_fluxes(filename='DAP/dap-rsp108-sn20-00009083.dap.fits.gz'):
     B=Table(x['NP_ELINES_B'].data)
 
     dap_name='[OII]_3726.03'
-    gauss_name='o2a'
+    gauss_name='oii_a'
     # xline=get_one_line(B,dap_name,gauss_name)
     try:
         xline=get_one_line(B,dap_name,gauss_name)
@@ -95,7 +95,7 @@ def get_radec_fluxes(filename='DAP/dap-rsp108-sn20-00009083.dap.fits.gz'):
         print('Could not get %s -> %s' % (dap_name,gauss_name))
 
     dap_name='[OII]_3728.82'
-    gauss_name='o2b'
+    gauss_name='oii_b'
     
     try:
         xline=get_one_line(B,dap_name,gauss_name)
@@ -114,7 +114,7 @@ def get_radec_fluxes(filename='DAP/dap-rsp108-sn20-00009083.dap.fits.gz'):
 
 
     dap_name='HeII_4685.68'
-    gauss_name='he2'
+    gauss_name='hii'
     
     try:
         xline=get_one_line(B,dap_name,gauss_name)
@@ -131,8 +131,18 @@ def get_radec_fluxes(filename='DAP/dap-rsp108-sn20-00009083.dap.fits.gz'):
     except:
         print('Could not get %s -> %s' % (dap_name,gauss_name))
 
+    dap_name='[OIII]_4958.91'
+    gauss_name='oiii_a'
+    
+    try:
+        xline=get_one_line(B,dap_name,gauss_name)
+        pt=join(pt,xline)
+    except:
+        print('Could not get %s -> %s' % (dap_name,gauss_name))
+
+
     dap_name='[OIII]_5006.84'
-    gauss_name='o3'
+    gauss_name='oiii_b'
     
     try:
         xline=get_one_line(B,dap_name,gauss_name)
@@ -145,7 +155,7 @@ def get_radec_fluxes(filename='DAP/dap-rsp108-sn20-00009083.dap.fits.gz'):
     R=Table(x['NP_ELINES_R'].data)
 
     dap_name='HeI_5876.0'
-    gauss_name='he1'
+    gauss_name='hei'
     
     try:
         xline=get_one_line(R,dap_name,gauss_name)
@@ -155,7 +165,7 @@ def get_radec_fluxes(filename='DAP/dap-rsp108-sn20-00009083.dap.fits.gz'):
 
 
     dap_name='[OI]_6300.3'
-    gauss_name='o1a'
+    gauss_name='oi_a'
     
     try:
         xline=get_one_line(R,dap_name,gauss_name)
@@ -164,7 +174,7 @@ def get_radec_fluxes(filename='DAP/dap-rsp108-sn20-00009083.dap.fits.gz'):
         print('Could not get %s -> %s' % (dap_name,gauss_name))
 
     dap_name='[NII]_6548.05'
-    gauss_name='n2a'
+    gauss_name='nii_a'
         
     
     try:
@@ -184,7 +194,7 @@ def get_radec_fluxes(filename='DAP/dap-rsp108-sn20-00009083.dap.fits.gz'):
         print('Could not get %s -> %s' % (dap_name,gauss_name))
 
     dap_name='[NII]_6583.45' 
-    gauss_name='n2b'
+    gauss_name='nii_b'
 
     
     try:
@@ -194,7 +204,7 @@ def get_radec_fluxes(filename='DAP/dap-rsp108-sn20-00009083.dap.fits.gz'):
         print('Could not get %s -> %s' % (dap_name,gauss_name))
 
     dap_name='[SII]_6716.44'
-    gauss_name='s2a'
+    gauss_name='sii_a'
     
     
     try:
@@ -204,7 +214,7 @@ def get_radec_fluxes(filename='DAP/dap-rsp108-sn20-00009083.dap.fits.gz'):
         print('Could not get %s -> %s' % (dap_name,gauss_name))
 
     dap_name='[SII]_6730.82'
-    gauss_name='s2b'
+    gauss_name='sii_b'
     
     try:
         xline=get_one_line(R,dap_name,gauss_name)
@@ -213,7 +223,7 @@ def get_radec_fluxes(filename='DAP/dap-rsp108-sn20-00009083.dap.fits.gz'):
         print('Could not get %s -> %s' % (dap_name,gauss_name))
 
     dap_name='[CaII]_7291.46'
-    gauss_name='ca2_7291'
+    gauss_name='caii_7291'
     
     try:
         xline=get_one_line(R,dap_name,gauss_name)
@@ -224,7 +234,7 @@ def get_radec_fluxes(filename='DAP/dap-rsp108-sn20-00009083.dap.fits.gz'):
 
 
     dap_name='[OII]_7318.92'
-    gauss_name='o2_7320'
+    gauss_name='oii_7320'
 
     
     try:
@@ -240,7 +250,7 @@ def get_radec_fluxes(filename='DAP/dap-rsp108-sn20-00009083.dap.fits.gz'):
     I=Table(x['NP_ELINES_I'].data)
 
     dap_name='[SIII]_9069.0' 
-    gauss_name='s3a'
+    gauss_name='siii_a'
     
     try:
         xline=get_one_line(I,dap_name,gauss_name)
@@ -250,7 +260,7 @@ def get_radec_fluxes(filename='DAP/dap-rsp108-sn20-00009083.dap.fits.gz'):
 
     
     dap_name='[SIII]_9531.1'
-    gauss_name='s3b'
+    gauss_name='siii_b'
 
     
     try:

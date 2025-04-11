@@ -570,7 +570,7 @@ def do_all(filename='data/lvmSFrame-00009088.fits'):
 
     results=vstack(records)
     outname=filename.split('/')[-1]
-    outname=outname.replace('.fits','.txt')
+    outname=outname.replace('.fits','.double.txt')
 
     results.write(outname,format='ascii.fixed_width_two_line',overwrite=True)
     return results

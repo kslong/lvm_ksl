@@ -1014,8 +1014,8 @@ def do_combine(filenames,outroot='',fib_type='xy',c_type='ave'):
     final['MASK'].data=np.select([final['EXPOSURE'].data==0],[1],default=0)
     # Explicitly set BITPIX to a positive integer value
     final['MASK'].header['BITPIX'] = 64 
-    print(final['EXPOSURE'].data[5500])
-    print(final['MASK'].data[5500])
+    # print(final['EXPOSURE'].data[5500])
+    # print(final['MASK'].data[5500])
 
     hdu = fits.BinTableHDU(new_slitmap_table.as_array(), name='SLITMAP')
     final['SLITMAP']=hdu

@@ -49,261 +49,268 @@ from glob import glob
 from scipy.optimize import curve_fit
 import astropy.units as u
 from datetime import datetime
-from astropy.modeling.parameters import Parameter
-from astropy.modeling import models, fitting, Fittable1DModel
 from astropy.table import Table
 
 
-def fit_gaussian_to_spectrum(spectrum_table, line, init_wavelength, init_fwhm, wavelength_min, wavelength_max, n_bootstrap=100):
+import numpy as np
+from astropy.table import Table
+from lmfit import Model, Parameters
+
+def fit_gaussian_to_spectrum(spectrum_table, line, init_wavelength, init_fwhm, wavelength_min, wavelength_max):
     """
-    Fit a Gaussian with a constant background to a spectral line, parameterized by total flux, wavelength, and FWHM.
-    Falls back to bootstrapping if covariance matrix is unavailable.
+    Fit a Gaussian with a constant background to a spectral line using lmfit.
     
     Parameters:
-    spectrum_table (astropy.table.Table): Table with 'WAVE' and 'FLUX' columns
+    spectrum_table (astropy.table.Table): Table with 'WAVE', 'FLUX', and 'ERROR' columns
     line (str): Name of the line being fit (for output column names)
     init_wavelength (float): Initial guess for the center wavelength
     init_fwhm (float): Initial guess for the FWHM
     wavelength_min, wavelength_max (float): Wavelength range for fitting
-    n_bootstrap (int): Number of bootstrap iterations if needed
     
     Returns:
     qtab (astropy.table.Table): Table with fit results and uncertainties
     fit_table (astropy.table.Table): Table with original and fitted values
     """
-    
-    class FluxGaussian(Fittable1DModel):
-        total_flux = Parameter()
-        mean = Parameter()
-        stddev = Parameter()
-        
-        @staticmethod
-        def evaluate(x, total_flux, mean, stddev):
-            amplitude = total_flux / (stddev * np.sqrt(2 * np.pi))
-            return amplitude * np.exp(-0.5 * ((x - mean) / stddev) ** 2)
-    
-    def bootstrap_fit(x, y, init_model):
-        """Perform a single bootstrap fit"""
-
-
-        indices = np.random.randint(0, len(x), len(x))
-        x_resampled = x[indices]
-        y_resampled = y[indices]
-        
-        fitter = fitting.LevMarLSQFitter()
-        fitted_model = fitter(init_model.copy(), x_resampled, y_resampled)
-
-        return (
-            fitted_model.total_flux_0.value,
-            fitted_model.mean_0.value,
-            fitted_model.stddev_0.value * 2.355,  # Convert to FWHM
-            fitted_model.amplitude_1.value  # Background amplitude
-        )
+    # Define model functions
+    def gaussian(x, flux, center, fwhm, background):
+        """Gaussian function parameterized by flux, center, FWHM, and background"""
+        sigma = fwhm / 2.355
+        amp = flux / (sigma * np.sqrt(2 * np.pi))
+        return amp * np.exp(-0.5 * ((x - center) / sigma)**2) + background
     
     # Extract and clean data
     mask = (spectrum_table['WAVE'] >= wavelength_min) & (spectrum_table['WAVE'] <= wavelength_max)
     x = spectrum_table['WAVE'][mask]
     y = spectrum_table['FLUX'][mask]
     
+    # Get errors if available
+    if 'ERROR' in spectrum_table.colnames:
+        errors = spectrum_table['ERROR'][mask]
+    else:
+        errors = None
+    
+    # Filter for finite values
     finite_mask = np.isfinite(y)
+    if errors is not None:
+        finite_mask = finite_mask & np.isfinite(errors)
+    
     x = x[finite_mask]
     y = y[finite_mask]
+    if errors is not None:
+        errors = errors[finite_mask]
+        # Ensure errors are not too small to prevent numerical issues
+        min_error_value = np.max(np.abs(y)) * 1e-6
+        errors = np.maximum(errors, min_error_value)
     
     # Initial parameter estimates
-    init_stddev = init_fwhm / 2.355
     dx = x[1] - x[0]
     init_flux = np.sum(y * dx)
+    init_background = np.median(y)
     
-    # Initialize models
-    g_init = FluxGaussian(total_flux=init_flux, mean=init_wavelength, stddev=init_stddev)
-    const_init = models.Const1D(amplitude=np.median(y))
-    combined_init = g_init + const_init
+    # Set up lmfit model
+    gmodel = Model(gaussian)
+    params = gmodel.make_params(
+        flux=init_flux,
+        center=init_wavelength,
+        fwhm=init_fwhm,
+        background=init_background
+    )
     
-    # Perform initial fit
-    fitter = fitting.LevMarLSQFitter(calc_uncertainties=True)
-    combined_fit = fitter(combined_init, x, y)
+    # Set parameter bounds
+    params['fwhm'].min = 0.1 * init_fwhm  # Prevent unrealistically narrow lines
+    params['fwhm'].max = 5.0 * init_fwhm   # Prevent unrealistically broad lines
+    params['center'].min = wavelength_min
+    params['center'].max = wavelength_max
     
-    # Get best-fit parameters
-    flux = combined_fit.total_flux_0.value
-    wavelength = combined_fit.mean_0.value
-    fwhm = combined_fit.stddev_0.value * 2.355
-    background = combined_fit.amplitude_1.value
-    
-    # print('xtest %s' %  line)
-    # bootstrap_params = np.array([bootstrap_fit(x, y, combined_init) for _ in range(n_bootstrap)])
-    # print('ztest %s' % line)
-    
-    # Handle parameter errors
-    if fitter.fit_info['param_cov'] is not None:
-        try:
-            param_errors = np.sqrt(np.diag(fitter.fit_info['param_cov']))
-            flux_err, wave_err, fwhm_err, back_err = param_errors
-            # print(f"Using covariance matrix for {line} errors")
-        except Exception:
-            print(f"\nSingle1: Covariance matrix failed for {line}, using bootstrap")
-            bootstrap_params = np.array([bootstrap_fit(x, y, combined_init) for _ in range(n_bootstrap)])
-            flux_err, wave_err, fwhm_err, back_err = np.std(bootstrap_params, axis=0)
+    # Perform the fit
+    if errors is not None:
+        result = gmodel.fit(y, params, x=x, weights=1.0/errors)  # Using error as weights, not squared
     else:
-        print(f"\nSingle2: No covariance matrix for {line}, using bootstrap")
-        print('Flux Wave FWHM, Back:      %.3e %6.1f %4.1f %.3e' % (flux,wavelength,fwhm,background))
-        bootstrap_params = np.array([bootstrap_fit(x, y, combined_init) for _ in range(n_bootstrap)])
-        # print("Bootstrap results:", bootstrap_params.shape)
-        # print("First bootstrap fit:", bootstrap_params[0])
-        flux_err, wave_err, fwhm_err, back_err = np.std(bootstrap_params, axis=0)
-        print('eFlux eWave eFWHM, eBack:  %.3e %6.1f %4.1f %.3e' % (flux_err,wave_err,fwhm_err,back_err))
+        result = gmodel.fit(y, params, x=x)
     
-    # Calculate RMSE
-    y_fit = combined_fit(x)
+    # Extract fitted parameters and uncertainties
+    flux = result.params['flux'].value
+    flux_err = result.params['flux'].stderr if result.params['flux'].stderr is not None else np.nan
+    
+    wavelength = result.params['center'].value
+    wave_err = result.params['center'].stderr if result.params['center'].stderr is not None else np.nan
+    
+    fwhm = result.params['fwhm'].value
+    fwhm_err = result.params['fwhm'].stderr if result.params['fwhm'].stderr is not None else np.nan
+    
+    background = result.params['background'].value
+    back_err = result.params['background'].stderr if result.params['background'].stderr is not None else np.nan
+    
+    # Calculate statistics
+    y_fit = result.best_fit
     rmse = np.sqrt(np.mean((y - y_fit) ** 2))
+    
+    # Use lmfit's built-in reduced chi-squared calculation
+    reduced_chi2 = result.redchi
     
     # Create output tables
     fit_table = Table([x, y, y_fit], names=('WAVE', 'FLUX', 'Fit'))
+    if errors is not None:
+        fit_table['ERROR'] = errors
     
     col_names = [f'{param}_{line}' for param in 
-                 ['flux', 'eflux', 'wave', 'ewave', 'fwhm', 'efwhm', 'back', 'rmse']]
+                 ['flux', 'eflux', 'wave', 'ewave', 'fwhm', 'efwhm', 'back', 'eback', 'rmse', 'chi2']]
     
     qtab = Table(names=col_names)
-    qtab.add_row([flux, flux_err, wavelength, wave_err, fwhm, fwhm_err, background, rmse])
+    qtab.add_row([flux, flux_err, wavelength, wave_err, fwhm, fwhm_err, background, back_err, rmse, reduced_chi2])
     
     return qtab, fit_table
 
-def fit_double_gaussian_to_spectrum(spectrum_table, line, init_wavelength1, init_wavelength2, init_fwhm, wavelength_min, wavelength_max, n_bootstrap=100):
+def fit_double_gaussian_to_spectrum(spectrum_table, line, init_wavelength1, init_wavelength2, init_fwhm, wavelength_min, wavelength_max):
     """
-    Fit two Gaussians with a shared FWHM and a constant background to a spectral region.
-    Falls back to bootstrapping if covariance matrix is unavailable.
+    Fit two Gaussians with a shared FWHM and a constant background using lmfit.
     
     Parameters:
-    spectrum_table (astropy.table.Table): Table with 'WAVE' and 'FLUX' columns
+    spectrum_table (astropy.table.Table): Table with 'WAVE', 'FLUX', and 'ERROR' columns
     line (str): Name of the line being fit (for output column names)
-    init_wavelength1, init_wavelength2 (float): Initial guesses for the center wavelengths of the two Gaussians
+    init_wavelength1, init_wavelength2 (float): Initial guesses for the center wavelengths
     init_fwhm (float): Initial guess for the shared FWHM
     wavelength_min, wavelength_max (float): Wavelength range for fitting
-    n_bootstrap (int): Number of bootstrap iterations if needed
     
     Returns:
     qtab (astropy.table.Table): Table with fit results and uncertainties
     fit_table (astropy.table.Table): Table with original and fitted values
     """
-    class SharedFWHMGaussian(Fittable1DModel):
-        flux1 = Parameter()
-        flux2 = Parameter()
-        mean1 = Parameter()
-        mean2 = Parameter()
-        stddev = Parameter()
-        
-        @staticmethod
-        def evaluate(x, flux1, flux2, mean1, mean2, stddev):
-            amplitude1 = flux1 / (stddev * np.sqrt(2 * np.pi))
-            amplitude2 = flux2 / (stddev * np.sqrt(2 * np.pi))
-            g1 = amplitude1 * np.exp(-0.5 * ((x - mean1) / stddev) ** 2)
-            g2 = amplitude2 * np.exp(-0.5 * ((x - mean2) / stddev) ** 2)
-            return g1 + g2
+    # Define model function
+    def double_gaussian(x, flux1, flux2, center1, center2, fwhm, background):
+        """Two Gaussians with shared FWHM and a background"""
+        sigma = fwhm / 2.355
+        amp1 = flux1 / (sigma * np.sqrt(2 * np.pi))
+        amp2 = flux2 / (sigma * np.sqrt(2 * np.pi))
+        g1 = amp1 * np.exp(-0.5 * ((x - center1) / sigma)**2)
+        g2 = amp2 * np.exp(-0.5 * ((x - center2) / sigma)**2)
+        return g1 + g2 + background
     
-    def bootstrap_fit(x, y, init_model):
-        indices = np.random.randint(0, len(x), len(x))
-        x_resampled = x[indices]
-        y_resampled = y[indices]
-        
-        fitter = fitting.LevMarLSQFitter()
-        fitted_model = fitter(init_model.copy(), x_resampled, y_resampled)
-        
-        return (
-            fitted_model.flux1_0.value,
-            fitted_model.flux2_0.value,
-            fitted_model.mean1_0.value,
-            fitted_model.mean2_0.value,
-            fitted_model.stddev_0.value * 2.355,
-            fitted_model.amplitude_1.value
-        )
-    
+    # Extract and clean data
     mask = (spectrum_table['WAVE'] >= wavelength_min) & (spectrum_table['WAVE'] <= wavelength_max)
     x = spectrum_table['WAVE'][mask]
     y = spectrum_table['FLUX'][mask]
     
+    # Get errors if available
+    if 'ERROR' in spectrum_table.colnames:
+        errors = spectrum_table['ERROR'][mask]
+    else:
+        errors = None
+    
+    # Filter for finite values
     finite_mask = np.isfinite(y)
+    if errors is not None:
+        finite_mask = finite_mask & np.isfinite(errors)
+    
     x = x[finite_mask]
     y = y[finite_mask]
+    if errors is not None:
+        errors = errors[finite_mask]
+        # Ensure errors are not too small to prevent numerical issues
+        min_error_value = np.max(np.abs(y)) * 1e-6
+        errors = np.maximum(errors, min_error_value)
     
-    init_stddev = init_fwhm / 2.355
+    # Initial parameter estimates
     dx = x[1] - x[0]
-    init_flux1 = np.sum(y * dx) / 2
-    init_flux2 = np.sum(y * dx) / 2
+    total_flux = np.sum(y * dx)
+    init_flux1 = total_flux / 2
+    init_flux2 = total_flux / 2
+    init_background = np.median(y)
     
-    g_init = SharedFWHMGaussian(flux1=init_flux1, flux2=init_flux2,
-                                mean1=init_wavelength1, mean2=init_wavelength2,
-                                stddev=init_stddev)
-    const_init = models.Const1D(amplitude=np.median(y))
-    combined_init = g_init + const_init
+    # Set up lmfit model
+    gmodel = Model(double_gaussian)
+    params = gmodel.make_params(
+        flux1=init_flux1,
+        flux2=init_flux2,
+        center1=init_wavelength1,
+        center2=init_wavelength2,
+        fwhm=init_fwhm,
+        background=init_background
+    )
     
-    fitter = fitting.LevMarLSQFitter(calc_uncertainties=True)
-    combined_fit = fitter(combined_init, x, y)
+    # Set parameter bounds
+    params['fwhm'].min = 0.1 * init_fwhm
+    params['fwhm'].max = 5.0 * init_fwhm
+    params['center1'].min = wavelength_min
+    params['center1'].max = wavelength_max
+    params['center2'].min = wavelength_min
+    params['center2'].max = wavelength_max
     
-    flux1 = combined_fit.flux1_0.value
-    flux2 = combined_fit.flux2_0.value
-    wave1 = combined_fit.mean1_0.value
-    wave2 = combined_fit.mean2_0.value
-    fwhm = combined_fit.stddev_0.value * 2.355
-    background = combined_fit.amplitude_1.value
-    
-    if fitter.fit_info['param_cov'] is not None:
-        try:
-            param_errors = np.sqrt(np.diag(fitter.fit_info['param_cov']))
-            flux1_err, flux2_err, wave1_err, wave2_err, fwhm_err, back_err = param_errors
-            # print(f"Using covariance matrix for {line} errors")
-        except Exception:
-            print(f"\ndouble1: Covariance matrix failed for {line}, using bootstrap")
-            bootstrap_params = np.array([bootstrap_fit(x, y, combined_init) for _ in range(n_bootstrap)])
-            print('flux1 flux2 wave1 wave2 fwhm background:       %8.3e %8.3e %8.3f %8.3f %8.3f %8.3e' % (flux1,flux2,wave1,wave2,fwhm,background))
-            flux1_err, flux2_err, wave1_err, wave2_err, fwhm_err, back_err = np.std(bootstrap_params, axis=0)
-            print('eflux1 eflux2 ewave1 ewave2 efwhm ebackground: %8.3e %8.3e %8.3f %8.3f %8.3f %8.3e' % (flux1_err,flux2_err,wave1_err,wave2_err,fwhm_err,back_err))
+    # Ensure center1 < center2 to avoid swapping during fitting
+    if init_wavelength1 < init_wavelength2:
+        params['center1'].max = init_wavelength2
+        params['center2'].min = init_wavelength1
     else:
-        print(f"\ndouble2: No covariance matrix for {line}, using bootstrap")
-        print('flux1 flux2 wave1 wave2 fwhm background:       %8.3e %8.3e %8.3f %8.3f %8.3f %8.3e' % (flux1,flux2,wave1,wave2,fwhm,background))
-        bootstrap_params = np.array([bootstrap_fit(x, y, combined_init) for _ in range(n_bootstrap)])
-        flux1_err, flux2_err, wave1_err, wave2_err, fwhm_err, back_err = np.std(bootstrap_params, axis=0)
-        print('eflux1 eflux2 ewave1 ewave2 efwhm ebackground: %8.3e %8.3e %8.3f %8.3f %8.3f %8.3e' % (flux1_err,flux2_err,wave1_err,wave2_err,fwhm_err,back_err))
+        params['center1'].max = init_wavelength1
+        params['center2'].min = init_wavelength2
     
-    y_fit = combined_fit(x)
+    # Perform the fit
+    if errors is not None:
+        result = gmodel.fit(y, params, x=x, weights=1.0/errors)  # Using error as weights, not squared
+    else:
+        result = gmodel.fit(y, params, x=x)
+    
+    # Extract fitted parameters and uncertainties
+    flux1 = result.params['flux1'].value
+    flux1_err = result.params['flux1'].stderr if result.params['flux1'].stderr is not None else np.nan
+    
+    flux2 = result.params['flux2'].value
+    flux2_err = result.params['flux2'].stderr if result.params['flux2'].stderr is not None else np.nan
+    
+    wave1 = result.params['center1'].value
+    wave1_err = result.params['center1'].stderr if result.params['center1'].stderr is not None else np.nan
+    
+    wave2 = result.params['center2'].value
+    wave2_err = result.params['center2'].stderr if result.params['center2'].stderr is not None else np.nan
+    
+    fwhm = result.params['fwhm'].value
+    fwhm_err = result.params['fwhm'].stderr if result.params['fwhm'].stderr is not None else np.nan
+    
+    background = result.params['background'].value
+    back_err = result.params['background'].stderr if result.params['background'].stderr is not None else np.nan
+    
+    # Calculate statistics
+    y_fit = result.best_fit
     rmse = np.sqrt(np.mean((y - y_fit) ** 2))
     
-    fit_table = Table([x, y, y_fit], names=('WAVE', 'FLUX', 'Fit'))
-
-    xflux='flux_%s_a' % line
-    xwave='wave_%s_a' % line
-    xfwhm='fwhm_%s_a' % line
-
-    exflux='eflux_%s_a' % line
-    exwave='ewave_%s_a' % line
-    exfwhm='efwhm_%s_a' % line
-
-    xback='back_%s_ab' % line
-    xrmse='rmse_%s_ab' % line
-
-    yflux='flux_%s_b' % line
-    ywave='wave_%s_b' % line
-    yfwhm='fwhm_%s_b' % line
-
-    eyflux='eflux_%s_b' % line
-    eywave='ewave_%s_b' % line
-    eyfwhm='efwhm_%s_b' % line
-
-
-    yback='back_%s_b' % line
-    yrmse='rmse_%s_b' % line
+    # Use lmfit's built-in reduced chi-squared calculation
+    reduced_chi2 = result.redchi
     
-
-    col_names= [xflux, exflux, yflux, eyflux, xwave, exwave, ywave, eywave, xfwhm, exfwhm, xback, xrmse]
+    # Create output tables
+    fit_table = Table([x, y, y_fit], names=('WAVE', 'FLUX', 'Fit'))
+    if errors is not None:
+        fit_table['ERROR'] = errors
+    
+    # Define column names using the same naming convention as the original code
+    xflux = f'flux_{line}_a'
+    xwave = f'wave_{line}_a'
+    xfwhm = f'fwhm_{line}_a'
+    
+    exflux = f'eflux_{line}_a'
+    exwave = f'ewave_{line}_a'
+    exfwhm = f'efwhm_{line}_a'
+    
+    yflux = f'flux_{line}_b'
+    ywave = f'wave_{line}_b'
+    yfwhm = f'fwhm_{line}_b'
+    
+    eyflux = f'eflux_{line}_b'
+    eywave = f'ewave_{line}_b'
+    eyfwhm = f'efwhm_{line}_b'
+    
+    xback = f'back_{line}_ab'
+    eback = f'eback_{line}_ab'
+    xrmse = f'rmse_{line}_ab'
+    xchi2 = f'chi2_{line}_ab'
+    
+    col_names = [xflux, exflux, yflux, eyflux, xwave, exwave, ywave, eywave, 
+                xfwhm, exfwhm, xback, eback, xrmse, xchi2]
     
     qtab = Table(names=col_names)
-    qtab.add_row([flux1, flux1_err, flux2, flux2_err, wave1, wave1_err, wave2, wave2_err, fwhm, fwhm_err, background, rmse])
+    qtab.add_row([flux1, flux1_err, flux2, flux2_err, wave1, wave1_err, wave2, wave2_err, 
+                fwhm, fwhm_err, background, back_err, rmse, reduced_chi2])
     
     return qtab, fit_table
-
-
-
-
-
-
 
 def save_fit(line='oi',ftab=None,xdir='Gauss_dir'):
     '''
@@ -324,7 +331,7 @@ def clean(xdir='Gauss_dir',wild='*.txt'):
             os.remove(one)
     return
 
-def do_one(spectrum_table,vel=0.,xplot=False):
+def do_one(spectrum_table,vel=0.,xplot=False,outroot=''):
     '''
     Completely process a single spectrum
     '''
@@ -332,6 +339,8 @@ def do_one(spectrum_table,vel=0.,xplot=False):
     # First make sure all of the files in directory containing the fits are removed
 
     clean()
+
+
 
     zz=1.+ (vel/3e5)
 
@@ -436,7 +445,7 @@ def do_one(spectrum_table,vel=0.,xplot=False):
     
     
     try:
-        results,xspec=fit_gaussian_to_spectrum(spectrum_table, line='hei',init_wavelength=zz*5876, init_fwhm=1., wavelength_min=zz*5856, wavelength_max=zz*5896)
+        results,xspec=fit_gaussian_to_spectrum(spectrum_table, line='hei',init_wavelength=zz*5876, init_fwhm=1., wavelength_min=zz*5856, wavelength_max=zz*5886)
         records.append(results)
         if xplot:
             save_fit('hei',xspec)
@@ -457,7 +466,7 @@ def do_one(spectrum_table,vel=0.,xplot=False):
 
     
     try:
-        results,xspec=fit_gaussian_to_spectrum(spectrum_table, line='siii_a',init_wavelength=zz*9068, init_fwhm=1., wavelength_min=zz*9048, wavelength_max=zz*9088)
+        results,xspec=fit_gaussian_to_spectrum(spectrum_table, line='siii_a',init_wavelength=zz*9068.5, init_fwhm=1., wavelength_min=zz*9055, wavelength_max=zz*9090)
         records.append(results)
         if xplot:
             save_fit('siii_a',xspec)
@@ -467,7 +476,7 @@ def do_one(spectrum_table,vel=0.,xplot=False):
     
     
     try:
-        results,xspec=fit_gaussian_to_spectrum(spectrum_table, line='siii_b',init_wavelength=zz*9531, init_fwhm=1., wavelength_min=zz*9511, wavelength_max=zz*9551)
+        results,xspec=fit_gaussian_to_spectrum(spectrum_table, line='siii_b',init_wavelength=zz*9530.6, init_fwhm=1., wavelength_min=zz*9525, wavelength_max=zz*9545)
         records.append(results)
         if xplot:
             save_fit('siii_b',xspec)
@@ -478,10 +487,15 @@ def do_one(spectrum_table,vel=0.,xplot=False):
 
     try:
         ztab=hstack(records)
-        return ztab
+        # return ztab
     except:
         print('Nothing fit for this spectrum')
         return []
+
+
+    if xplot and outroot!='':
+        plot_all(title=outroot)
+        plt.savefig('Gauss_dir/%s.png' % outroot)
 
     return ztab
     
@@ -508,6 +522,12 @@ def do_individual(filenames,vel,outname,xplot=True):
             continue
         try:
             xtab=ascii.read(one_file)
+            if np.nanmedian(xtab['FLUX'])<1:
+                xtab['FLUX']*=1e16
+                xtab['ERROR']*=1e16
+            efactor=2.25
+            xtab['ERROR']/=efactor
+
             results=do_one(xtab,vel,xplot)
             word=one_file.split('/')
             root=word[-1]
@@ -594,9 +614,10 @@ def check_for_nan(flux,max_frac=0.5):
         return False
 
 
-def do_all(filename='data/lvmSFrame-00009088.fits',vel=0.0,outname=''):
+def do_all(filename='data/lvmSFrame-00009088.fits',vel=0.0,outname='',xplot=False):
     '''
-    Do all of the spectra in a rss fits file
+    Do all of the spectra in a rss fits file.  This multiplies everything
+    by 1e16 and corrects the errors as well
     '''
     try:
         x=fits.open(filename)
@@ -605,7 +626,13 @@ def do_all(filename='data/lvmSFrame-00009088.fits',vel=0.0,outname=''):
         return
 
     wave=x['WAVE'].data
-    flux=x['FLUX'].data
+    flux=x['FLUX'].data*1e16
+    error=1./np.sqrt(x['IVAR'].data)*1e16
+
+    efactor=2.25
+    error/=efactor
+
+    print('OK ',xplot)
 
         
     # Now get the good fibers from the science telecsope
@@ -617,9 +644,9 @@ def do_all(filename='data/lvmSFrame-00009088.fits',vel=0.0,outname=''):
     records=[]
     for i in range(len(good)):
         j=good['fiberid'][i]-1
-        one_spec=Table([wave,flux[j]],names=['WAVE','FLUX'])
+        one_spec=Table([wave,flux[j],error[j]],names=['WAVE','FLUX','ERROR'])
         if check_for_nan(flux[j])==False:
-            rtab=do_one(spectrum_table=one_spec,vel=vel,xplot=False)
+            rtab=do_one(spectrum_table=one_spec,vel=vel,xplot=xplot,outroot='Fib%04d' % good['fiberid'][i])
             if len(rtab)>0:
                 rtab['fiberid']=good['fiberid'][i]
                 rtab['ra']=good['ra'][i]
@@ -634,9 +661,9 @@ def do_all(filename='data/lvmSFrame-00009088.fits',vel=0.0,outname=''):
 
     if outname=='':
         outname=filename.split('/')[-1]
-        outname=outname.replace('.fits','.txt')
+        outname=outname.replace('.fits','.gauss.txt')
     else:
-        outname=outname+'.txt'
+        outname=outname+'.gauss.txt'
 
     columns=results.colnames
     for one in columns:
@@ -650,6 +677,8 @@ def do_all(filename='data/lvmSFrame-00009088.fits',vel=0.0,outname=''):
             results[one].format='.3e'
         elif one.count('back'):
             results[one].format='.3e'
+        elif one.count('chi'):
+            results[one].format='.3f'
         elif one.count('ra'):
             results[one].format='.3f'
         elif one.count('dec'):
@@ -682,9 +711,10 @@ def plot_one(qtab,name='ha'):
     '''
     plt.plot(qtab['WAVE'],qtab['FLUX'],label=name)
     plt.plot(qtab['WAVE'],qtab['Fit'])
+    plt.plot(qtab['WAVE'],qtab['ERROR'],'.',alpha=0.5)
     plt.legend()
         
-def plot_all(qdir='Gauss_dir'):
+def plot_all(qdir='Gauss_dir',title=None):
     '''
     Read in a bunch of fits and plot them all in one big
     plot, assuming all of the fits have been saved to a directoryt
@@ -724,6 +754,13 @@ def plot_all(qdir='Gauss_dir'):
         plot_one(xtab,name)
         i+=1
     plt.tight_layout()
+
+    # Add an overall title if provided
+    if title:
+        plt.suptitle(title, fontsize=16, y=0.98)
+        # Adjust the layout to make room for the title
+        plt.subplots_adjust(top=0.92)
+
     return 
 
 def steer(argv):
@@ -733,6 +770,7 @@ def steer(argv):
     outname=''
     fitsfiles=[]
     specfiles=[]
+    xplot=False
 
     vel=0
     i=1
@@ -744,6 +782,8 @@ def steer(argv):
             vel=lmc
         elif argv[i]=='-smc':
             vel=smc
+        elif argv[i]=='-plot':
+            xplot=True
         elif argv[i][0:4]=='-out':
             i+=1
             outname=argv[i]
@@ -763,11 +803,13 @@ def steer(argv):
         i+=1
 
     for one_file in fitsfiles:
-        results=do_all(one_file,vel,outname)
+        results=do_all(one_file,vel,outname,xplot)
         analyze(results)
 
     if len(specfiles)>0:
         do_individual(specfiles,vel,outname)
+
+    print('Errors have been decreased by a factor of 2.25; this should be removed after a new processing')
 
     return
 

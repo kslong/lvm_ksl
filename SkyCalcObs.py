@@ -11,13 +11,14 @@ Use SkyCalc to find the sky for a given RA and DEC and time
 
 Command line usage (if any):
 
-    usage: SkyCalcObs.py filename
+    Usage:  SkyCalObs.py  RA  DEC time
 
 Description:  
 
 Primary routines:
 
-    doit
+    just_run_SkyCalc_from_observation(xinput='test.json',almanac='',outroot='',msol=0,print_output=False):
+    run_SkyCalc_from_observation(xdefault=default,ra=121.75,dec=-29.7,xtime="2012-07-17T21:12:14", outroot='test',msol=137,print_output=False):
 
 Notes:
 Run SkyCalc based on RA, Dec, and time

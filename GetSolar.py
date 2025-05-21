@@ -21,15 +21,24 @@ And store this in the data directory for under lvm_ksl
 
 Command line usage (if any):
 
-    usage: GetSolar.py 
+    usage:  GetSolar.py [-h] [-retrieve]  time1 ...
+
+
+    where 
+        -h displays the __doc__ file and quites
+        -retrieve causes a new fluxtable.txt to be retrieved
+
+    and then the solar fluxes are retrived for one or more times, given various formats
 
 Description:  
 
-    There are no switches for this
+
+
 
 Primary routines:
 
-    doit
+    doit  gets a new solar data file and stores it in the lvm_ksl/data directory
+    get_flux obtains the solar flux for a specific time
 
 Notes:
                                        

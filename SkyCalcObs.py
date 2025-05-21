@@ -52,7 +52,6 @@ from datetime import datetime
 
 default='''
 {
-    "msolflux": 200,
     "ra": 121.75,
     "dec": -29.7,
     "date": "2012-07-17T21:12:14",
@@ -71,7 +70,7 @@ def update(xdict,param='wmax',value=1000.):
 
 
 
-def write_obs_inputs(xdefault=default,ra=121.75,dec=-29.7,xtime="2012-07-17T21:12:14", outroot='test'):
+def write_obs_inputs(xdefault=default,ra=121.75,dec=-29.7,xtime="2012-07-17T21:12:14", msol=-1,outroot='test'):
     '''
     ra  - in decimal degress
     dec - in decimal degrees
@@ -84,7 +83,22 @@ def write_obs_inputs(xdefault=default,ra=121.75,dec=-29.7,xtime="2012-07-17T21:1
     
     update(xdict,'dec',dec)
     
-    update(xdict,'date',xtime)
+    print('A ',msol)
+
+    xtime=Time(parse_to_datetime(xtime))
+    isot_whole_seconds = xtime.datetime.strftime('%Y-%m-%dT%H:%M:%S')
+    update(xdict,'date',isot_whole_seconds)
+    # print('XXX',xtime)
+    year=eval(xtime.datetime.strftime('%Y'))
+    fudge_sol=False
+    if year>2024:
+        fudge_sol=True
+        msol=0
+
+    print('B ',msol,year)
+
+    if msol>0:
+        xdict['msolflux']=msol
     
     
     # print(xdict)
@@ -116,7 +130,6 @@ xdefaults='''
 
 ydefaults='''
 {
-    "msolflux": %d,
     "vacair": "air",
     "wmin": 360.0,
     "wmax": 980.0,
@@ -137,6 +150,7 @@ def just_run_SkyCalc_from_observation(xinput='test.json',almanac='',outroot='',m
     Run skycalc on a valid set of inputs
     '''
     
+    print('xsol', msol)
     if xinput.count('.json')==0:
         xroot=xinput
         xinput='%s.json' % xinput
@@ -148,18 +162,14 @@ def just_run_SkyCalc_from_observation(xinput='test.json',almanac='',outroot='',m
 
     xstring= 'skycalc_cli -i xsky.json -a %s.json -o %s.fits' % (xroot,outroot)
     g=open('xsky.json','w')
-
-    if msol>0:
-        g.write(ydefaults % msol)
-    else:
-        g.write(xdefaults)
+    g.write(xdefaults)
     g.flush()
     g.close()
     time.sleep(1)
     
     # print(xstring)
     command_line=xstring.split()
-    # print(command_line)
+    print(command_line)
     Xerror=False
         
     try:
@@ -227,23 +237,15 @@ def parse_to_datetime(time_input):
     except Exception as e:
         raise ValueError(f"Unrecognized time format: {time_input!r}") from e
 
-def run_SkyCalc_from_observation(xdefault=default,ra=121.75,dec=-29.7,xtime="2012-07-17T21:12:14", outroot='test',msol=137,print_output=False):
+def run_SkyCalc_from_observation(xdefault=default,ra=121.75,dec=-29.7,xtime="2012-07-17T21:12:14", outroot='',msol=137,print_output=False):
     if outroot=='':
-        outroot='SkyM_%5.1f_%5.1f' % (ra,dec)
+        outroot='SkyC_%5.1f_%5.1f' % (ra,dec)
     # print('XXX',outroot,xtime)
-
-    xtime=Time(parse_to_datetime(xtime))
-    # print('XXX',xtime)
-    year=eval(xtime.datetime.strftime('%Y'))
-    fudge_sol=False
-    if year>2024:
-        fudge_sol=True
-    else:
-        msol=0
-    isot_whole_seconds = xtime.datetime.strftime('%Y-%m-%dT%H:%M:%S')
+    # isot_whole_seconds = xtime.datetime.strftime('%Y-%m-%dT%H:%M:%S')
     # print('XXX',outroot,xtime.isot,isot_whole_seconds)
 
-    write_obs_inputs(xdefault,ra,dec,isot_whole_seconds, outroot)
+    # write_obs_inputs(xdefault,ra,dec,isot_whole_seconds, msol, outroot)
+    write_obs_inputs(xdefault,ra,dec,xtime, msol, outroot)
     xroot=just_run_SkyCalc_from_observation(outroot,almanac='',outroot=outroot,msol=msol,print_output=print_output)
     return xroot
 

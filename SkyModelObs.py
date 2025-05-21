@@ -194,6 +194,38 @@ def get_info_las_campanas(datetime_utc, ra, dec, verbose=False):
     return xreturn
 
 
+inst_base='''
+# Wavelength grid:
+
+# minimum and maximum wavelength [mum]
+limlam     = 0.36 0.98
+
+# step size [mum]
+dlam       = 0.00005
+
+
+# Line-spread function:
+
+# radius of convolution kernel [pixels] (N_pixel = 2 x kernrad + 1)
+kernrad    = 3
+
+# FWHM of boxcar kernel [pixels]
+wbox       = 0.8
+
+# FWHM of Gaussian kernel [pixels]
+wgauss     = 0.8
+
+# FWHM of Lorentzian kernel [pixels]
+wlorentz   = 0.8
+
+# variable kernel (width proportional to wavelength)? -> 1 = yes; 0 = no
+# if varkern = 1: kernel radius and FWHM for central wavelength
+varkern    = 1
+
+# output file for kernel ("stdout": screen; "null": no output)
+kernelfile = output/kernel.dat
+'''
+
 
 obs_base='''
 # observatory height in km [2.4, 3.06] (default: 2.64)
@@ -247,7 +279,7 @@ emis_str = 0.2
 temp_str = 290.
 
 # monthly-averaged solar radio flux [sfu]
-msolflux = 130.
+msolflux = 101.
 
 # bimonthly period (1: Dec/Jan, ..., 6: Oct/Nov; 0: entire year)
 season   = 4
@@ -256,7 +288,7 @@ season   = 4
 time     = 0
 
 # vac[uum] or air wavelengths
-vac_air  = vac
+vac_air  = air
 
 # precipitable water vapour in mm (-1: bimonthly mean)
 pwv      = -1
@@ -287,13 +319,18 @@ incl     = YYYYYYY
 
 
 def create_inputs(ra=296.242608,dec=-14.811007,obstime='2023-08-29T03:20:43.668'):
+    '''
+    calcskymodel reads inputs for the actual source location etc from a fixed file
+    called sky_model_etc.par
+    '''
     info=get_info_las_campanas(obstime, ra=ra,dec=dec,verbose=True)
     print(info)
 
-    xout=open('obs.par','w')
+    xout=open('config/skymodel_etc.par','w')
     out_string=obs_base % (info['SourceAlt'],info['Moon-Sun_Separation'],info['Moon-Source_Separation'],info['MoonAlt'],info['MoonDistanceInMeanUnits'],
                            info['SourceEclipLon'],info['SourceEclipLat'])
     xout.write(out_string)
+    xout.close()
 
     keys=['RA','Dec','ObsTime']
     values=[ra,dec,obstime]
@@ -308,6 +345,24 @@ def create_inputs(ra=296.242608,dec=-14.811007,obstime='2023-08-29T03:20:43.668'
             except:
                 v=word[2]
             values.append(v)
+
+    xinst=open('config/instrument_etc.par','w')
+    ibase=inst_base
+    xinst.write(ibase)
+    xinst.close()
+    
+    lines=ibase.split('\n')
+    for one_line in lines:
+        word=one_line.split()
+        if len(word)>2 and word[1]=='=':
+            keys.append(word[0])
+            try:
+                v=eval(word[2])
+            except:
+                v=word[2]
+            values.append(v)
+
+
     return keys,values
         
 
@@ -333,7 +388,7 @@ def reformat_model(rfile='output/radspec.fits',tfile='output/transspec.fits',xke
     new_hdul.writeto(outfile, overwrite=True)
 
 
-def do_one(ra=296.242608,dec=-14.811007,obstime='2023-08-29T03:20:43.668',outname=''):
+def do_one(ra=296.242608,dec=-14.811007,obstime='2023-08-29T03:20:43.668',outroot=''):
 
     setup()
 
@@ -344,11 +399,14 @@ def do_one(ra=296.242608,dec=-14.811007,obstime='2023-08-29T03:20:43.668',outnam
     print("stdout:", result.stdout)
     print("stderr:", result.stderr)
 
-    if outname=='':
-        outname='foo'
-    if outname.count('.fits')==0:
-        outname='%s.fits' % outname
+    if outroot=='':
+        outroot='SkyM_%5.1f_%5.1f' % (ra,dec)
+    if outroot.count('.fits')==0:
+        outname='%s.fits' % outroot
+    else:
+        outname=outroot
     reformat_model(rfile='output/radspec.fits',tfile='output/transspec.fits',xkey=key,xval=value,outfile=outname)
+    return outroot
 
 
 def is_number(x):

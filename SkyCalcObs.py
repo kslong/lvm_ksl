@@ -265,7 +265,7 @@ def run_SkyCalc_from_observation(xdefault=default,ra=121.75,dec=-29.7,xtime="201
         if dec>0:
             outroot='SkyC_%8.2f_%05.1f_+%04.1f' % (mjd,ra,dec)
         else:
-            outroot='SkyM_%8.2f_%05.1f_%.1f' % (mjd,ra,dec)
+            outroot='SkyC_%8.2f_%05.1f_%.1f' % (mjd,ra,dec)
 
     # print('XXX',outroot,xtime)
     # isot_whole_seconds = xtime.datetime.strftime('%Y-%m-%dT%H:%M:%S')

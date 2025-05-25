@@ -12,15 +12,36 @@ given an RA and Dec and a time
 
 Command line usage (if any):
 
-    usage: SkyModelObs.py filename
+    usage: SkyModelObs.py [-h] [-config] [-data data_dir] [-out whatever] ra dec time
+
+    where
+        -h prints the _doc__ string and exits
+        -config forces a new set up of the directories needed to 
+            run the routines. (Regardless of this switch the directories will be set up the
+            first time the routine is run.)
+        -data data_dir  Sets the data directory for sky model to a location
+            not pointed to by ESO_SKY_MODEL
+        -out whatever changes the root name of the output file
+        ra, dec  a position in the sky in degrees
+        time time in one of serveral coordiantes, either a date_time string, mjd, or jd
 
 Description:  
+
+    The routine uses the routine calcskymodel which is part of the ESO Sky model to
+    estimate the sky from LCO at a certain time and position on the sky.  If reconstructs
+    the outputs to resemble the data files created by skycalc, the web application.
+
+
 
 Primary routines:
 
     doit
 
 Notes:
+
+    There must be conistency between the various inputs, and in particular one must have
+    the agreement between the calculated sky models in the data/lib directory and the 
+    parameters described in confit/sky_model.par
                                        
 History:
 
@@ -52,25 +73,220 @@ import astropy.units as u
 import numpy as np
 from astropy.coordinates import get_body
 
-def setup(eso_sky_dir=''):
+import shutil
+
+
+import requests
+import inspect
+
+
+
+# This section is a fairly flexiable way to convert times
+# The main routine is convert_time
+
+from astropy.time import Time
+import datetime
+import re
+
+def convert_time(time_input, output_format='datetime'):
+    """
+    Convert between different time formats: date strings, MJD, JD, and datetime objects.
+
+    Parameters
+    ----------
+    time_input : str, float, or int
+        Time input in various formats:
+        - ISO date string (e.g., '2025-04-21T03:00:00')
+        - MJD (e.g., 60394.125 or '60394.125')
+        - JD (e.g., 2460394.625 or '2460394.625')
+        - datetime object
+    output_format : str
+        Desired output format:
+        - 'datetime': Python datetime object
+        - 'iso': ISO 8601 format string (e.g., '2025-04-21T03:00:00')
+        - 'iso_ms': ISO 8601 format with milliseconds (e.g., '2023-08-29T03:20:43.668')
+        - 'mjd': Modified Julian Date (float)
+        - 'jd': Julian Date (float)
+
+    Returns
+    -------
+    Time in the requested format
+    """
+    # Detect input format
+    input_format = _detect_time_format(time_input)
+
+    # Convert to Time object (intermediate representation)
+    t = _convert_to_time_object(time_input, input_format)
+
+    # Convert to desired output format
+    return _convert_to_output_format(t, output_format)
+
+def _detect_time_format(time_input):
+    """
+    Detect the format of the input time.
+
+    Parameters
+    ----------
+    time_input : str, float, int, or datetime.datetime
+        Time input in various formats
+
+    Returns
+    -------
+    str
+        Detected format: 'iso', 'mjd', 'jd', or 'datetime'
+    """
+    # If it's already a datetime object
+    if isinstance(time_input, datetime.datetime):
+        return 'datetime'
+
+    # Convert to string for pattern matching
+    if isinstance(time_input, (int, float)):
+        time_str = str(time_input)
+    else:
+        time_str = time_input
+
+    # Check for ISO format (contains date separators and possibly time separators)
+    # Enhanced to detect milliseconds/microseconds patterns
+    if (re.search(r'\d{4}-\d{2}-\d{2}', time_str) or 
+        re.search(r'\d{4}/\d{2}/\d{2}', time_str) or
+        re.search(r'\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.?\d*', time_str)):
+        return 'iso'
+
+    # Try to convert to float
+    try:
+        value = float(time_str)
+        # JD is typically > 2400000
+        if value > 2400000:
+            return 'jd'
+        # MJD is typically < 100000
+        else:
+            return 'mjd'
+    except ValueError:
+        # If it's not convertible to a number but has date-like patterns, treat as ISO
+        if re.search(r'\d+[/:\-]\d+', time_str):
+            return 'iso'
+
+    # Default case - try as ISO
+    return 'iso'
+
+def _convert_to_time_object(time_input, input_format):
+    """
+    Convert input to an astropy Time object.
+
+    Parameters
+    ----------
+    time_input : str, float, int, or datetime.datetime
+        Time input
+    input_format : str
+        Format of the input ('iso', 'mjd', 'jd', or 'datetime')
+
+    Returns
+    -------
+    astropy.time.Time
+        Time object representing the input
+    """
+    try:
+        if input_format == 'datetime':
+            return Time(time_input, scale='utc')
+        elif input_format == 'iso':
+            # Handle various ISO formats including those with milliseconds/microseconds
+            return Time(time_input, format='isot', scale='utc')
+        elif input_format == 'mjd':
+            return Time(float(time_input), format='mjd', scale='utc')
+        elif input_format == 'jd':
+            return Time(float(time_input), format='jd', scale='utc')
+    except Exception as e:
+        raise ValueError(f"Failed to convert {time_input!r} as {input_format} format: {str(e)}")
+
+def _convert_to_output_format(time_obj, output_format):
+    """
+    Convert Time object to the desired output format.
+
+    Parameters
+    ----------
+    time_obj : astropy.time.Time
+        Time object
+    output_format : str
+        Desired output format ('datetime', 'iso', 'iso_ms', 'mjd', or 'jd')
+
+    Returns
+    -------
+    The time in the requested format
+    """
+    try:
+        if output_format == 'datetime':
+            return time_obj.to_datetime()
+        elif output_format == 'iso':
+            return time_obj.iso
+        elif output_format == 'iso_ms':
+            # Format with millisecond precision: YYYY-MM-DDTHH:MM:SS.sss
+            dt = time_obj.to_datetime()
+            # Format with 3 decimal places for milliseconds
+            return dt.strftime('%Y-%m-%dT%H:%M:%S.%f')[:-3]
+        elif output_format == 'mjd':
+            return time_obj.mjd
+        elif output_format == 'jd':
+            return time_obj.jd
+        else:
+            raise ValueError(f"Unsupported output format: {output_format}")
+    except Exception as e:
+        raise ValueError(f"Failed to convert to {output_format} format: {str(e)}")
+
+# End of routines to convert time
+
+
+def safe_remove(path):
+    if os.path.islink(path):
+        os.unlink(path)  # ✅ Just remove the symlink
+    elif os.path.isdir(path):
+        shutil.rmtree(path)  # ✅ Remove actual directory (even if not empty)
+    else:
+        return
+
+# safe_remove("your_path_here")
+
+def setup(eso_sky_dir='',config=True):
     '''
-    Make sure the directies we need exist
+    Set up the directories that are needed for the routine to run
     '''
+
+    if config==False:
+        icheck=True
+        # We just check to see if the directories exist
+        if os.path.isdir('config')==False:
+            icheck=False
+        if os.path.isdir('output')==False:
+            icheck=False
+        if os.path.isdir('data')==False and os.path.islink('data')==False :
+            icheck=False
+        if icheck==True:
+            return
+
+
 
     xdir=os.getenv('ESO_SKY_MODEL')
     if eso_sky_dir=='':
         eso_sky_dir=xdir
 
     data_dir='%s/sm-01_mod2/data' % eso_sky_dir
-    output_dir='%s/sm-01_mod1/output' % eso_sky_dir
-    config_dir='%s/sm-01_mod2/config' % eso_sky_dir
-    if os.path.exists(data_dir) == False and os.path.islink(data_dir)==False:
-        os.symlink(data_dir, 'data')
-    if os.path.exists(output_dir) ==False and os.path.islink(output_dir)==False :
-        os.symlink(output_dir, 'output')
-    if os.path.exists(config_dir)==False  and os.path.islink(config_dir)==False :
-        os.symlink(config_dir, 'config')
+    if os.path.isdir(data_dir)==False:
+        print('Error: %s does not appear to exist')
+        return 
+    safe_remove('data')
+    os.symlink(data_dir,'data')
+    os.makedirs('output', exist_ok=True)
+    os.makedirs('config', exist_ok=True)
 
+
+#   output_dir='%s/sm-01_mod1/output' % eso_sky_dir
+#   config_dir='%s/sm-01_mod2/config' % eso_sky_dir
+#   if os.path.exists(data_dir) == False and os.path.islink(data_dir)==False:
+#       os.symlink(data_dir, 'data')
+#   if os.path.exists(output_dir) ==False and os.path.islink(output_dir)==False :
+#       os.symlink(output_dir, 'output')
+#   if os.path.exists(config_dir)==False  and os.path.islink(config_dir)==False :
+#       os.symlink(config_dir, 'config')
+    return
 
 
 
@@ -388,19 +604,31 @@ def reformat_model(rfile='output/radspec.fits',tfile='output/transspec.fits',xke
     new_hdul.writeto(outfile, overwrite=True)
 
 
-def do_one(ra=296.242608,dec=-14.811007,obstime='2023-08-29T03:20:43.668',outroot=''):
+def do_one(ra=296.242608,dec=-14.811007,obstime='2023-08-29T03:20:43.668',xdata='',config=False,outroot=''):
 
-    setup()
+    obstime=convert_time(obstime,'iso_ms')
+    print(obstime)
+
+    setup(xdata,config)
+    print('Got Here')
 
     key,value=create_inputs(ra=ra,dec=dec,obstime=obstime)
 
     result=subprocess.run(['/Users/long/SDSS/skymodel/sm-01_mod2/bin/calcskymodel'],capture_output=True,text=True)
 
-    print("stdout:", result.stdout)
-    print("stderr:", result.stderr)
+    # print("stdout:", result.stdout)
+    if len(result.stderr):
+        print("stderr:", result.stderr)
+        print('Could not create model due to errors')
+        return
 
     if outroot=='':
-        outroot='SkyM_%5.1f_%5.1f' % (ra,dec)
+        mjd=convert_time(obstime,'mjd')
+        print(mjd)
+        if dec>0:
+            outroot='SkyM_%8.2f_%05.1f_+%04.1f' % (mjd,ra,dec)
+        else:
+            outroot='SkyM_%8.2f_%05.1f_%.1f' % (mjd,ra,dec)
     if outroot.count('.fits')==0:
         outname='%s.fits' % outroot
     else:
@@ -425,14 +653,25 @@ def steer(argv):
     ra=-99
     dec=-99.
     xtime=''
+    data_dir=''
+    config=False
+    outroot=''
 
     i=1
     while i<len(argv):
         if argv[i]=='-h':
             print(__doc__)
             return
+        elif argv[i]=='-config':
+            config=True    
+        elif argv[i]=='-data':
+            i+=1
+            data_dir=argv[i]
+        elif argv[i][:4]=='-out':
+            i+=1
+            outroot=argv[i]
         elif argv[i][0]=='-' and is_number(argv[i])==False:
-            print('Error unknown option: ',argv)
+            print('Error: unknown option: ',argv)
             return
         elif ra < 0:
             ra=eval(argv[i])
@@ -441,13 +680,14 @@ def steer(argv):
         elif xtime=='':
             xtime=argv[i]
         else:
-            print('Erorr Too many argments: ',argv)
+            print('Error: Too many argments: ',argv)
             return
 
 
         i+=1
 
-    do_one(ra=ra,dec=dec,obstime=xtime,outname='')
+    print(config)
+    do_one(ra=ra,dec=dec,obstime=xtime,xdata=data_dir,config=config,outroot=outroot)
 
 
 

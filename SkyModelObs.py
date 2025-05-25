@@ -282,16 +282,16 @@ temp_str = 290.
 msolflux = 101.
 
 # bimonthly period (1: Dec/Jan, ..., 6: Oct/Nov; 0: entire year)
-season   = 4
+season   = 0
 
 # period of the night (x/3 of night, x = 1,2,3; 0: entire night)
-time     = 0
+time     = 0 
 
 # vac[uum] or air wavelengths
 vac_air  = air
 
 # precipitable water vapour in mm (-1: bimonthly mean)
-pwv      = -1
+pwv      = 3.5
 
 # radiative transfer code L(BLRTM) or R(FM) for molecular spectra
 rtcode   = L

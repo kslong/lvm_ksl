@@ -11,9 +11,18 @@ Use SkyCalc to find the sky for a given RA and DEC and time
 
 Command line usage (if any):
 
-    Usage:  SkyCalObs.py  RA  DEC time
+    Usage:  SkyCalObs.py  [-h] [-out whatver] ra  dec time
+
+    where
+        -h prints the __doc_string and exits
+        -out whatever renames the root name of the output file from the defaults
+        ra, dec a position in degrees
+        time an obseervation time either as a string, or jd, or mjd.
 
 Description:  
+
+    The routine runs ESO SkyCalc 
+
 
 Primary routines:
 
@@ -48,6 +57,8 @@ import json
 import subprocess
 from astropy.time import Time
 from datetime import datetime
+from lvm_ksl.SkyModelObs import convert_time
+import time
 
 
 default='''
@@ -83,7 +94,7 @@ def write_obs_inputs(xdefault=default,ra=121.75,dec=-29.7,xtime="2012-07-17T21:1
     
     update(xdict,'dec',dec)
     
-    print('A ',msol)
+    # print('A ',msol)
 
     xtime=Time(parse_to_datetime(xtime))
     isot_whole_seconds = xtime.datetime.strftime('%Y-%m-%dT%H:%M:%S')
@@ -95,7 +106,7 @@ def write_obs_inputs(xdefault=default,ra=121.75,dec=-29.7,xtime="2012-07-17T21:1
         fudge_sol=True
         msol=0
 
-    print('B ',msol,year)
+    # print('B ',msol,year)
 
     if msol>0:
         xdict['msolflux']=msol
@@ -111,7 +122,6 @@ def write_obs_inputs(xdefault=default,ra=121.75,dec=-29.7,xtime="2012-07-17T21:1
     jsonFile.close()
     
 
-import time
 
 xdefaults='''
 {
@@ -147,10 +157,11 @@ ydefaults='''
 def just_run_SkyCalc_from_observation(xinput='test.json',almanac='',outroot='',msol=0,print_output=False):
     
     '''
-    Run skycalc on a valid set of inputs
+    Run skycalc on a valid set of inputs, and then check if the file was created
+    since skycalc does not seem to return any errors.
     '''
     
-    print('xsol', msol)
+    # print('xsol', msol)
     if xinput.count('.json')==0:
         xroot=xinput
         xinput='%s.json' % xinput
@@ -159,6 +170,8 @@ def just_run_SkyCalc_from_observation(xinput='test.json',almanac='',outroot='',m
     
     if outroot=='':
         outroot=xroot
+
+    # print('xroot ',xroot,'outroot ',outroot)
 
     xstring= 'skycalc_cli -i xsky.json -a %s.json -o %s.fits' % (xroot,outroot)
     g=open('xsky.json','w')
@@ -169,7 +182,7 @@ def just_run_SkyCalc_from_observation(xinput='test.json',almanac='',outroot='',m
     
     # print(xstring)
     command_line=xstring.split()
-    print(command_line)
+    # print(command_line)
     Xerror=False
         
     try:
@@ -199,7 +212,7 @@ def just_run_SkyCalc_from_observation(xinput='test.json',almanac='',outroot='',m
 
 
     if is_recent('%s.fits' % xroot)==False:
-        print('Cannot verify that file %s.fits was modified or possibly even created' % xroot)
+        print('Error: Cannot verify that file %s.fits was recently modified or possibly even created' % xroot)
         return ''
 
  
@@ -237,14 +250,29 @@ def parse_to_datetime(time_input):
     except Exception as e:
         raise ValueError(f"Unrecognized time format: {time_input!r}") from e
 
+from lvm_ksl.GetSolar import get_flux
 def run_SkyCalc_from_observation(xdefault=default,ra=121.75,dec=-29.7,xtime="2012-07-17T21:12:14", outroot='',msol=137,print_output=False):
+
+    xtime=convert_time(xtime,'iso_ms')
+
+    if msol<0:
+        msol=get_flux(xtime)
+        print('Got Solar flux of ',msol)
+
+
     if outroot=='':
-        outroot='SkyC_%5.1f_%5.1f' % (ra,dec)
+        mjd=convert_time(xtime,'mjd')
+        if dec>0:
+            outroot='SkyC_%8.2f_%05.1f_+%04.1f' % (mjd,ra,dec)
+        else:
+            outroot='SkyM_%8.2f_%05.1f_%.1f' % (mjd,ra,dec)
+
     # print('XXX',outroot,xtime)
     # isot_whole_seconds = xtime.datetime.strftime('%Y-%m-%dT%H:%M:%S')
     # print('XXX',outroot,xtime.isot,isot_whole_seconds)
 
     # write_obs_inputs(xdefault,ra,dec,isot_whole_seconds, msol, outroot)
+
     write_obs_inputs(xdefault,ra,dec,xtime, msol, outroot)
     xroot=just_run_SkyCalc_from_observation(outroot,almanac='',outroot=outroot,msol=msol,print_output=print_output)
     return xroot
@@ -260,7 +288,7 @@ def steer(argv):
     xtime=-1
     i=1
     outroot=''
-    msol=137
+    msol=-1 
 
     while i<len(argv):
         if argv[i][:2]=='-h':
@@ -269,9 +297,12 @@ def steer(argv):
         elif argv[i][:4]=='-out':
             i+=1
             outroot=argv[i]
-        # elif argv[i][0]=='-':
-        #     print('Error: Unknown option: ',argv)
-        #     return
+        elif argv[i][:5]=='-msol':
+            i+=1
+            msol=eval(argv[i])
+        elif argv[i][0]=='-' and ra<0.0:
+            print('Error: Unknown option: ',argv)
+            return
         elif ra<0.0:
             ra=eval(argv[i])
         elif dec<-90:
@@ -282,7 +313,7 @@ def steer(argv):
 
 
     
-    run_SkyCalc_from_observation(xdefault=default,ra=ra,dec=dec,xtime=xtime, outroot=outroot)
+    run_SkyCalc_from_observation(xdefault=default,ra=ra,dec=dec,xtime=xtime, outroot=outroot,msol=msol)
 
 
 

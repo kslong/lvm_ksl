@@ -591,11 +591,34 @@ def reformat_model(rfile='output/radspec.fits',tfile='output/transspec.fits',xke
     trans=fits.open(tfile)
     rtab=Table(rad[1].data)
     ttab=Table(trans[1].data)
-    ftab=join(rtab,ttab,join_type='left')
-    ftab['lam']*=1000.
+    ztab=join(rtab,ttab,join_type='left')
+    ztab['lam']*=1000.
+
+    ztab.rename_column('lam','WAVE')
+    ztab.rename_column('flux','FLUX')
+    ztab.rename_column('flux_sml','MOON')
+    ztab.rename_column('flux_zl','ZODI')
+    ztab.rename_column('flux_ael','LINES')
+    ztab.rename_column('flux_arc','DIFFUSE')
+    area=np.pi*(37/2)**2
+
+    q=1.98644586e-17*area/ztab['WAVE']
+    ztab['FLUX']*=q
+    ztab['MOON']*=q
+    ztab['LINES']*=q
+    ztab['ZODI']*=q
+    ztab['DIFFUSE']*=q
+    ztab['WAVE']*=10.
+    ztab['CONT']=ztab['MOON']+ztab['ZODI']+ztab['DIFFUSE']
+    ztab['CONT']/=ztab['trans']
+    ztab['MOON']/=ztab['trans']
+    ztab['ZODI']/=ztab['trans']
+    ztab['DIFFUSE']/=ztab['trans']
+    ztab['DIFFUSE']/=ztab['trans']
+    new_hdu = fits.BinTableHDU(data=ztab)
     
     primary_hdu = fits.PrimaryHDU(header=rad[0].header)
-    table_hdu=table_hdu = fits.BinTableHDU(data=ftab, header=rad[1].header)
+    table_hdu=table_hdu = fits.BinTableHDU(data=ztab, header=rad[1].header)
     new_hdul = fits.HDUList([primary_hdu, table_hdu])
     i=0
     while i<len(xkey):

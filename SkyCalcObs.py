@@ -51,6 +51,7 @@ History:
 import sys
 import os
 from astropy.io import ascii,fits
+from astropy.table import Table
 import numpy as np
 import matplotlib.pyplot as plt
 import json
@@ -58,6 +59,7 @@ import subprocess
 from astropy.time import Time
 from datetime import datetime
 from lvm_ksl.SkyModelObs import convert_time
+from lvm_ksl.GetSolar import get_flux
 import time
 
 
@@ -158,7 +160,8 @@ def just_run_SkyCalc_from_observation(xinput='test.json',almanac='',outroot='',m
     
     '''
     Run skycalc on a valid set of inputs, and then check if the file was created
-    since skycalc does not seem to return any errors.
+    since skycalc does not seem to return any errors.  This routine writes a fitfile
+    in the original skycalc units.
     '''
     
     # print('xsol', msol)
@@ -250,7 +253,41 @@ def parse_to_datetime(time_input):
     except Exception as e:
         raise ValueError(f"Unrecognized time format: {time_input!r}") from e
 
-from lvm_ksl.GetSolar import get_flux
+def reformat2LVM(filename):
+    '''
+    Reformat the fits file created by SkyCalc to the units of LVM spectra
+    '''
+
+    x=fits.open(filename)
+    ztab=Table(x[1].data)
+    ztab.rename_column('lam','WAVE')
+    ztab.rename_column('flux','FLUX')
+    ztab.rename_column('flux_sml','MOON')
+    ztab.rename_column('flux_zl','ZODI')
+    ztab.rename_column('flux_ael','LINES')
+    ztab.rename_column('flux_arc','DIFFUSE')
+    area=np.pi*(37/2)**2
+
+    q=1.98644586e-17*area/ztab['WAVE']
+    ztab['FLUX']*=q
+    ztab['MOON']*=q
+    ztab['LINES']*=q
+    ztab['ZODI']*=q
+    ztab['DIFFUSE']*=q
+    ztab['WAVE']*=10.
+    ztab['CONT']=ztab['MOON']+ztab['ZODI']+ztab['DIFFUSE']
+    ztab['CONT']/=ztab['trans']
+    ztab['MOON']/=ztab['trans']
+    ztab['ZODI']/=ztab['trans']
+    ztab['DIFFUSE']/=ztab['trans']
+    new_hdu = fits.BinTableHDU(data=ztab)
+    x[1] = new_hdu
+    x.writeto(filename,overwrite=True)
+
+
+
+
+
 def run_SkyCalc_from_observation(xdefault=default,ra=121.75,dec=-29.7,xtime="2012-07-17T21:12:14", outroot='',msol=137,print_output=False):
 
     xtime=convert_time(xtime,'iso_ms')
@@ -275,6 +312,8 @@ def run_SkyCalc_from_observation(xdefault=default,ra=121.75,dec=-29.7,xtime="201
 
     write_obs_inputs(xdefault,ra,dec,xtime, msol, outroot)
     xroot=just_run_SkyCalc_from_observation(outroot,almanac='',outroot=outroot,msol=msol,print_output=print_output)
+
+    reformat2LVM('%s.fits' % xroot)
     return xroot
 
 

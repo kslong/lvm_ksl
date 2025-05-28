@@ -310,6 +310,9 @@ def get_info_las_campanas(datetime_utc, ra, dec, verbose=False):
     dict
         Dictionary containing information about the sun, moon, and source
     '''
+
+    if verbose:
+        print('get_info_las_campanas,Start: ',datetime_utc, ra, dec)
     # Las Campanas Observatory coordinates
     observatory_location = EarthLocation(lat=-29.0089*u.deg, lon=-70.6920*u.deg, height=2281*u.m)
     
@@ -343,6 +346,8 @@ def get_info_las_campanas(datetime_utc, ra, dec, verbose=False):
     moon_altaz = moon_coords.transform_to(altaz_frame)
     sun_altaz = sun_coords.transform_to(altaz_frame)
     source_altaz = source_coords.transform_to(altaz_frame)
+    if source_altaz.alt.deg<0:
+        print('Error: Source altitude is negative :', source_altaz.alt.deg,ra,dec,datetime_utc)
     
     # Calculate ecliptic coordinates
     moon_ecliptic = moon_coords.transform_to(GeocentricTrueEcliptic(equinox=obs_time))
@@ -353,14 +358,18 @@ def get_info_las_campanas(datetime_utc, ra, dec, verbose=False):
     moon_eclip_lon = moon_ecliptic.lon.deg
     if moon_eclip_lon > 180:
         moon_eclip_lon -= 360
+
+    if verbose:
+        print('XXX %.1f %.1f -> %.1f ' % (source_ecliptic.lon.deg,sun_ecliptic.lon.deg,source_ecliptic.lon.deg-sun_ecliptic.lon.deg))
         
     sun_eclip_lon = sun_ecliptic.lon.deg
-    if sun_eclip_lon > 180:
-        sun_eclip_lon -= 360
+    # if sun_eclip_lon > 180:
+    #     sun_eclip_lon -= 360
         
     source_eclip_lon = source_ecliptic.lon.deg
-    if source_eclip_lon > 180:
-        source_eclip_lon -= 360
+    # if source_eclip_lon > 180:
+    #   source_eclip_lon -= 360
+
         
     # Calculate Moon-Earth distance in units of mean distance
     # Mean Earth-Moon distance is 384,400 km
@@ -534,17 +543,28 @@ incl     = YYYYYYY
 
 
 
-def create_inputs(ra=296.242608,dec=-14.811007,obstime='2023-08-29T03:20:43.668'):
+def create_inputs(ra=296.242608,dec=-14.811007,obstime='2023-08-29T03:20:43.668',verbose=False):
     '''
     calcskymodel reads inputs for the actual source location etc from a fixed file
     called sky_model_etc.par
     '''
-    info=get_info_las_campanas(obstime, ra=ra,dec=dec,verbose=True)
-    print(info)
+    info=get_info_las_campanas(obstime, ra=ra,dec=dec,verbose=verbose)
+    # print(info)
+
+    longitude=info['SourceEclipLon']-info['SunEclipLon']
+    # longitude must be between -180 and 180
+    if longitude>180:
+        longitude=longitude-360.
+    if longitude< -180.:
+        longitude=longitude+360.
+
+
+    # print('ZZZ ',info['SourceEclipLon']-info['SunEclipLon'],longitude)
+
 
     xout=open('config/skymodel_etc.par','w')
     out_string=obs_base % (info['SourceAlt'],info['Moon-Sun_Separation'],info['Moon-Source_Separation'],info['MoonAlt'],info['MoonDistanceInMeanUnits'],
-                           info['SourceEclipLon'],info['SourceEclipLat'])
+                           longitude,info['SourceEclipLat'])
     xout.write(out_string)
     xout.close()
 
@@ -630,10 +650,10 @@ def reformat_model(rfile='output/radspec.fits',tfile='output/transspec.fits',xke
 def do_one(ra=296.242608,dec=-14.811007,obstime='2023-08-29T03:20:43.668',xdata='',config=False,outroot=''):
 
     obstime=convert_time(obstime,'iso_ms')
-    print(obstime)
+    # print(obstime)
 
     setup(xdata,config)
-    print('Got Here')
+    # print('Got Here')
 
     key,value=create_inputs(ra=ra,dec=dec,obstime=obstime)
 

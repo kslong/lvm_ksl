@@ -79,7 +79,9 @@ import shutil
 import requests
 import inspect
 
-
+import warnings
+from astropy.coordinates.baseframe import NonRotationTransformationWarning
+warnings.simplefilter('ignore', NonRotationTransformationWarning)
 
 # This section is a fairly flexiable way to convert times
 # The main routine is convert_time
@@ -320,7 +322,8 @@ def get_info_las_campanas(datetime_utc, ra, dec, verbose=False):
     obs_time = Time(datetime_utc)
     
     # Create source coordinates
-    source_coords = SkyCoord(ra=ra*u.deg, dec=dec*u.deg, frame='icrs')
+    # source_coords = SkyCoord(ra=ra*u.deg, dec=dec*u.deg, frame='icrs')
+    source_coords = SkyCoord(ra=ra*u.deg, dec=dec*u.deg, frame='fk5')
     
     # Set the solar system ephemeris to 'builtin' for faster computation
     with solar_system_ephemeris.set('builtin'):
@@ -591,6 +594,9 @@ def create_inputs(ra=296.242608,dec=-14.811007,obstime='2023-08-29T03:20:43.668'
     for one_line in lines:
         word=one_line.split()
         if len(word)>2 and word[1]=='=':
+            if len(word[0])>8:
+                word[0]=word[0][:8]
+                
             keys.append(word[0])
             try:
                 v=eval(word[2])
@@ -634,7 +640,6 @@ def reformat_model(rfile='output/radspec.fits',tfile='output/transspec.fits',xke
     ztab['MOON']/=ztab['trans']
     ztab['ZODI']/=ztab['trans']
     ztab['DIFFUSE']/=ztab['trans']
-    ztab['DIFFUSE']/=ztab['trans']
     new_hdu = fits.BinTableHDU(data=ztab)
     
     primary_hdu = fits.PrimaryHDU(header=rad[0].header)
@@ -662,12 +667,12 @@ def do_one(ra=296.242608,dec=-14.811007,obstime='2023-08-29T03:20:43.668',xdata=
     # print("stdout:", result.stdout)
     if len(result.stderr):
         print("stderr:", result.stderr)
-        print('Could not create model due to errors')
-        return
+        print('Could not create model due to errors: ra %f dec %f obstime %s' % (ra,dec,obstime))
+        return ''
 
     if outroot=='':
         mjd=convert_time(obstime,'mjd')
-        print(mjd)
+        # print(mjd)
         if dec>0:
             outroot='SkyM_%8.2f_%05.1f_+%04.1f' % (mjd,ra,dec)
         else:

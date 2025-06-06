@@ -9,7 +9,8 @@
 Synopsis:  
 
 Create a simple plot to evaluate how well
-sky subraction is working
+sky subtraction is working on individual
+SFrame files
 
 
 Command line usage (if any):
@@ -23,6 +24,10 @@ Primary routines:
     doit
 
 Notes:
+
+    This does not work on the various 
+    median type spectra of multiple
+    observations that ksl has written
                                        
 History:
 

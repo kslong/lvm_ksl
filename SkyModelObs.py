@@ -636,6 +636,7 @@ def reformat_model(rfile='output/radspec.fits',tfile='output/transspec.fits',xke
     ztab['DIFFUSE']*=q
     ztab['WAVE']*=10.
     ztab['CONT']=ztab['MOON']+ztab['ZODI']+ztab['DIFFUSE']
+    ztab['FLUX']/=ztab['trans']
     ztab['CONT']/=ztab['trans']
     ztab['MOON']/=ztab['trans']
     ztab['ZODI']/=ztab['trans']
@@ -650,6 +651,7 @@ def reformat_model(rfile='output/radspec.fits',tfile='output/transspec.fits',xke
         new_hdul['PRIMARY'].header[xkey[i]]=xval[i]
         i+=1
     new_hdul.writeto(outfile, overwrite=True)
+    return outfile
 
 
 def do_one(ra=296.242608,dec=-14.811007,obstime='2023-08-29T03:20:43.668',xdata='',config=False,outroot=''):

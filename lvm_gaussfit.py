@@ -56,7 +56,40 @@ import numpy as np
 from astropy.table import Table
 from lmfit import Model, Parameters
 
-def fit_gaussian_to_spectrum(spectrum_table, line, init_wavelength, init_fwhm, wavelength_min, wavelength_max):
+import warnings
+import traceback
+
+def custom_warning_handler(message, category, filename, lineno, file=None, line=None):
+    if "std_dev==0" in str(message):
+        print(f"\n{category.__name__}: {message}")
+        traceback.print_stack()
+
+warnings.showwarning = custom_warning_handler
+
+def patch_stderr_fraction(result, min_frac=0.01, verbose=False):
+    for name, par in result.params.items():
+        # Calculate fallback stderr
+        abs_val = abs(par.value)
+        min_stderr = min_frac * abs_val if abs_val != 0 else min_frac
+
+        if par.stderr is None:
+            if verbose:
+                print(f"⚠️  Parameter '{name}' has stderr=None → setting to {min_stderr:.3e}")
+            par.stderr = min_stderr
+        elif par.stderr == 0.0:
+            if verbose:
+                print(f"⚠️  Parameter '{name}' has stderr=0 → setting to {min_stderr:.3e}")
+            par.stderr = min_stderr
+        # elif par.stderr < min_stderr:
+        #     if verbose
+        #       print(f"⚠️  Parameter '{name}' has very small stderr={par.stderr:.3e} "
+        #           f"(< {min_frac:.0%} of value) → setting to {min_stderr:.3e}")
+        #     par.stderr = min_stderr
+
+    return result
+
+
+def fit_gaussian_to_spectrum(spectrum_table, line, init_wavelength, init_fwhm, wavelength_min, wavelength_max, verbose=False):
     """
     Fit a Gaussian with a constant background to a spectral line using lmfit.
     
@@ -122,11 +155,28 @@ def fit_gaussian_to_spectrum(spectrum_table, line, init_wavelength, init_fwhm, w
     params['center'].min = wavelength_min
     params['center'].max = wavelength_max
     
-    # Perform the fit
+    # Perform the fit 
+    if verbose:
+        print('Starting ...')
     if errors is not None:
-        result = gmodel.fit(y, params, x=x, weights=1.0/errors)  # Using error as weights, not squared
+        if verbose:
+            print('With Errors')
+        if np.any(errors <= 0):
+            print("Some Errors are zero or negative:", errors[errors <= 0])
+        with warnings.catch_warnings():
+            warnings.filterwarnings( "ignore",
+            message="Using UFloat objects with std_dev==0 may give unexpected results.",
+            category=UserWarning,
+            module="uncertainties.core"
+            )
+            result = gmodel.fit(y, params, x=x, weights=1.0 / errors)
+            patch_stderr_fraction(result, min_frac=0.01)
     else:
+        if verbose:
+            print('No Errors!!!')
         result = gmodel.fit(y, params, x=x)
+    if verbose:
+        print('Finishing ...')
     
     # Extract fitted parameters and uncertainties
     flux = result.params['flux'].value
@@ -627,7 +677,10 @@ def do_all(filename='data/lvmSFrame-00009088.fits',vel=0.0,outname='',xplot=Fals
 
     wave=x['WAVE'].data
     flux=x['FLUX'].data*1e16
-    error=1./np.sqrt(x['IVAR'].data)*1e16
+    # error=1./np.sqrt(x['IVAR'].data)*1e16
+    with np.errstate(divide='ignore', invalid='ignore'):
+        error = 1. / np.sqrt(x['IVAR'].data) * 1e16
+        error = np.where(np.isfinite(error), error, 1e30)
 
     efactor=2.25
     error/=efactor

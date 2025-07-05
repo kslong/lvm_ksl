@@ -43,6 +43,7 @@ from astropy.io import ascii,fits
 import numpy as np
 import matplotlib.pyplot as plt
 import os
+import shutil
 
 
 
@@ -72,15 +73,15 @@ from lvm_ksl import rss_combine
 
 
 
-def do_fixed(filenames,ra, dec, pa, size,c_type='ave',outroot=''):
+def do_fixed(filenames,ra, dec, pa, size,c_type='ave',outroot='',keep_tmp=False):
     wcs=rss_combine.create_wcs(ra_deg=ra, dec_deg=dec,pos_ang=pa, size_deg=size)
     new_slitmap_table=rss_combine.generate_grid(wcs,35.)
-    print('new: ',len(new_slitmap_table))
+    # print('new: ',len(new_slitmap_table))
     xmin=np.min(new_slitmap_table['X'])
     xmax=np.max(new_slitmap_table['X'])
     ymin=np.min(new_slitmap_table['Y'])
     ymax=np.max(new_slitmap_table['Y'])
-    print(xmin,xmax,ymin,ymax)
+    # print(xmin,xmax,ymin,ymax)
     slit=rss_combine.prep_tables_square(wcs, filenames)
     # print(slit)
     # this list has many more fibers than we wnat
@@ -231,6 +232,9 @@ def do_fixed(filenames,ra, dec, pa, size,c_type='ave',outroot=''):
     final.writeto(outroot+'.fits',overwrite=True)
     print('Wrote new RSS file: %s.fits' % (outroot))
 
+    if keep_tmp==False:
+        shutil.rmtree('./xtmp')
+
     return outroot
 
 
@@ -248,6 +252,7 @@ def steer(argv):
     outroot='test'
     c_type='med'
     filenames=[]
+    keep_tmp=False
 
     i=1
     while i < len(argv):
@@ -260,6 +265,8 @@ def steer(argv):
         elif argv[i]=='-size':
             i+=1
             size=eval(argv[i])
+        elif argv[i]=='-keep':
+            keep_tmp=True
         elif argv[i]=='-c_type':
             i+=1
             c_type=argv[i]
@@ -279,7 +286,7 @@ def steer(argv):
 
 
 
-    do_fixed(filenames,ra, dec, pa=0, size=size/60.,c_type=c_type,outroot=outroot)
+    do_fixed(filenames,ra, dec, pa=0, size=size/60.,c_type=c_type,outroot=outroot,keep_tmp=keep_tmp)
 
 
 

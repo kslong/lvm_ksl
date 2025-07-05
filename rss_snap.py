@@ -13,13 +13,20 @@ containing the exposures asscoated with each object.
 
 Command line usage (if any):
 
-    usage: rss_snap.py filename
+    Usage: rss_snap.py [-h] [-keep] xfile  source_name ...
 
 Description:  
 
+    where:
+        -h prints this documentation
+        -keep retains the temporary files from individual exposures in the 
+            directory xtmp. Without this switch the temporary files are deleted
+        xfile is a file containing the sources names and associated exposures
+        source_name is one or more of the source_names in xfile
+
 Primary routines:
 
-    doit
+    do_one
 
 Notes:
                                        
@@ -179,7 +186,7 @@ def fig1(xtab,marker_size=50,plot_root=''):
         plot_root='test'
     plt.savefig('%s.png' % (plot_root))
 
-def one_snapshot(xsum,source_name,vel):
+def one_snapshot(xsum,source_name,vel,keep_tmp=False):
 
         ra,dec,filenames=get_files(xsum=xsum,source_name=source_name)
         if len(filenames)==0:
@@ -190,7 +197,7 @@ def one_snapshot(xsum,source_name,vel):
         os.makedirs('Snap',exist_ok=True)
 
         root_fit='Snap/%s'  % source_name
-        rss_combine_pos.do_fixed(filenames,ra, dec, pa=0, size=20./60.,c_type='ave',outroot=root_fit)
+        rss_combine_pos.do_fixed(filenames,ra, dec, pa=0, size=20./60.,c_type='ave',outroot=root_fit,keep_tmp=keep_tmp)
 
         os.makedirs('./Snap_gauss',exist_ok=True)
         root_spec='./Snap_gauss/%s' % source_name
@@ -214,18 +221,21 @@ galaxy=0
 
 def steer(argv):
     '''
-    Usage: rss_snap.py xfile  source_name
+    Usage: rss_snap.py [-h] [-keep] xfile  source_name
     '''
 
     sources=[]
     xfile=''
     vel=lmc
+    keep_tmp=False
 
     i=1
     while i<len(argv):
         if argv[i][:2]=='-h':
             print(__doc__)
             return
+        elif argv[i]=='-keep':
+            keep_tmp=True
         elif argv[i][0]=='-':
             print('Error: Could not parse command line',argv)
             return
@@ -238,7 +248,7 @@ def steer(argv):
     i=0
     while i<len(sources):
         source_name=sources[i]
-        one_snapshot(xfile,source_name,vel)
+        one_snapshot(xfile,source_name,vel,keep_tmp)
 
         i+=1
         

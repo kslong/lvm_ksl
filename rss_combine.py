@@ -211,7 +211,7 @@ def xcheck(xfiles):
 
     xtab=Table([xfiles,mjd,drp,commit,fluxcal,unit,helio,ra,dec,tile,exptime,obj],names=['Filename','MJD','DRP','Commit','FluxCal','BUNIT','RA','HeleoV','Dec','Tile_ID','EXPTIME','Source_name'])
     xtab.sort((['Filename']))
-    print(xtab)
+    # print(xtab)
     return xtab
 
 def check_array_info(arr):
@@ -575,9 +575,15 @@ def get_nearest(main_table,xtab,dd=35):
     This is written to be analogous to frac_cale2
     '''
 
+    if len(main_table)==0:
+        print('Error: get_nearest called with no data')
+        return []
+
     dd2=dd*dd
     xtables=[]
     ff=np.array([1.])  # We are going to assign the flull vlaue of the flux to 1 fiber
+
+
 
     for one_row in main_table:
         xtab['d2']=(xtab['X']-one_row['X'])**2+(xtab['Y']-one_row['Y'])**2
@@ -589,8 +595,13 @@ def get_nearest(main_table,xtab,dd=35):
             qtab['fib_master']=one_row['fiberid']
             qtab['frac']=ff
             xtables.append(qtab)
-    ztab=vstack(xtables) 
-    ztab.sort(['fib_master'])
+
+    try:
+        ztab=vstack(xtables) 
+        ztab.sort(['fib_master'])
+    except ValueError:
+        print('Error: get_nearest: nothing to stack')
+        return []
     return ztab
 
 
@@ -607,6 +618,9 @@ def frac_calc2(main_table,xtab,dd=35.):
     dd2=dd*dd
     xtables=[]
 
+    if len(main_table)==0:
+        print('Error: frac_calc2 recvived main_table with now rows')
+
     for one_row in main_table:
         xtab['d2']=(xtab['X']-one_row['X'])**2+(xtab['Y']-one_row['Y'])**2
         qtab=xtab[xtab['d2']<dd2]
@@ -621,8 +635,12 @@ def frac_calc2(main_table,xtab,dd=35.):
             qtab['frac']=ff
             
             xtables.append(qtab)
-    ztab=vstack(xtables) 
-    ztab.sort(['fib_master'])
+    try:
+        ztab=vstack(xtables) 
+        ztab.sort(['fib_master'])
+    except ValueError:
+        print('Error: frac_calc32: stacking failed with nothing to stack')
+        return[]
     return ztab
 
 def gen_average_slit_tab(wcs,filenames):
@@ -911,7 +929,8 @@ def do_combine(filenames,outroot='',fib_type='xy',c_type='ave'):
             one_tab=get_nearest(new_slitmap_table,one_tab)
         else:
             one_tab=frac_calc2(new_slitmap_table,one_tab)
-        zslit.append(one_tab)
+        if len(one_tab)>0:
+            zslit.append(one_tab)
 
     # zslit is a list of tables, now with added columns indicating how to approtion the data from indvidual files into the final image
 

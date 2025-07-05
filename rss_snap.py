@@ -369,6 +369,7 @@ def steer(argv):
     vel=lmc
     keep_tmp=False
     size=10.
+    xall=False
 
     i=1
     while i<len(argv):
@@ -377,6 +378,8 @@ def steer(argv):
             return
         elif argv[i]=='-keep':
             keep_tmp=True
+        elif argv[i]=='-all':
+            xall=True
         elif argv[i]=='-size':
             i+=1
             size=eval(argv[i])
@@ -389,10 +392,20 @@ def steer(argv):
             sources.append(argv[i])
         i+=1
 
+    if xall==True:
+        ztab=ascii.read(xfile)
+        sources=np.unique(ztab['Source_name'])
+        print('Processing all %d source names in %s' % (len(sources),xfile))
+
     i=0
     while i<len(sources):
+
         source_name=sources[i]
+        print('!! Beginning: %s: %d of %d sources to process' % (source_name,i+1,len(sources)))
+
         one_snapshot(xfile,source_name,size_arcmin=size,vel=vel,keep_tmp=keep_tmp)
+
+        print('!! Finished : %s: %d of %d sources to process' % (source_name,i+1,len(sources)))
 
         i+=1
         

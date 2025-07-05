@@ -383,6 +383,9 @@ def steer(argv):
         elif argv[i]=='-size':
             i+=1
             size=eval(argv[i])
+        elif argv[i]=='-vel':
+            i+=1
+            vel=eval(argv[i])
         elif argv[i][0]=='-':
             print('Error: Could not parse command line',argv)
             return

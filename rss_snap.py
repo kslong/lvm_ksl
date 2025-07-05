@@ -168,25 +168,170 @@ def plot_one(xtab, var='flux_ha', ymin=0, ymax=0, label='', ax=None, marker_size
     return sc
 
 
-def fig1(xtab,marker_size=50,plot_root=''):
+# Add new routine
+import numpy as np
+import matplotlib.pyplot as plt
+from scipy.interpolate import griddata
+from mpl_toolkits.axes_grid1 import make_axes_locatable
+
+def plot_one_interpolated(xtab, var='flux_ha', ymin=0, ymax=0, label='', ax=None, 
+                         grid_resolution=100, interpolation_method='linear', 
+                         fill_value=np.nan, smooth_factor=1.0):
+    '''
+    Make one panel of a larger plot using interpolation to create an image
+    
+    Parameters:
+    -----------
+    xtab : astropy.table.Table
+        Table containing 'ra', 'dec', and variable columns
+    var : str or array-like
+        Variable name in table or array of values to plot
+    ymin, ymax : float
+        Color scale limits (auto-calculated if ymax=0)
+    label : str
+        Label for colorbar
+    ax : matplotlib.axes.Axes
+        Axis to plot on (uses current axis if None)
+    grid_resolution : int
+        Number of grid points along each axis for interpolation
+    interpolation_method : str
+        Interpolation method: 'linear', 'nearest', or 'cubic'
+    fill_value : float
+        Value to use for points outside convex hull (np.nan for transparent)
+    smooth_factor : float
+        Factor to smooth the grid resolution (1.0 = no smoothing)
+    '''
+    
+    ra = xtab['ra']
+    dec = xtab['dec']
+    
+    if isinstance(var, str):
+        value = xtab[var]
+    else:
+        value = var
+    
+    # Remove any NaN values
+    mask = ~(np.isnan(ra) | np.isnan(dec) | np.isnan(value))
+    ra = ra[mask]
+    dec = dec[mask]
+    value = value[mask]
+    
+    # Apply value clipping if specified
+    qval = value.copy()
+    if ymin < ymax:
+        value = np.select([value < ymin, value > ymax], [ymin, ymax], default=value)
+    
+    # Calculate RA spacing with cos(dec) correction
+    mean_dec_rad = np.radians(np.mean(dec))
+    cos_dec_factor = np.cos(mean_dec_rad)
+    
+    # Use provided axis or get current axis
+    if ax is None:
+        ax = plt.gca()
+    
+    # Apply the correction factor to RA values for interpolation
+    ra_scaled = ra * cos_dec_factor
+    
+    # Create regular grid for interpolation
+    ra_min, ra_max = ra_scaled.min(), ra_scaled.max()
+    dec_min, dec_max = dec.min(), dec.max()
+    
+    # Add small padding to grid
+    ra_padding = (ra_max - ra_min) * 0.05
+    dec_padding = (dec_max - dec_min) * 0.05
+    
+    # Create grid with specified resolution
+    grid_ra = np.linspace(ra_min - ra_padding, ra_max + ra_padding, 
+                         int(grid_resolution * smooth_factor))
+    grid_dec = np.linspace(dec_min - dec_padding, dec_max + dec_padding, 
+                          int(grid_resolution * smooth_factor))
+    
+    # Create meshgrid
+    grid_ra_mesh, grid_dec_mesh = np.meshgrid(grid_ra, grid_dec)
+    
+    # Interpolate values onto regular grid
+    points = np.column_stack((ra_scaled, dec))
+    grid_values = griddata(points, value, (grid_ra_mesh, grid_dec_mesh), 
+                          method=interpolation_method, fill_value=fill_value)
+    
+    # Create the image plot
+    extent = [ra_max + ra_padding, ra_min - ra_padding, dec_min - dec_padding, dec_max + dec_padding]
+    im = ax.imshow(grid_values, extent=extent, origin='lower', 
+                   cmap='viridis', alpha=0.8, aspect='equal')
+    
+    # Set labels
+    ax.set_xlabel('Right Ascension')
+    ax.set_ylabel('Declination')
+    
+    # Calculate auto-range if needed
+    if ymax == 0.0:
+        ymin = np.nanpercentile(grid_values, 20)
+        ymax = np.nanpercentile(grid_values, 80)
+    
+    # Set color limits
+    im.set_clim(ymin, ymax)
+    
+    # Add colorbar
+    divider = make_axes_locatable(ax)
+    cax = divider.append_axes("right", size="5%", pad=0.1)
+    cbar = plt.colorbar(im, cax=cax)
+    
+    if label == '':
+        label = 'Flux'
+    cbar.set_label(label)
+    
+    # Set up x-axis ticks to show true RA values
+    current_ticks = ax.get_xticks()
+    # Filter ticks to only those within the plot range
+    valid_ticks = current_ticks[(current_ticks >= extent[1]) & (current_ticks <= extent[0])]
+    tick_labels = [f"{tick/cos_dec_factor:.1f}" for tick in valid_ticks]
+    ax.set_xticks(valid_ticks)
+    ax.set_xticklabels(tick_labels)
+    
+    return im
+
+# end of new routine
+
+
+
+def fig1(xtab,title=''):
     ymin=np.percentile(xtab['flux_ha'],5)
-    ymax=np.percentile(xtab['flux_ha'],75)
+    ymax=np.percentile(xtab['flux_ha'],95)
+    xtab['flux_sii']=xtab['flux_sii_a']+xtab['flux_sii_b']
+    xtab['s2:ha']=xtab['flux_sii']/xtab['flux_ha']
     plt.figure(1,(12,8))
+    plt.clf()
     # plt.figure(1,calculate_figure_size(width=12, rows=2, cols=2, xtab=xtab))
     plt.subplot(2,2,1)
-    plot_one(xtab,'flux_ha',ymin,ymax,r'H$\alpha$ Flux',marker_size=marker_size)
+    plot_one_interpolated(xtab,'flux_ha',ymin,ymax,r'H$\alpha$ Flux')
     plt.subplot(2,2,2)
-    plot_one(xtab,'flux_sii',ymin,ymax,r'[SII] Flux',marker_size=marker_size)
+    ymin/=2.
+    ymax/=2.
+    ymin=np.percentile(xtab['flux_sii'],5)
+    ymax=np.percentile(xtab['flux_sii'],95)
+    plot_one_interpolated(xtab,'flux_sii',ymin,ymax,r'[SII] Flux')
     plt.subplot(2,2,3)
-    plot_one(xtab,'s2:ha',0.2,0.6,r'[SII]:h$\alpha$',marker_size=marker_size)
+    ymin=0.0
+    ymax=0.8
+    ymin=np.percentile(xtab['s2:ha'],5)
+    ymax=np.percentile(xtab['s2:ha'],95)
+    plot_one_interpolated(xtab,'s2:ha',ymin,ymax,r'[SII]:h$\alpha$')
     plt.subplot(2,2,4)
-    plot_one(xtab,'fwhm_ha',1.4,2.5,label=r'H$\alpha$  FWHM',marker_size=marker_size)
+    plot_one_interpolated(xtab,'fwhm_ha',1.0,2.5,label=r'H$\alpha$  FWHM')
+    if title=='':
+        title='test'
+    plt.suptitle(title, fontsize=16)
     plt.tight_layout()
-    if plot_root=='':
-        plot_root='test'
-    plt.savefig('%s.png' % (plot_root))
+    os.makedirs('./Snap_fig',exist_ok=True)
+    plt.savefig('./Snap_fig/%s.png' % (title))
+    return
 
-def one_snapshot(xsum,source_name,vel,keep_tmp=False):
+lmc=262
+smc=146
+galaxy=0
+
+
+def one_snapshot(xsum,source_name,size_arcmin=10.,vel=lmc,keep_tmp=False):
 
         ra,dec,filenames=get_files(xsum=xsum,source_name=source_name)
         if len(filenames)==0:
@@ -197,7 +342,7 @@ def one_snapshot(xsum,source_name,vel,keep_tmp=False):
         os.makedirs('Snap',exist_ok=True)
 
         root_fit='Snap/%s'  % source_name
-        rss_combine_pos.do_fixed(filenames,ra, dec, pa=0, size=20./60.,c_type='ave',outroot=root_fit,keep_tmp=keep_tmp)
+        rss_combine_pos.do_fixed(filenames,ra, dec, pa=0, size=size_arcmin/60.,c_type='ave',outroot=root_fit,keep_tmp=keep_tmp)
 
         os.makedirs('./Snap_gauss',exist_ok=True)
         root_spec='./Snap_gauss/%s' % source_name
@@ -207,16 +352,11 @@ def one_snapshot(xsum,source_name,vel,keep_tmp=False):
         results['flux_sii']=results['flux_sii_a']+results['flux_sii_b']
         results['s2:ha']=results['flux_sii']/results['flux_ha']
 
-        os.makedirs('./Snap_fig',exist_ok=True)
-        root_plot='./Snap_fig/%s' % source_name
-        fig1(results,plot_root=root_plot)
+        fig1(results,title=source_name)
         return
 
 
 
-lmc=262
-smc=146
-galaxy=0
 
 
 def steer(argv):
@@ -228,6 +368,7 @@ def steer(argv):
     xfile=''
     vel=lmc
     keep_tmp=False
+    size=10.
 
     i=1
     while i<len(argv):
@@ -236,6 +377,9 @@ def steer(argv):
             return
         elif argv[i]=='-keep':
             keep_tmp=True
+        elif argv[i]=='-size':
+            i+=1
+            size=eval(argv[i])
         elif argv[i][0]=='-':
             print('Error: Could not parse command line',argv)
             return
@@ -248,7 +392,7 @@ def steer(argv):
     i=0
     while i<len(sources):
         source_name=sources[i]
-        one_snapshot(xfile,source_name,vel,keep_tmp)
+        one_snapshot(xfile,source_name,size_arcmin=size,vel=vel,keep_tmp=keep_tmp)
 
         i+=1
         

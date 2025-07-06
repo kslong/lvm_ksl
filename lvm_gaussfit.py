@@ -685,8 +685,6 @@ def do_all(filename='data/lvmSFrame-00009088.fits',vel=0.0,outname='',xplot=Fals
     efactor=2.25
     error/=efactor
 
-    print('OK ',xplot)
-
         
     # Now get the good fibers from the science telecsope
     slittab=Table(x['SLITMAP'].data)

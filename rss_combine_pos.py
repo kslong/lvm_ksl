@@ -82,6 +82,13 @@ def do_fixed(filenames,ra, dec, pa, size,c_type='ave',outroot='',keep_tmp=False)
     ymin=np.min(new_slitmap_table['Y'])
     ymax=np.max(new_slitmap_table['Y'])
     # print(xmin,xmax,ymin,ymax)
+    xtab=rss_combine.xcheck(filenames)
+    qtab=xtab[xtab['Good']=='No']
+    if len(qtab)>0:
+        print('do_fixed: %d in a total of %d were deemed bad' % (len(qtab),len(xtab)))
+        print(qtab)
+        gtab=xtab[xtab['Good']=='Yes']
+        filenames=gtab['Filename']
     slit=rss_combine.prep_tables_square(wcs, filenames)
     # print(slit)
     # this list has many more fibers than we wnat

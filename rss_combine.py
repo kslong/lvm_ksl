@@ -224,10 +224,8 @@ def xcheck(xfiles):
 
     ftab=xtab[xtab['Good']=='No']
     if len(ftab)>0:
-        print('!!! There %d  are files that should not be used'% (len(ftab)))
+        print('!!! There %d of %d files that should not be used'% (len(ftab),len(xtab)))
         print(ftab)
-        print('!!! Fix this before proeeeding')
-        return
 
     xver,counts=np.unique(xtab['DRP'],return_counts=True)
     if len(xver)>1:

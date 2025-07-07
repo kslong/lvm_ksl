@@ -256,6 +256,7 @@ def plot_one_interpolated(xtab, var='flux_ha', ymin=0, ymax=0, label='', ax=None
     
     # Create the image plot
     extent = [ra_max + ra_padding, ra_min - ra_padding, dec_min - dec_padding, dec_max + dec_padding]
+    grid_values=np.fliplr(grid_values)
     im = ax.imshow(grid_values, extent=extent, origin='lower', 
                    cmap='viridis', alpha=0.8, aspect='equal')
     

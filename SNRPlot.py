@@ -29,6 +29,7 @@ History:
 
 '''
 
+import os
 import sys
 import numpy as np
 import matplotlib.pyplot as plt
@@ -141,6 +142,10 @@ def xplot(filename='Spec_09444_test_ave.txt',outroot='',vlim=1200,v_offset=280):
         ax2.set_ylim(-0.1*ymax,1.1*ymax)
     ax2.legend()
     plt.tight_layout()
+
+    if outroot.count('/'):
+        xdir=os.path.split(outroot)[0]
+        os.makedirs(xdir,exist_ok=True)
 
     if outroot=='':
         outroot=filename.replace('.txt','')

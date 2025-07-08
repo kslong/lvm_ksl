@@ -345,6 +345,11 @@ def do_simple(filename,outroot='',color='yellow',target_type='science'):
 
     
 def do_one(filename,qtab,outroot=''):
+    '''
+    This routine creates a potential complex region file for extracting spectra. The fibers
+    to extract ar current hardwired to be red, while those to be ignored are in colored yellow
+    '''
+
     icolor=['red','green','blue','cyan','magenta','black','white']
     xtab,exposure=get_good_fibers(filename,color='yellow',target_type='science')
 

@@ -56,7 +56,7 @@ Primary routines:
 
 Notes:
 
-    The routine also produces a regiong file that shows
+    The routine also produces a region file that shows
     what fibers were used.
                                        
 History:
@@ -259,6 +259,12 @@ def do_one(filename,source_reg,source_reg_color,back_reg=None, back_reg_color=No
             xspec['BACK_ERROR']*=len(source_fibers)
             xspec['SOURCE_FLUX']*=len(source_fibers)
             xspec['SOURCE_ERROR']*=len(source_fibers)
+
+    # Add code do make a directory for storing the results if the root name contains a directory
+
+    if root.count('/'):
+        xdir=os.path.split(root)[0]
+        os.makedirs(xdir,exist_ok=True)
 
     if filename.count('SFra'):
         exposure=x['PRIMARY'].header['EXPOSURE']

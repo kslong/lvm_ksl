@@ -27,7 +27,7 @@ Command line usage (if any):
     source_reg is the name of a region file (that must have an extension .reg)
     [color] is to define the color of fibers to be extracted
     back_reg is an optional background region file
-    back_colr is an optinal back_coler
+    back_color is an optinal back_coler
 
     The lines source_reg color back_reg and back_color need to be in order.
     

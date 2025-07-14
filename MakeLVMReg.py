@@ -166,6 +166,13 @@ global color=%s width=4 font="helvetica 14 bold" select=1 highlite=1 dash=0 fixe
 fk5
 '''
 def write_reg(filename,xtab,color='yellow',size=5):
+
+    '''
+    write reg opens a file and cretes a vailid
+    region file with colors set to falues defined
+    by xtab, so the color combination can be complex
+
+    '''
     g=open(filename,'w')
     g.write(header % (filename,color) )
     for one in xtab:
@@ -344,10 +351,16 @@ def do_simple(filename,outroot='',color='yellow',target_type='science'):
 
 
     
-def do_one(filename,qtab,outroot=''):
+def do_one(filename,qtab,outroot='',size_min=17.5):
     '''
     This routine creates a potential complex region file for extracting spectra. The fibers
     to extract ar current hardwired to be red, while those to be ignored are in colored yellow
+
+    The rotuine reads an rss file, and initally returns a list of 
+    all of the good science fibers.  It then produces a region file
+    for each row in qtab, where the name is given by the source name
+    in qtab, and outroot.  So that at least one fiber will be slected if
+    the object is in the field a minium size for the region is set.
     '''
 
     icolor=['red','green','blue','cyan','magenta','black','white']
@@ -360,6 +373,12 @@ def do_one(filename,qtab,outroot=''):
         root='%s_%s' % (root,outroot)
     
     for one_row in qtab:
+        if one_row['Major']<size_min:
+            print('Setting Major to size_min')
+            one_row['Major']=size_min
+        if one_row['RegType'!='circle'] and one_row['Minor']<size_min:
+            print('Setting Minor to size_min')
+            one_row['Minor']=size_min
         print(one_row)
         if one_row['RegType']=='box':
             ftab=check_positions_in_rectangle(xtab, center_ra=one_row['RA'], center_dec=one_row['Dec'], width=one_row['Major'], height=one_row['Minor'], theta=one_row['Theta'])
@@ -368,6 +387,7 @@ def do_one(filename,qtab,outroot=''):
         elif one_row['RegType']=='circle':
             ftab=check_positions_in_ellipse(xtab, center_ra=one_row['RA'], center_dec=one_row['Dec'], semi_major=one_row['Major'], semi_minor=one_row['Major'], theta=0.0)
         elif one_row['RegType']=='annulus':
+            # Appparently annulus is circular, and in this case it's only the outher radius that needs to be greater than the minimu siae
             # the copy statement below is necessary because without this, qtab and ftab are pointed to the same exact table.
             ftab=check_positions_in_ellipse(xtab, center_ra=one_row['RA'], center_dec=one_row['Dec'], semi_major=one_row['Major'], semi_minor=one_row['Major'], theta=0.0)
             qtab=ftab.copy()

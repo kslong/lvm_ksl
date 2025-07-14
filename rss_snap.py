@@ -13,7 +13,7 @@ containing the exposures asscoated with each object.
 
 Command line usage (if any):
 
-    Usage: rss_snap.py [-h] [-keep] xfile  source_name ...
+    Usage: rss_snap.py [-h] [-keep] [-redo] [-all] xfile  source_name
 
 Description:  
 
@@ -21,7 +21,11 @@ Description:
         -h prints this documentation
         -keep retains the temporary files from individual exposures in the 
             directory xtmp. Without this switch the temporary files are deleted
-        xfile is a file containing the sources names and associated exposures
+        -redo recreates the combined fits files, even if they exist in the Snap
+            directory
+        -all causes all of the sources in xfile to be done
+        xfile is a version of an expanded master file containing the sources names and associated exposures
+            This file has one row for exposure to be combined.  
         source_name is one or more of the source_names in xfile
 
 Primary routines:
@@ -40,6 +44,7 @@ import os
 import sys
 from lvm_ksl import rss_combine_pos
 from lvm_ksl import lvm_gaussfit
+from lvm_ksl.get_vel import get_vel
 
 
 from astropy.io import ascii, fits
@@ -332,29 +337,45 @@ smc=146
 galaxy=0
 
 
-def one_snapshot(xsum,source_name,size_arcmin=10.,vel=lmc,keep_tmp=False):
+def one_snapshot(xsum,source_name,size_arcmin=10.,keep_tmp=False,redo=True):
+    
+    print('OK sports fans: ', redo)
+    root_fit='Snap/%s'  % source_name
+    print('OK',root_fit)
+    # This has to be here to get the ra and dec
+    ra,dec,filenames=get_files(xsum=xsum,source_name=source_name)
+    xprocess=True
+    if redo==False:
+        if os.path.isfile('%s.fits' % root_fit)==True:
+            print('We have created  %s.fits previously' % root_fit)
+            xprocess=False
+        else:
+            print('Could not find %s.fits'  % root_fit)
 
-        ra,dec,filenames=get_files(xsum=xsum,source_name=source_name)
+
+    os.makedirs('Snap',exist_ok=True)
+
+    if xprocess==True:
+        # ra,dec,filenames=get_files(xsum=xsum,source_name=source_name)
+        # This only return files that are available locally.
+
         if len(filenames)==0:
-            print('No files for one_snapshot to use for source %s' % (source_name))
+            print('No files for one_snapshot to use for source %s at %.3f %.3f' % (source_name,ra,dec))
             return
 
-
-        os.makedirs('Snap',exist_ok=True)
-
-        root_fit='Snap/%s'  % source_name
         rss_combine_pos.do_fixed(filenames,ra, dec, pa=0, size=size_arcmin/60.,c_type='ave',outroot=root_fit,keep_tmp=keep_tmp)
 
-        os.makedirs('./Snap_gauss',exist_ok=True)
-        root_spec='./Snap_gauss/%s' % source_name
+    os.makedirs('./Snap_gauss',exist_ok=True)
+    root_spec='./Snap_gauss/%s' % source_name
+    vel=get_vel(ra,dec)
 
-        results=lvm_gaussfit.do_all('%s.fits' % root_fit, vel=lmc,outname=root_spec,xplot=False) 
+    results=lvm_gaussfit.do_all('%s.fits' % root_fit, vel=vel,outname=root_spec,xplot=False) 
 
-        results['flux_sii']=results['flux_sii_a']+results['flux_sii_b']
-        results['s2:ha']=results['flux_sii']/results['flux_ha']
+    results['flux_sii']=results['flux_sii_a']+results['flux_sii_b']
+    results['s2:ha']=results['flux_sii']/results['flux_ha']
 
-        fig1(results,title=source_name)
-        return
+    fig1(results,title=source_name)
+    return
 
 
 
@@ -362,15 +383,15 @@ def one_snapshot(xsum,source_name,size_arcmin=10.,vel=lmc,keep_tmp=False):
 
 def steer(argv):
     '''
-    Usage: rss_snap.py [-h] [-keep] xfile  source_name
+    Usage: rss_snap.py [-h] [-keep] [-redo] [-all] file  source_name
     '''
 
     sources=[]
     xfile=''
-    vel=lmc
     keep_tmp=False
     size=10.
     xall=False
+    redo=False
 
     i=1
     while i<len(argv):
@@ -379,14 +400,13 @@ def steer(argv):
             return
         elif argv[i]=='-keep':
             keep_tmp=True
+        elif argv[i]=='-redo':
+            redo=True
         elif argv[i]=='-all':
             xall=True
         elif argv[i]=='-size':
             i+=1
             size=eval(argv[i])
-        elif argv[i]=='-vel':
-            i+=1
-            vel=eval(argv[i])
         elif argv[i][0]=='-':
             print('Error: Could not parse command line',argv)
             return
@@ -406,8 +426,9 @@ def steer(argv):
 
         source_name=sources[i]
         print('!! Beginning: %s: %d of %d sources to process' % (source_name,i+1,len(sources)))
+        print('What ', redo)
 
-        one_snapshot(xfile,source_name,size_arcmin=size,vel=vel,keep_tmp=keep_tmp)
+        one_snapshot(xfile,source_name,size_arcmin=size,keep_tmp=keep_tmp,redo=redo)
 
         print('!! Finished : %s: %d of %d sources to process' % (source_name,i+1,len(sources)))
 

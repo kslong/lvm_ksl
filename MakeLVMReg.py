@@ -185,78 +185,6 @@ def write_reg(filename,xtab,color='yellow',size=5):
 
 
 
-def get_circle(xtab,ra,dec,radius):
-    '''
-    Get the fibers which lie within a certain distance of
-    a center position
-
-    where xtab is slitmap extension,
-    ra, dec are a position in degrees
-    and
-    radius is a maxium separation in arcsec
-    '''
-
-    fib_no=get_closest(fiber_pos=xtab,xra=ra,xdec=dec)
-    xfib=fib_no[fib_no['Sep']<=radius]
-    if len(xfib)==0:
-        xfib=fib_no[0]
-    if xfib['Sep'][0]>70:
-        print('Error: This RA and Dec (%.5f %.5f) does not appear to be in the field' % (ra,dec))
-        return []
-    return xfib
-
-
-
-
-def radec2deg(ra='05:13:06.2',dec='-10:13:14.2'):
-    '''
-
-    Convert an ra dec string to degrees.  The string can already
-    be in degrees in which case all that happens is a conversion to
-    a float
-
-    If what is transferred is a float, the routine assumes it has been
-    given ra and dec in degrees and just returns ra,dec
-
-    170914  ksl Fix error associated with small negative declinations
-
-    '''
-
-    # print 'Before',ra,dec
-    try:
-        r=ra.split(':')
-        d=dec.split(':')
-    except AttributeError:
-        return ra,dec
-
-
-    # print 'After',ra,dec
-
-    rr=float(r[0])
-    if len(r)>1:
-        rr=rr+float(r[1])/60.
-    if len(r)>2:
-        rr=rr+float(r[2])/3600.
-    if len(r)>1:
-        rr=15.*rr  # Since we assume ra was in hms
-
-    sign=d[0].count('-')
-    dd=abs(float(d[0]))
-    x=0
-    if len(d)>1:
-        x=x+float(d[1])/60.
-    if len(d)>2:
-        x=x+float(d[2])/3600.
-
-    dd=dd+x
-    if sign:
-        dd= -dd
-
-
-    return rr,dd
-
-
-
 def get_closest(fiber_pos,xra,xdec):
     '''
     Sort a slit table with RA's and DEC's in order
@@ -279,43 +207,6 @@ def get_closest(fiber_pos,xra,xdec):
     fiber_pos.sort(['Sep'])
     return fiber_pos
 
-
-def add_circular_region(xtab,ra,dec,radius,color):
-
-    xtab['row_no']=np.arange(len(xtab))
-    
-    fib_no=get_closest(fiber_pos=xtab.copy(),xra=ra,xdec=dec)
-    xfib=fib_no[fib_no['Sep']<=radius]
-    # xfib is a table with only those fibers that satisfy the conditions
-    # print(ra,dec)
-    # print(xfib['row_no','Sep','ra','dec','fiberid'])
-    if len(xfib)==0:
-        xfib=fib_no[0]
-    if xfib['Sep'][0]>70:
-        print('Error: This RA and Dec (%.5f %.5f) does not appear to be in the field' % (ra,dec))
-        return []
-
-    for one in xfib:
-        xtab['color'][one['row_no']]=color
-    return xtab
-
-    
-
-
-def do_circular(filename,ra,dec,radius,outname='',color='red',target_type='science'):
-    '''
-    This version allows one to give a circular region a diffrent color from the other
-    fibers
-    '''
-    xtab=get_good_fibers(filename,color='yellow',target_type='science')
-    xtab= add_circular_region(xtab,ra,dec,radius,color)
-
-
-    if outname=='':
-        word=filename.split('/')
-        outname=word[-1].replace('.fits','.reg')
-    write_reg(outname,xtab,color)
-                    
 def get_good_fibers(filename,color='yellow',target_type='science'):    
     '''
     Just get the good fibers in the field and return the slitmap table
@@ -335,44 +226,16 @@ def get_good_fibers(filename,color='yellow',target_type='science'):
     exposure=x[0].header['EXPOSURE']
     return xtab,exposure
 
-def do_simple(filename,outroot='',color='yellow',target_type='science'):
+def get_fibers_in_region(fiber_tab,region_tab,size_min=17.5):
     '''
-    This version just makes a region file for all of the good science fibers
-    '''
-    xtab,exposure=get_good_fibers(filename,color='yellow',target_type='science')
-    if outroot=='':
-        outname='SlitMap_%05d' % exposure
-    else:
-        outname='%s_%05d' % (outroot,exposure)
-    write_reg(outname+'.reg',xtab,color)
-    return xtab,exposure
-                    
-    
-
-
-    
-def do_one(filename,qtab,outroot='',size_min=17.5):
-    '''
-    This routine creates a potential complex region file for extracting spectra. The fibers
-    to extract ar current hardwired to be red, while those to be ignored are in colored yellow
-
-    The rotuine reads an rss file, and initally returns a list of 
-    all of the good science fibers.  It then produces a region file
-    for each row in qtab, where the name is given by the source name
-    in qtab, and outroot.  So that at least one fiber will be slected if
-    the object is in the field a minium size for the region is set.
+    Add a column to fiber_tab to indicate which fibers are in the
+    in the reg_tab.  reg_tab can contain multiple rows
     '''
 
-    icolor=['red','green','blue','cyan','magenta','black','white']
-    xtab,exposure=get_good_fibers(filename,color='yellow',target_type='science')
+    xtab=fiber_tab.copy()
+    fiber_tab['in_area']=False
 
-    # Create some sort of root for the file names
-    word=filename.split('/')
-    root=word[-1].replace('.fits','')
-    if outroot!='':
-        root='%s_%s' % (root,outroot)
-    
-    for one_row in qtab:
+    for one_row in region_tab:
         if one_row['Major']<size_min:
             print('Setting Major to size_min')
             one_row['Major']=size_min
@@ -393,13 +256,90 @@ def do_one(filename,qtab,outroot='',size_min=17.5):
             qtab=ftab.copy()
             ftab=check_positions_in_ellipse(xtab, center_ra=one_row['RA'], center_dec=one_row['Dec'], semi_major=one_row['Minor'], semi_minor=one_row['Minor'], theta=0.0)
             ftab['in_area']=np.select([qtab['in_area']==True],[False],default=ftab['in_area'])
-        outfile='%s.%s.reg' % (root,one_row['Source_name'])
+        fiber_tab['in_area']=fiber_tab['in_area'] | ftab['in_area']
+    return fiber_tab
+
+
+
+
+def do_complex(filename,qtab,outroot='',size_min=17.5):
+
+    icolor=['red','green','blue','cyan','magenta','black','white']
+    # xtab,exposure=get_good_fibers(filename,color='yellow',target_type='science')
+
+    # Create some sort of root for the file names
+    word=filename.split('/')
+    root=word[-1].replace('.fits','')
+    if outroot!='':
+        root='%s.%s' % (root,outroot)
+    xtab,exposure=get_good_fibers(filename,color='yellow',target_type='science')
+
+    ftab=xtab.copy()
+
+    # Create some sort of root for the file names
+    word=filename.split('/')
+    root=word[-1].replace('.fits','')
+    if outroot!='':
+        root='%s_%s' % (root,outroot)
+
+    sources=np.unique(qtab['Source_name'])
+    for one_source in sources:
+        outfile='%s.%s.reg' % (root,one_source)
+        one_object_tab=qtab[qtab['Source_name']==one_source]
+        if 'SourceBack' in one_object_tab.colnames:
+            source_tab=one_object_tab[one_object_tab['SourceBack']=='Source']
+            back_tab=one_object_tab[one_object_tab['SourceBack']=='Back']
+            ftab['color']='yellow'
+            if len(back_tab)>0:
+                xback_tab=get_fibers_in_region(xtab,back_tab,size_min=17.5)
+                ftab['color'][xback_tab['in_area']==True]='green'
+                # print(np.unique(ftab['color'],return_counts=True))
+            if len(source_tab)>0:
+                xsource_tab=get_fibers_in_region(xtab,source_tab,size_min=17.5)
+                ftab['color'][xsource_tab['in_area']==True]='red'
+                # print(np.unique(ftab['color'],return_counts=True))
+        else:
+           xsource_tab=get_fibers_in_region(xtab,one_object_tab,size_min=17.5)
+           ftab['color'][xsource_tab['in_area']==True]='red'
+
+        write_reg(outfile,ftab,color='yellow')
+        return outfile
+
+
+
+
+
+    
+def do_one(filename,qtab,outroot='',size_min=17.5):
+    '''
+    This routine creates a potential complex region file for extracting spectra. The fibers
+    to extract ar current hardwired to be red, while those to be ignored are in colored yellow
+
+    The routine reads an rss file, and initally returns a list of 
+    all of the good science fibers.  It then produces a region file
+    for each row in qtab, where the name is given by the source name
+    in qtab, and outroot.  So that at least one fiber will be slected if
+    the object is in the field a minium size for the region is set.
+    '''
+
+    icolor=['red','green','blue','cyan','magenta','black','white']
+    xtab,exposure=get_good_fibers(filename,color='yellow',target_type='science')
+
+    # Create some sort of root for the file names
+    word=filename.split('/')
+    root=word[-1].replace('.fits','')
+    if outroot!='':
+        root='%s.%s' % (root,outroot)
+    
+    for i in range(len(qtab)):
+        one_row=qtab[i:i+1]
+
+        ftab=get_fibers_in_region(xtab,one_row,size_min=17.5)
+        outfile='%s.%s.reg' % (root,one_row['Source_name'][0])
         print('Writing outfile: ',outfile)
         ftab['color']='yellow'
         ftab['color'][ftab['in_area']==True]='red'
-        write_reg(outfile,ftab,color='yellow')
-
-
+    write_reg(outfile,ftab,color='yellow')
     return outfile
 
 
@@ -461,7 +401,7 @@ def steer(argv):
 
 
     for one_file in filename:
-        do_one(one_file,xtab,outroot='')
+        do_complex(one_file,xtab,outroot='')
 
     return
 

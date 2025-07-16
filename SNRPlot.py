@@ -131,8 +131,8 @@ def xplot(filename='Spec_09444_test_ave.txt',outroot='',vlim=1200,v_offset=280):
     ax2.legend()
 
     ax2 = fig.add_subplot(gs[2, 2])
-    ztab=limit_spectrum(xtab,9571,vlim,v_offset)
-    ax2.plot(ztab['WAVE'],ztab['FLUX'],label=r'[SIIi]')
+    ztab=limit_spectrum(xtab,9530.6,vlim,v_offset)
+    ax2.plot(ztab['WAVE'],ztab['FLUX'],label=r'[SIII]')
     ax2.plot(ztab['WAVE'],ztab['ERROR'])
     ax2.set_xlim(ztab['WAVE'][0],ztab['WAVE'][-1])
     ymed=np.median(ztab['FLUX'])

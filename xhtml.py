@@ -1,10 +1,6 @@
 #! /usr/bin/env python 
 
 '''
-                    Space Telescope Science Institute
-
-Synopsis:  
-
 This is a small set of routines that creates html files
 
 

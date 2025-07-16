@@ -71,6 +71,8 @@ def do_one_region_fixed(spectab,wmin=3600,wmax=4100,ymin=0, ymax=1e-13):
     mask=np.isfinite(xx['FLUX'])
     xx=xx[mask]
     good=np.where(mask)[0]
+    if 'SOURCE_FLUX' in xx.colnames:
+        plt.plot(xx['WAVE'],xx['SOURCE_FLUX'],'k',alpha=0.2)
     plt.plot(xx['WAVE'],xx['FLUX'])
     plt.xlim(wmin-extra,wmax+extra)
     plt.ylim(ymin,ymax)

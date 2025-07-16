@@ -128,7 +128,7 @@ def read_reg(xfile,color=None):
         print(qtab)
 
 
-    print('Selecting :', color)
+    # print('Selecting :', color)
     xtab=xtab[xtab['color']==color]
 
     return xtab
@@ -155,7 +155,7 @@ def get_spec(filename,xfib,xtype='ave'):
     i=1
     while i <len(x):
         one_name=x[i].header.get('EXTNAME')
-        print(one_name)
+        # print(one_name)
         if one_name.count('SKY'):
             sky_exists=True
             print('Sky Exists')
@@ -168,7 +168,8 @@ def get_spec(filename,xfib,xtype='ave'):
         foo_tab=xtab[xfib['fiberid']-1]
         xfib['fibstatus']=foo_tab['fibstatus']
         xfib=xfib[xfib['fibstatus']==0]
-        print('Of %d possible fibers, %d were rejected for fibstatus leaving %d' % (len(foo_tab),len(foo_tab)-len(xfib),len(xfib)))
+        if len(foo_tab)-len(xfib)>0:
+            print('Of %d possible fibers, %d were rejected for fibstatus leaving %d' % (len(foo_tab),len(foo_tab)-len(xfib),len(xfib)))
     except:
         print('No SLITMAP')
     wave=x['WAVE'].data
@@ -226,6 +227,7 @@ def do_one(filename,source_reg,source_reg_color,back_reg=None, back_reg_color=No
     print('\n Starting :', filename)
 
     source_fibers=read_reg(source_reg,source_reg_color)
+    print('Source from %d fibers with color: %s' % (len(source_fibers),source_reg_color))
 
     if len(source_fibers)==0:
         print('Error: No good science fibers for source')
@@ -236,11 +238,11 @@ def do_one(filename,source_reg,source_reg_color,back_reg=None, back_reg_color=No
     else:
         xspec=get_spec(filename=filename,xfib=source_fibers,xtype=xtype)
 
-    print('Taking spectra from: ',list(source_fibers['fiberid']))
+    # print('Taking spectra from: ',list(source_fibers['fiberid']))
     if back_reg!=None:
-        print('Getting Bakground spectrum with color: ',back_reg_color)
         bfibers=read_reg(back_reg,back_reg_color)
-        print('Taking background from: ',list(bfibers['fiberid']))
+        print('Getting Background from %d fibers with color: %s ' % (len(bfibers),back_reg_color))
+        # print('Taking background from: ',list(bfibers['fiberid']))
         bspec=get_spec(filename=filename,xfib=bfibers,xtype='med')
         xspec['SOURCE_FLUX']=xspec['FLUX']
         xspec['SOURCE_ERROR']=xspec['ERROR']

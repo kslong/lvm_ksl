@@ -83,6 +83,13 @@ def image(image='test.png',alt='Thumbnails',width=400,height=400):
 
 	return string 
 
+def two_panels(image1='test1.png',image2='test2.png',alt1='Thumb1',alt2='Thumb2', width=400):
+   string='''\n<div style="text-align: center; font-size: 0;">'''
+   string=string+'''\n  <img src="%s" alt="%s" style="display: inline-block; width: %dpx; height: auto;">\n''' % (image1,alt1,width)
+   string=string+'''\n  <img src="%s" alt="%s" style="display: inline-block; width: %dpx; height: auto;">\n''' % (image2,alt2,width)
+   string+=''' </div>'''
+   return string
+
 def table(lines):
 	'''
 	Format a table in html.  Lines should be a set of records, with each record containing the

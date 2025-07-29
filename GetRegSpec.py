@@ -91,7 +91,7 @@ def read_reg(xfile,color=None):
         f=open(xfile)
         lines=f.readlines()
     except:
-        print('Error: Could not read :',xfile)
+        print('Error: GetRegSpec: Could not read regionfile:',xfile)
         return
 
     fibers=[]

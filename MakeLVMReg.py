@@ -263,6 +263,7 @@ def get_fibers_in_region(fiber_tab,region_tab,size_min=17.5):
 
 
 def do_complex(filename,qtab,outroot='',size_min=17.5):
+    print('XXX = Starting ', filename)
 
     icolor=['red','green','blue','cyan','magenta','black','white']
     # xtab,exposure=get_good_fibers(filename,color='yellow',target_type='science')
@@ -283,6 +284,7 @@ def do_complex(filename,qtab,outroot='',size_min=17.5):
         root='%s_%s' % (root,outroot)
 
     sources=np.unique(qtab['Source_name'])
+    print('XXX sources:',sources)
     for one_source in sources:
         outfile='%s.%s.reg' % (root,one_source)
         one_object_tab=qtab[qtab['Source_name']==one_source]
@@ -303,6 +305,7 @@ def do_complex(filename,qtab,outroot='',size_min=17.5):
            ftab['color'][xsource_tab['in_area']==True]='red'
 
         write_reg(outfile,ftab,color='yellow')
+        print('XXX Knox ',outfile)
         return outfile
 
 
@@ -322,6 +325,7 @@ def do_one(filename,qtab,outroot='',size_min=17.5):
     the object is in the field a minium size for the region is set.
     '''
 
+    print('OK Knox')
     icolor=['red','green','blue','cyan','magenta','black','white']
     xtab,exposure=get_good_fibers(filename,color='yellow',target_type='science')
 

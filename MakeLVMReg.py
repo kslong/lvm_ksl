@@ -236,6 +236,7 @@ def get_fibers_in_region(fiber_tab,region_tab,size_min=17.5):
     fiber_tab['in_area']=False
 
     for one_row in region_tab:
+
         if one_row['Major']<size_min:
             print('Setting Major to size_min')
             one_row['Major']=size_min
@@ -243,6 +244,7 @@ def get_fibers_in_region(fiber_tab,region_tab,size_min=17.5):
             print('Setting Minor to size_min')
             one_row['Minor']=size_min
         print(one_row)
+
         if one_row['RegType']=='box':
             ftab=check_positions_in_rectangle(xtab, center_ra=one_row['RA'], center_dec=one_row['Dec'], width=one_row['Major'], height=one_row['Minor'], theta=one_row['Theta'])
         elif one_row['RegType']=='ellipse':
@@ -250,12 +252,32 @@ def get_fibers_in_region(fiber_tab,region_tab,size_min=17.5):
         elif one_row['RegType']=='circle':
             ftab=check_positions_in_ellipse(xtab, center_ra=one_row['RA'], center_dec=one_row['Dec'], semi_major=one_row['Major'], semi_minor=one_row['Major'], theta=0.0)
         elif one_row['RegType']=='annulus':
+            # print('XXX - working on annular region')
             # Appparently annulus is circular, and in this case it's only the outher radius that needs to be greater than the minimu siae
             # the copy statement below is necessary because without this, qtab and ftab are pointed to the same exact table.
             ftab=check_positions_in_ellipse(xtab, center_ra=one_row['RA'], center_dec=one_row['Dec'], semi_major=one_row['Major'], semi_minor=one_row['Major'], theta=0.0)
+
+            # print('outer: ',len(ftab[ftab['in_area']==True]))
+            # ftab.write('foo1.txt',format='ascii.fixed_width_two_line',overwrite=True)
+
             qtab=ftab.copy()
+            # qtab has all of the fibers in the outer circle marked as in_area
             ftab=check_positions_in_ellipse(xtab, center_ra=one_row['RA'], center_dec=one_row['Dec'], semi_major=one_row['Minor'], semi_minor=one_row['Minor'], theta=0.0)
-            ftab['in_area']=np.select([qtab['in_area']==True],[False],default=ftab['in_area'])
+            # ftab has all of the fibers in the inner circle marked as in_area
+
+            # print('inner: ',len(ftab[ftab['in_area']==True]))
+            # ftab.write('foo2.txt',format='ascii.fixed_width_two_line',overwrite=True)
+
+            ftab['in_area']=np.select([ftab['in_area']==True],[False],default=qtab['in_area'])
+
+            # print('final: ',len(ftab[ftab['in_area']==True]))
+            # ftab.write('foo3.txt',format='ascii.fixed_width_two_line',overwrite=True)
+
+            # finished
+
+        else:
+            print('Error: Uknown region type :', one_row['RegType'])
+            raise ValueError
         fiber_tab['in_area']=fiber_tab['in_area'] | ftab['in_area']
     return fiber_tab
 
@@ -263,7 +285,7 @@ def get_fibers_in_region(fiber_tab,region_tab,size_min=17.5):
 
 
 def do_complex(filename,qtab,outroot='',size_min=17.5):
-    print('XXX = Starting ', filename)
+    # print('XXX = Starting ', filename)
 
     icolor=['red','green','blue','cyan','magenta','black','white']
     # xtab,exposure=get_good_fibers(filename,color='yellow',target_type='science')
@@ -284,7 +306,7 @@ def do_complex(filename,qtab,outroot='',size_min=17.5):
         root='%s_%s' % (root,outroot)
 
     sources=np.unique(qtab['Source_name'])
-    print('XXX sources:',sources)
+    #  print('XXX sources:',sources)
     for one_source in sources:
         outfile='%s.%s.reg' % (root,one_source)
         one_object_tab=qtab[qtab['Source_name']==one_source]
@@ -305,7 +327,7 @@ def do_complex(filename,qtab,outroot='',size_min=17.5):
            ftab['color'][xsource_tab['in_area']==True]='red'
 
         write_reg(outfile,ftab,color='yellow')
-        print('XXX Knox ',outfile)
+        # print('XXX Knox ',outfile)
         return outfile
 
 

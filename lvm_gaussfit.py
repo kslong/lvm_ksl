@@ -553,6 +553,9 @@ def do_individual(filenames,vel,outname,xplot=True):
     '''
     This is to process individual spectra from an astropy table
     containing a WAVE and FLUX column
+
+    This routine does read the spectra, and so one
+    can modify the what is read in at this point.
     '''
     xresults=[]
     xbad=[]
@@ -579,6 +582,7 @@ def do_individual(filenames,vel,outname,xplot=True):
             xtab['ERROR']/=efactor
 
             results=do_one(xtab,vel,xplot)
+        
             word=one_file.split('/')
             root=word[-1]
             root=root.replace('.txt','')
@@ -607,7 +611,7 @@ def do_individual(filenames,vel,outname,xplot=True):
     ftab=vstack(xresults)
 
     current_date = datetime.now()
-    formatted_date = current_date.strftime("%d%m%y")
+    formatted_date = current_date.strftime("%y%m%d")
     if outname=='':
         outname=formatted_date
 

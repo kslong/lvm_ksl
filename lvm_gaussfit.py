@@ -12,7 +12,7 @@ the scince fibers of a sky-subtracted LVM exposure
 
 Command line usage (if any):
 
-    usage: lvm_bootstrap.py [-lmc] [-smc] [-out root] filename
+    usage: lvm_gaussfit.py [-lmc] [-smc] [-out root] filename
 
     where 
 
@@ -549,7 +549,7 @@ def do_one(spectrum_table,vel=0.,xplot=False,outroot=''):
 
     return ztab
     
-def do_individual(filenames,vel,outname,xplot=True):
+def do_individual(filenames,vel,stype,outname,xplot=True):
     '''
     This is to process individual spectra from an astropy table
     containing a WAVE and FLUX column
@@ -575,6 +575,18 @@ def do_individual(filenames,vel,outname,xplot=True):
             continue
         try:
             xtab=ascii.read(one_file)
+            if stype=='SOURCE':
+                xtab['FLUX']=xtab['SOURCE_FLUX']
+                xtab['ERROR']=xtab['SOURCE_ERROR']
+            elif stype=='BACK':
+                xtab['FLUX']=xtab['BACK_FLUX']
+                xtab['ERROR']=xtab['BACK_ERROR']
+            elif stype!='':
+                print('Error: Unkown spectrum type: %s' % stype)
+                raise ValueError
+
+
+
             if np.nanmedian(xtab['FLUX'])<1:
                 xtab['FLUX']*=1e16
                 xtab['ERROR']*=1e16
@@ -590,11 +602,13 @@ def do_individual(filenames,vel,outname,xplot=True):
             results['Object']=root
             xresults.append(results)
             xgood.append(one_file)
-            plot_all()
             word=one_file.split('/')
             proot=word[-1].replace('.txt','')
+            if stype!='':
+                proot='%s.%s' % (proot,stype)
             plot_name='%s/%s.png' % (plot_dir,proot)
             print('Plot created: ',plot_name)
+            plot_all(title=proot)
             plt.savefig(plot_name)
         except:
             print('Could not analyze %s' % one_file)
@@ -615,12 +629,21 @@ def do_individual(filenames,vel,outname,xplot=True):
     if outname=='':
         outname=formatted_date
 
+
     if len(filenames)==1:
-        outname='Gauss_%s.txt' % root
+        if stype!='':
+            outname='Gauss_%s.%s.txt' % (root,stype)
+        else:
+            outname='Gauss_%s.txt' % root
         ftab.write(outname,format='ascii.fixed_width_two_line',overwrite=True)
     else:
-        outname='Gauss_%s.txt' % outname
+        if stype!='':
+            outname='Gauss_%s.%s.txt' % (outname,stype)
+        else:
+            outname='Gauss_%s.txt' % outname
         ftab.write(outname,format='ascii.fixed_width_two_line',overwrite=True)
+
+    return ftab
 
 
 
@@ -826,6 +849,7 @@ def steer(argv):
     fitsfiles=[]
     specfiles=[]
     xplot=False
+    stype=''
 
     vel=0
     i=1
@@ -837,6 +861,9 @@ def steer(argv):
             vel=lmc
         elif argv[i]=='-smc':
             vel=smc
+        elif argv[i]=='-stype':
+            i+=1
+            stype=argv[i]
         elif argv[i]=='-plot':
             xplot=True
         elif argv[i][0:4]=='-out':
@@ -862,7 +889,7 @@ def steer(argv):
         analyze(results)
 
     if len(specfiles)>0:
-        do_individual(specfiles,vel,outname)
+        do_individual(specfiles,vel,stype, outname)
 
     print('Errors have been decreased by a factor of 2.25; this should be removed after a new processing')
 

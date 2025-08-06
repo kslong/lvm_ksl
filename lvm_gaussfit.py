@@ -446,7 +446,41 @@ def do_one(spectrum_table,vel=0.,xplot=False,outroot=''):
         print(f"Fitting [OIII]5007; An exception occurred: {e}")
         print(f"Exception type: {type(e).__name__}")
 
+
+    # for o1 we will try to avoid fitting the sky line, which is seldom subtracted correctly
+
+    wmin=6298
+    wmax=6303
+    xtable=spectrum_table.copy()
+    xtable = xtable[(xtable['WAVE'] < wmin) | (xtable['WAVE'] > wmax)]
+
     
+    try:
+        results,xspec=fit_gaussian_to_spectrum(xtable, line='oi_a', init_wavelength=zz*6300.304, init_fwhm=1., wavelength_min=zz*6290, wavelength_max=zz*6310)
+        if xplot:
+            save_fit('oi_a',xspec)
+        records.append(results)
+    except Exception as e:
+        print(f"Fitting [OI]6300; An exception occurred: {e}")
+        print(f"Exception type: {type(e).__name__}")
+
+    
+
+    wmin=6362
+    wmax=6365
+    xtable=spectrum_table.copy()
+    xtable = xtable[(xtable['WAVE'] < wmin) | (xtable['WAVE'] > wmax)]
+
+    
+    try:
+        results,xspec=fit_gaussian_to_spectrum(xtable, line='oi_b', init_wavelength=zz*6363.777, init_fwhm=1., wavelength_min=zz*6353, wavelength_max=zz*6373)
+        if xplot:
+            save_fit('oi_b',xspec)
+        records.append(results)
+    except Exception as e:
+        print(f"Fitting [OI]6364; An exception occurred: {e}")
+        print(f"Exception type: {type(e).__name__}")
+
     try:
         results,xspec=fit_gaussian_to_spectrum(spectrum_table, line='ha', init_wavelength=zz*6562.8, init_fwhm=1., wavelength_min=zz*6555, wavelength_max=zz*6570)
         if xplot:

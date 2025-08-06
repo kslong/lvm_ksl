@@ -7,14 +7,12 @@ Synopsis:
 
 Get a spectrum from a fiber or fibers in an RSSfile given an 
 RA and DEC based on a region file that conntains the one 
-region for fiber.  
-
+region per fiber.  
 
 
 Command line usage (if any):
 
     usage: GetRegSpec.py  [-h] [-root whatever] [-median]-sum filename[s] source_reg  [color] [back_reg] [back_color}
-
 
 
     where 
@@ -53,6 +51,9 @@ Primary routines:
 
     steer - unlike most of ksl's routines, at present
     the steering routine manages the entire process.
+
+    do_one - the routine that one would most likely call
+        from another script
 
 Notes:
 
@@ -217,6 +218,21 @@ def get_spec(filename,xfib,xtype='ave'):
 
 
 def do_one(filename,source_reg,source_reg_color,back_reg=None, back_reg_color=None, xtype='ave',root='Spec'):
+    '''
+    Extract one spectrum and write it to .txt file., 
+
+    where
+        filename is the rss spectra
+        source_reg, source_reg_color  define a region file with all of the fibers, and a color to define
+            what fibers to extract for the source
+        back_reg, back_reg_color define a region file (possibly the same as above), and a color to define
+            what fibers to extract for bg
+        xtype define what to return the 'ave','med','sum' spectra for the source.  At present the median
+            background spectrum is always extracted
+        root a rootname 
+
+
+    '''
 
     try:
         x=fits.open(filename)
@@ -298,8 +314,6 @@ def do_one(filename,source_reg,source_reg_color,back_reg=None, back_reg_color=No
 
     print('The output file is %s' % (outname))
     return outname
-
-
 
 
 

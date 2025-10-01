@@ -36,6 +36,13 @@ Description:
     the back ground spectrum which was subtracted, one can redirect the fitting with
     the stype option.  
 
+    Specifically, if one chooses SOURCE one will be fitting the un-background subtracted data
+    whereas if one uses BACK one will be fitting the Background spectrum that was used.  
+    In either of these cases the output file will include the name SOURCE or BACK.  If
+    neither option is chosen the FLUX and ERROR columns will be used for the spectrum;
+    in this case if SOURCE_FLUX and BACK_FLUX exist, one will be fitting the background
+    subtracted spectrum.
+
 Primary routines:
 
     doit

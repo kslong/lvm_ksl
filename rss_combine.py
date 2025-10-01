@@ -924,8 +924,9 @@ def do_combine(filenames,outroot='',fib_type='xy',c_type='ave'):
     '''
     # Do Quality checks on the files
     xtab=xcheck(filenames)
+    print(xtab)
 
-    xgood=xtab[xtab['Keep']=='Yes']
+    xgood=xtab[xtab['Good']=='Yes']
     if len(xgood)<len(xtab):
         print('do_combine: %d files of %d were eliminated due to quality checks' % (len(xtab)-len(xgood),len(xtab)))
         xbad=xtab[xtab['Good']=='No']

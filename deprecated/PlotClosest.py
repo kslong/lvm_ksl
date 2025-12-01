@@ -172,7 +172,7 @@ def do_plot_all(xtab,fiber_id=770,outroot=''):
     ax1.plot(xspec['WAVE'],xspec['FLUX'])
     ax1.set_xlim(3600,9600)
 
-    ax2 = fig.add_subplot(gs[1,
+    ax2 = fig.add_subplot(gs[1,:])
     wmin=3650
     wmax=3820
     ymin,ymax,xspec=limit_wavelengths(xtab,wmin,wmax)

@@ -141,6 +141,7 @@ def xcheck(xfiles):
     exptime=[]
     unit=[]
     helio=[]
+    good=[]
     for one in xfiles:
         try:
             f=fits.open(one)
@@ -150,6 +151,7 @@ def xcheck(xfiles):
             print('Could not open ',one)
             pass
 
+        ok='Yes'
         try:
             drp.append(xhead['drpver'])
         except:
@@ -160,9 +162,14 @@ def xcheck(xfiles):
             commit.append('Unknown')
 
         try:
-            fluxcal.append(xhead['FLUXCAL'])
+            xfluxcal=xhead['FLUXCAL']
+            if xfluxcal=='FALSE' or xfluxcal == 'NONE':
+                ok='No'
         except:
-            fluxcal.append('Unknown')
+            xfluxcal='Unknown'
+            ok='No'
+        fluxcal.append(xfluxcal)
+
 
         try:
             mjd.append(xhead['MJD'])
@@ -205,13 +212,34 @@ def xcheck(xfiles):
             helio.append(xhead['WAVE HELIORV_SCI'])
         except:
             helio.append(-99.0)
+        good.append(ok)
 
 
-    # print(len(xfiles),len(drp),len(fluxcal),len(ra),len(dec),len(tile),len(obj))
 
-    xtab=Table([xfiles,mjd,drp,commit,fluxcal,unit,helio,ra,dec,tile,exptime,obj],names=['Filename','MJD','DRP','Commit','FluxCal','BUNIT','RA','HeleoV','Dec','Tile_ID','EXPTIME','Source_name'])
+    xtab=Table([xfiles,mjd,drp,commit,fluxcal,unit,helio,ra,dec,tile,exptime,obj,good],names=['Filename','MJD','DRP','Commit','FluxCal','BUNIT','RA','HeleoV','Dec','Tile_ID','EXPTIME','Source_name','Good'])
     xtab.sort((['Filename']))
-    print(xtab)
+
+
+
+
+    ftab=xtab[xtab['Good']=='No']
+    if len(ftab)>0:
+        print('!!! There %d of %d files that should not be used'% (len(ftab),len(xtab)))
+        print(ftab)
+
+    xver,counts=np.unique(xtab['DRP'],return_counts=True)
+    if len(xver)>1:
+        print('Warning - Multiple DRP versions are being processed')
+        k=0
+        while k<len(xver):
+            print('Ver %20s  Number %3d' % (xver[k],counts[k]))
+            k+=1
+        print('Continuing')
+    else:
+        print('All files seem to be from the save DRP version and all are fluxe calibrated')
+
+
+    # print(xtab)
     return xtab
 
 def check_array_info(arr):
@@ -575,9 +603,15 @@ def get_nearest(main_table,xtab,dd=35):
     This is written to be analogous to frac_cale2
     '''
 
+    if len(main_table)==0:
+        print('Error: get_nearest called with no data')
+        return []
+
     dd2=dd*dd
     xtables=[]
     ff=np.array([1.])  # We are going to assign the flull vlaue of the flux to 1 fiber
+
+
 
     for one_row in main_table:
         xtab['d2']=(xtab['X']-one_row['X'])**2+(xtab['Y']-one_row['Y'])**2
@@ -589,8 +623,13 @@ def get_nearest(main_table,xtab,dd=35):
             qtab['fib_master']=one_row['fiberid']
             qtab['frac']=ff
             xtables.append(qtab)
-    ztab=vstack(xtables) 
-    ztab.sort(['fib_master'])
+
+    try:
+        ztab=vstack(xtables) 
+        ztab.sort(['fib_master'])
+    except ValueError:
+        print('Error: get_nearest: nothing to stack')
+        return []
     return ztab
 
 
@@ -607,6 +646,9 @@ def frac_calc2(main_table,xtab,dd=35.):
     dd2=dd*dd
     xtables=[]
 
+    if len(main_table)==0:
+        print('Error: frac_calc2 recvived main_table with now rows')
+
     for one_row in main_table:
         xtab['d2']=(xtab['X']-one_row['X'])**2+(xtab['Y']-one_row['Y'])**2
         qtab=xtab[xtab['d2']<dd2]
@@ -621,8 +663,12 @@ def frac_calc2(main_table,xtab,dd=35.):
             qtab['frac']=ff
             
             xtables.append(qtab)
-    ztab=vstack(xtables) 
-    ztab.sort(['fib_master'])
+    try:
+        ztab=vstack(xtables) 
+        ztab.sort(['fib_master'])
+    except ValueError:
+        print('Error: frac_calc32: stacking failed with nothing to stack')
+        return[]
     return ztab
 
 def gen_average_slit_tab(wcs,filenames):
@@ -813,7 +859,7 @@ def process_remapped_images(file_list, extension='FLUX', xproc='med',memory_limi
     row_size = np.prod(shape[1:]) * np.dtype(dtype).itemsize  # Size of one row
     batch_size = max(1, memory_limit // (len(file_list) * row_size))  # Rows per batch
 
-    print(f"Processing extension {extension}in batches of {batch_size} rows...")
+    print(f"Processing extension {extension} in batches of {batch_size} rows...")
 
     # Placeholder for median-filtered output
     xximage = np.zeros(shape, dtype=np.float32)
@@ -876,6 +922,19 @@ def do_combine(filenames,outroot='',fib_type='xy',c_type='ave'):
     * to writhe everthing to and output fits file
 
     '''
+    # Do Quality checks on the files
+    xtab=xcheck(filenames)
+    print(xtab)
+
+    xgood=xtab[xtab['Good']=='Yes']
+    if len(xgood)<len(xtab):
+        print('do_combine: %d files of %d were eliminated due to quality checks' % (len(xtab)-len(xgood),len(xtab)))
+        xbad=xtab[xtab['Good']=='No']
+        for one in xbad:
+            print('Eliminated %s' % one['Filename'])
+        filenames=xgood['Filename']
+
+
     print('\nCombining images using %s for fluxes' %  (c_type))
     # First get the new WCS
      
@@ -911,7 +970,8 @@ def do_combine(filenames,outroot='',fib_type='xy',c_type='ave'):
             one_tab=get_nearest(new_slitmap_table,one_tab)
         else:
             one_tab=frac_calc2(new_slitmap_table,one_tab)
-        zslit.append(one_tab)
+        if len(one_tab)>0:
+            zslit.append(one_tab)
 
     # zslit is a list of tables, now with added columns indicating how to approtion the data from indvidual files into the final image
 
@@ -1086,27 +1146,6 @@ def steer(argv):
         for one_file in files:
             print(one_file)
         print('\n')
-
-    # Do some checks on the files
-    xtab=xcheck(files)
-
-    ftab=xtab[xtab['FluxCal']=='False']
-    if len(ftab)>0:
-        print('!!! There %d  are files that have not been flux calibrated' % (len(ftab)))
-        print(ftab)
-        print('!!! Fix this before proeeeding')
-        return
-
-    xver,counts=np.unique(xtab['DRP'],return_counts=True)
-    if len(xver)>1:
-        print('Warning - Multiple DRP versions are being processed')
-        k=0
-        while k<len(xver):
-            print('Ver %20s  Number %3d' % (xver[k],counts[k]))
-            k+=1
-        print('Continuing')
-    else:
-        print('All files seem to be from the save DRP version and all are fluxe calibrated')
 
     do_combine(files,outroot,fib_type,c_type)   
     

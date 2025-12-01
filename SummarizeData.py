@@ -63,9 +63,97 @@ from glob import glob
 from astropy.table import vstack
 import numpy as np
 import timeit
-from lvm_ksl.xcal import get_moon_info_las_campanas
+
+
+
+
+import sys
+
+from astropy.coordinates import Angle
+import numpy as np
+from astropy.io import fits
+from astropy.table import Table
+from astropy.coordinates import get_body, solar_system_ephemeris, get_sun, AltAz, EarthLocation
+from astropy.time import Time
+import astropy.units as u
+import numpy as np
+
+
 
 LVM_DATA_S=os.environ.get('LVM_DATA_S')
+
+def get_moon_info_las_campanas(datetime_utc,verbose=False):
+    '''
+    Get information about the moon (and sun) as a fuction of UT
+    '''
+    # Las Campanas Observatory coordinates
+    observatory_location = EarthLocation(lat=-29.0089*u.deg, lon=-70.6920*u.deg, height=2281*u.m)
+
+    # Specify the observation time in UT
+    obs_time = Time(datetime_utc)
+    # print(obs_time.mjd)
+
+    # Set the solar system ephemeris to 'builtin' for faster computation
+    with solar_system_ephemeris.set('builtin'):
+        # Get the Moon's and Sun's coordinates at the specified time
+        moon_coords = get_body('moon', obs_time,location=observatory_location)
+        sun_coords = get_body('sun',obs_time,location=observatory_location)
+
+    # Calculate the phase angle (angle between the Sun, Moon, and observer)
+    phase_angle = moon_coords.separation(sun_coords).radian
+
+    # Calculate the illuminated fraction of the Moon
+    illumination_fraction = (1 - np.cos(phase_angle))/2
+    # print('separation',phase_angle,phase_angle*57.29578,illumination_fraction)
+    moon_sun_longitude_diff = (moon_coords.ra - sun_coords.ra).wrap_at(360 * u.deg).value
+    if moon_sun_longitude_diff>0:
+        moon_phase=illumination_fraction/2.
+    else:
+        moon_phase=1-illumination_fraction/2.
+
+    illumination_fraction*=100.
+
+    # Calculate the Altitude and Azimuth of the Moon from Las Campanas Observatory
+    altaz_frame = AltAz(obstime=obs_time, location=observatory_location)
+    moon_altaz = moon_coords.transform_to(altaz_frame)
+    sun_altaz=sun_coords.transform_to(altaz_frame)
+
+
+
+    # Calculate the difference in ecliptic longitudes between the moon and the sun
+    delta_longitude = (moon_coords.spherical.lon - sun_coords.spherical.lon).to_value('deg')
+    # print('delta_long',delta_longitude)
+
+    # Normalize the difference in ecliptic longitudes to get the moon's phase
+
+
+
+    # Print the moon's phase
+    # print("Moon's phase:", moon_phase)
+
+
+
+    xreturn={
+        'SunRA':sun_coords.ra.deg,
+        'SunDec':sun_coords.dec.deg,
+        'SunAlt': sun_altaz.alt.deg,
+        'SunAz': sun_altaz.az.deg,
+        'MoonRA': moon_coords.ra.deg,
+        'MoonDec': moon_coords.dec.deg,
+        'MoonAlt': moon_altaz.alt.deg,
+        'MoonAz': moon_altaz.az.deg,
+        'MoonPhas': moon_phase,
+        'MoonIll': illumination_fraction
+    }
+
+    # print(xreturn)
+
+    if verbose:
+        for key, value in xreturn.items():
+            print(f'{key}: {value}')
+    # Return the information
+    return xreturn
+
 
 def get_files2use(directory='60202'):
     if LVM_DATA_S==None:

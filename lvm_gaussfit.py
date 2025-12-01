@@ -12,16 +12,36 @@ the scince fibers of a sky-subtracted LVM exposure
 
 Command line usage (if any):
 
-    usage: lvm_bootstrap.py [-lmc] [-smc] [-out root] filename
+    usage: lvm_gaussfit.py --h] [-lmc] [-smc] [-v vel] [-stype SOURCE][-out root] filename ...
 
     where 
 
+    -h prient this tdocumeantiaon and fits
     -lmc or -smc applies a velocity offset for fitting
+    -vel whatever applies a velocity offset that the user specifies  
+    -stype SOURCE or BACK - used only for spectra that has been created as text files
     -out root sets the rootname for the output file
-    filename is the aname of an SFrame compatiable file
+    filename is the a name of an SFrame compatiable file or one or more txt files
 
 
 Description:  
+
+    The code can be used to perform gaussian to prominente lines from either a 
+    rss spectrum file (including but not limited to a standard SFrame file) or
+    alternative to an spectrum that has been extracted in the a table containing
+    at least a column for WAVE, FLUX, ERROR.
+
+    For an extracted spectrum of this type, which may have additional columns, at
+    present one containing the spectrum before local subtraction and another containing
+    the back ground spectrum which was subtracted, one can redirect the fitting with
+    the stype option.  
+
+    Specifically, if one chooses SOURCE one will be fitting the un-background subtracted data
+    whereas if one uses BACK one will be fitting the Background spectrum that was used.  
+    In either of these cases the output file will include the name SOURCE or BACK.  If
+    neither option is chosen the FLUX and ERROR columns will be used for the spectrum;
+    in this case if SOURCE_FLUX and BACK_FLUX exist, one will be fitting the background
+    subtracted spectrum.
 
 Primary routines:
 
@@ -56,7 +76,40 @@ import numpy as np
 from astropy.table import Table
 from lmfit import Model, Parameters
 
-def fit_gaussian_to_spectrum(spectrum_table, line, init_wavelength, init_fwhm, wavelength_min, wavelength_max):
+import warnings
+import traceback
+
+def custom_warning_handler(message, category, filename, lineno, file=None, line=None):
+    if "std_dev==0" in str(message):
+        print(f"\n{category.__name__}: {message}")
+        traceback.print_stack()
+
+warnings.showwarning = custom_warning_handler
+
+def patch_stderr_fraction(result, min_frac=0.01, verbose=False):
+    for name, par in result.params.items():
+        # Calculate fallback stderr
+        abs_val = abs(par.value)
+        min_stderr = min_frac * abs_val if abs_val != 0 else min_frac
+
+        if par.stderr is None:
+            if verbose:
+                print(f"⚠️  Parameter '{name}' has stderr=None → setting to {min_stderr:.3e}")
+            par.stderr = min_stderr
+        elif par.stderr == 0.0:
+            if verbose:
+                print(f"⚠️  Parameter '{name}' has stderr=0 → setting to {min_stderr:.3e}")
+            par.stderr = min_stderr
+        # elif par.stderr < min_stderr:
+        #     if verbose
+        #       print(f"⚠️  Parameter '{name}' has very small stderr={par.stderr:.3e} "
+        #           f"(< {min_frac:.0%} of value) → setting to {min_stderr:.3e}")
+        #     par.stderr = min_stderr
+
+    return result
+
+
+def fit_gaussian_to_spectrum(spectrum_table, line, init_wavelength, init_fwhm, wavelength_min, wavelength_max, verbose=False):
     """
     Fit a Gaussian with a constant background to a spectral line using lmfit.
     
@@ -122,11 +175,28 @@ def fit_gaussian_to_spectrum(spectrum_table, line, init_wavelength, init_fwhm, w
     params['center'].min = wavelength_min
     params['center'].max = wavelength_max
     
-    # Perform the fit
+    # Perform the fit 
+    if verbose:
+        print('Starting ...')
     if errors is not None:
-        result = gmodel.fit(y, params, x=x, weights=1.0/errors)  # Using error as weights, not squared
+        if verbose:
+            print('With Errors')
+        if np.any(errors <= 0):
+            print("Some Errors are zero or negative:", errors[errors <= 0])
+        with warnings.catch_warnings():
+            warnings.filterwarnings( "ignore",
+            message="Using UFloat objects with std_dev==0 may give unexpected results.",
+            category=UserWarning,
+            module="uncertainties.core"
+            )
+            result = gmodel.fit(y, params, x=x, weights=1.0 / errors)
+            patch_stderr_fraction(result, min_frac=0.01)
     else:
+        if verbose:
+            print('No Errors!!!')
         result = gmodel.fit(y, params, x=x)
+    if verbose:
+        print('Finishing ...')
     
     # Extract fitted parameters and uncertainties
     flux = result.params['flux'].value
@@ -356,7 +426,7 @@ def do_one(spectrum_table,vel=0.,xplot=False,outroot=''):
 
     
     try:
-        results,xspec=fit_gaussian_to_spectrum(spectrum_table, line='hb',init_wavelength=zz*4861, init_fwhm=1., wavelength_min=zz*4855, wavelength_max=zz*4870)
+        results,xspec=fit_gaussian_to_spectrum(spectrum_table, line='hb',init_wavelength=zz*4861.325, init_fwhm=1., wavelength_min=zz*4855, wavelength_max=zz*4870)
         records.append(results)
         if xplot:
             save_fit('hb',xspec)
@@ -365,7 +435,7 @@ def do_one(spectrum_table,vel=0.,xplot=False,outroot=''):
         print(f"Exception type: {type(e).__name__}")
     
     try:
-        results,xspec=fit_gaussian_to_spectrum(spectrum_table, line='oiii_a',init_wavelength=zz*4959, init_fwhm=1., wavelength_min=zz*4949, wavelength_max=zz*4969)
+        results,xspec=fit_gaussian_to_spectrum(spectrum_table, line='oiii_a',init_wavelength=zz*4958.91, init_fwhm=1., wavelength_min=zz*4949, wavelength_max=zz*4969)
         records.append(results)
         if xplot:
             save_fit('oiii_a',xspec)
@@ -375,7 +445,7 @@ def do_one(spectrum_table,vel=0.,xplot=False,outroot=''):
     
     
     try:
-        results,xspec=fit_gaussian_to_spectrum(spectrum_table, line='oiii_b', init_wavelength=zz*5007, init_fwhm=1., wavelength_min=zz*4997, wavelength_max=zz*5017)
+        results,xspec=fit_gaussian_to_spectrum(spectrum_table, line='oiii_b', init_wavelength=zz*5006.843, init_fwhm=1., wavelength_min=zz*4997, wavelength_max=zz*5017)
         if xplot:
             save_fit('oiii_b',xspec)
         records.append(results)
@@ -383,9 +453,43 @@ def do_one(spectrum_table,vel=0.,xplot=False,outroot=''):
         print(f"Fitting [OIII]5007; An exception occurred: {e}")
         print(f"Exception type: {type(e).__name__}")
 
+
+    # for o1 we will try to avoid fitting the sky line, which is seldom subtracted correctly
+
+    wmin=6298
+    wmax=6303
+    xtable=spectrum_table.copy()
+    xtable = xtable[(xtable['WAVE'] < wmin) | (xtable['WAVE'] > wmax)]
+
     
     try:
-        results,xspec=fit_gaussian_to_spectrum(spectrum_table, line='ha', init_wavelength=zz*6563, init_fwhm=1., wavelength_min=zz*6555, wavelength_max=zz*6570)
+        results,xspec=fit_gaussian_to_spectrum(xtable, line='oi_a', init_wavelength=zz*6300.304, init_fwhm=1., wavelength_min=zz*6290, wavelength_max=zz*6310)
+        if xplot:
+            save_fit('oi_a',xspec)
+        records.append(results)
+    except Exception as e:
+        print(f"Fitting [OI]6300; An exception occurred: {e}")
+        print(f"Exception type: {type(e).__name__}")
+
+    
+
+    wmin=6362
+    wmax=6365
+    xtable=spectrum_table.copy()
+    xtable = xtable[(xtable['WAVE'] < wmin) | (xtable['WAVE'] > wmax)]
+
+    
+    try:
+        results,xspec=fit_gaussian_to_spectrum(xtable, line='oi_b', init_wavelength=zz*6363.777, init_fwhm=1., wavelength_min=zz*6353, wavelength_max=zz*6373)
+        if xplot:
+            save_fit('oi_b',xspec)
+        records.append(results)
+    except Exception as e:
+        print(f"Fitting [OI]6364; An exception occurred: {e}")
+        print(f"Exception type: {type(e).__name__}")
+
+    try:
+        results,xspec=fit_gaussian_to_spectrum(spectrum_table, line='ha', init_wavelength=zz*6562.8, init_fwhm=1., wavelength_min=zz*6555, wavelength_max=zz*6570)
         if xplot:
             save_fit('ha',xspec)
         records.append(results)
@@ -394,7 +498,7 @@ def do_one(spectrum_table,vel=0.,xplot=False,outroot=''):
         print(f"Exception type: {type(e).__name__}")
 
     try:
-        results,xspec=fit_gaussian_to_spectrum(spectrum_table, line='nii_a',init_wavelength=zz*6548, init_fwhm=1., wavelength_min=zz*6538, wavelength_max=zz*6558)
+        results,xspec=fit_gaussian_to_spectrum(spectrum_table, line='nii_a',init_wavelength=zz*6548.04, init_fwhm=1., wavelength_min=zz*6538, wavelength_max=zz*6558)
         records.append(results)
         if xplot:
             save_fit('nii_a',xspec)
@@ -403,7 +507,7 @@ def do_one(spectrum_table,vel=0.,xplot=False,outroot=''):
         print(f"Exception type: {type(e).__name__}")
     
     try:
-        results,xspec=fit_gaussian_to_spectrum(spectrum_table, line='nii_b',init_wavelength=zz*6584, init_fwhm=1., wavelength_min=zz*6574, wavelength_max=zz*6594)
+        results,xspec=fit_gaussian_to_spectrum(spectrum_table, line='nii_b',init_wavelength=zz*6583.46, init_fwhm=1., wavelength_min=zz*6574, wavelength_max=zz*6594)
         records.append(results)
         if xplot:
             save_fit('nii_b',xspec)
@@ -413,7 +517,7 @@ def do_one(spectrum_table,vel=0.,xplot=False,outroot=''):
     
             
     try:
-        results,xspec=fit_gaussian_to_spectrum(spectrum_table, line='sii_a',init_wavelength=zz*6716, init_fwhm=1., wavelength_min=zz*6706, wavelength_max=zz*6726)
+        results,xspec=fit_gaussian_to_spectrum(spectrum_table, line='sii_a',init_wavelength=zz*6716.44, init_fwhm=1., wavelength_min=zz*6706, wavelength_max=zz*6726)
         records.append(results)
         if xplot:
             save_fit('sii_a',xspec)
@@ -423,7 +527,7 @@ def do_one(spectrum_table,vel=0.,xplot=False,outroot=''):
     
     
     try:
-        results,xspec=fit_gaussian_to_spectrum(spectrum_table, line='sii_b',init_wavelength=zz*6731, init_fwhm=1., wavelength_min=zz*6721, wavelength_max=zz*6741)
+        results,xspec=fit_gaussian_to_spectrum(spectrum_table, line='sii_b',init_wavelength=zz*6730.81, init_fwhm=1., wavelength_min=zz*6721, wavelength_max=zz*6741)
         records.append(results)
         if xplot:
             save_fit('sii_b',xspec)
@@ -435,7 +539,7 @@ def do_one(spectrum_table,vel=0.,xplot=False,outroot=''):
     #250110 - Add more lines
     
     try:
-        results,xspec=fit_gaussian_to_spectrum(spectrum_table, line='heii',init_wavelength=zz*4686, init_fwhm=1., wavelength_min=zz*4666, wavelength_max=zz*4706)
+        results,xspec=fit_gaussian_to_spectrum(spectrum_table, line='heii',init_wavelength=zz*4685.71, init_fwhm=1., wavelength_min=zz*4666, wavelength_max=zz*4706)
         records.append(results)
         if xplot:
             save_fit('heii',xspec)
@@ -445,7 +549,7 @@ def do_one(spectrum_table,vel=0.,xplot=False,outroot=''):
     
     
     try:
-        results,xspec=fit_gaussian_to_spectrum(spectrum_table, line='hei',init_wavelength=zz*5876, init_fwhm=1., wavelength_min=zz*5856, wavelength_max=zz*5886)
+        results,xspec=fit_gaussian_to_spectrum(spectrum_table, line='hei',init_wavelength=zz*5875.6, init_fwhm=1., wavelength_min=zz*5856, wavelength_max=zz*5886)
         records.append(results)
         if xplot:
             save_fit('hei',xspec)
@@ -455,7 +559,7 @@ def do_one(spectrum_table,vel=0.,xplot=False,outroot=''):
     
     
     try:
-        results,xspec=fit_gaussian_to_spectrum(spectrum_table, line='oiii_4363',init_wavelength=zz*4363, init_fwhm=1., wavelength_min=zz*4343, wavelength_max=zz*4383)
+        results,xspec=fit_gaussian_to_spectrum(spectrum_table, line='oiii_4363',init_wavelength=zz*4363.21, init_fwhm=1., wavelength_min=zz*4343, wavelength_max=zz*4383)
         records.append(results)
         if xplot:
             save_fit('oiii_4363',xspec)
@@ -466,7 +570,7 @@ def do_one(spectrum_table,vel=0.,xplot=False,outroot=''):
 
     
     try:
-        results,xspec=fit_gaussian_to_spectrum(spectrum_table, line='siii_a',init_wavelength=zz*9068.5, init_fwhm=1., wavelength_min=zz*9055, wavelength_max=zz*9090)
+        results,xspec=fit_gaussian_to_spectrum(spectrum_table, line='siii_a',init_wavelength=zz*9068.6, init_fwhm=1., wavelength_min=zz*9055, wavelength_max=zz*9090)
         records.append(results)
         if xplot:
             save_fit('siii_a',xspec)
@@ -499,10 +603,13 @@ def do_one(spectrum_table,vel=0.,xplot=False,outroot=''):
 
     return ztab
     
-def do_individual(filenames,vel,outname,xplot=True):
+def do_individual(filenames,vel,stype,outname,xplot=True):
     '''
     This is to process individual spectra from an astropy table
     containing a WAVE and FLUX column
+
+    This routine does read the spectra, and so one
+    can modify the what is read in at this point.
     '''
     xresults=[]
     xbad=[]
@@ -522,6 +629,18 @@ def do_individual(filenames,vel,outname,xplot=True):
             continue
         try:
             xtab=ascii.read(one_file)
+            if stype=='SOURCE':
+                xtab['FLUX']=xtab['SOURCE_FLUX']
+                xtab['ERROR']=xtab['SOURCE_ERROR']
+            elif stype=='BACK':
+                xtab['FLUX']=xtab['BACK_FLUX']
+                xtab['ERROR']=xtab['BACK_ERROR']
+            elif stype!='':
+                print('Error: Unkown spectrum type: %s' % stype)
+                raise ValueError
+
+
+
             if np.nanmedian(xtab['FLUX'])<1:
                 xtab['FLUX']*=1e16
                 xtab['ERROR']*=1e16
@@ -529,6 +648,7 @@ def do_individual(filenames,vel,outname,xplot=True):
             xtab['ERROR']/=efactor
 
             results=do_one(xtab,vel,xplot)
+        
             word=one_file.split('/')
             root=word[-1]
             root=root.replace('.txt','')
@@ -536,11 +656,13 @@ def do_individual(filenames,vel,outname,xplot=True):
             results['Object']=root
             xresults.append(results)
             xgood.append(one_file)
-            plot_all()
             word=one_file.split('/')
             proot=word[-1].replace('.txt','')
+            if stype!='':
+                proot='%s.%s' % (proot,stype)
             plot_name='%s/%s.png' % (plot_dir,proot)
             print('Plot created: ',plot_name)
+            plot_all(title=proot)
             plt.savefig(plot_name)
         except:
             print('Could not analyze %s' % one_file)
@@ -557,16 +679,25 @@ def do_individual(filenames,vel,outname,xplot=True):
     ftab=vstack(xresults)
 
     current_date = datetime.now()
-    formatted_date = current_date.strftime("%d%m%y")
+    formatted_date = current_date.strftime("%y%m%d")
     if outname=='':
         outname=formatted_date
 
+
     if len(filenames)==1:
-        outname='Gauss_%s.txt' % root
+        if stype!='':
+            outname='Gauss_%s.%s.txt' % (root,stype)
+        else:
+            outname='Gauss_%s.txt' % root
         ftab.write(outname,format='ascii.fixed_width_two_line',overwrite=True)
     else:
-        outname='Gauss_%s.txt' % outname
+        if stype!='':
+            outname='Gauss_%s.%s.txt' % (outname,stype)
+        else:
+            outname='Gauss_%s.txt' % outname
         ftab.write(outname,format='ascii.fixed_width_two_line',overwrite=True)
+
+    return ftab
 
 
 
@@ -627,12 +758,13 @@ def do_all(filename='data/lvmSFrame-00009088.fits',vel=0.0,outname='',xplot=Fals
 
     wave=x['WAVE'].data
     flux=x['FLUX'].data*1e16
-    error=1./np.sqrt(x['IVAR'].data)*1e16
+    # error=1./np.sqrt(x['IVAR'].data)*1e16
+    with np.errstate(divide='ignore', invalid='ignore'):
+        error = 1. / np.sqrt(x['IVAR'].data) * 1e16
+        error = np.where(np.isfinite(error), error, 1e30)
 
     efactor=2.25
     error/=efactor
-
-    print('OK ',xplot)
 
         
     # Now get the good fibers from the science telecsope
@@ -764,6 +896,9 @@ def plot_all(qdir='Gauss_dir',title=None):
     return 
 
 def steer(argv):
+    '''
+    usage: lvm_gaussfit.py --h] [-lmc] [-smc] [-v vel] [-stype SOURCE][-out root] filename
+    '''
     filename=''
     lmc=262.
     smc=146.
@@ -771,6 +906,7 @@ def steer(argv):
     fitsfiles=[]
     specfiles=[]
     xplot=False
+    stype=''
 
     vel=0
     i=1
@@ -782,6 +918,9 @@ def steer(argv):
             vel=lmc
         elif argv[i]=='-smc':
             vel=smc
+        elif argv[i]=='-stype':
+            i+=1
+            stype=argv[i]
         elif argv[i]=='-plot':
             xplot=True
         elif argv[i][0:4]=='-out':
@@ -807,7 +946,7 @@ def steer(argv):
         analyze(results)
 
     if len(specfiles)>0:
-        do_individual(specfiles,vel,outname)
+        do_individual(specfiles,vel,stype, outname)
 
     print('Errors have been decreased by a factor of 2.25; this should be removed after a new processing')
 

@@ -7,14 +7,12 @@ Synopsis:
 
 Get a spectrum from a fiber or fibers in an RSSfile given an 
 RA and DEC based on a region file that conntains the one 
-region for fiber.  
-
+region per fiber.  
 
 
 Command line usage (if any):
 
     usage: GetRegSpec.py  [-h] [-root whatever] [-median]-sum filename[s] source_reg  [color] [back_reg] [back_color}
-
 
 
     where 
@@ -27,7 +25,7 @@ Command line usage (if any):
     source_reg is the name of a region file (that must have an extension .reg)
     [color] is to define the color of fibers to be extracted
     back_reg is an optional background region file
-    back_colr is an optinal back_coler
+    back_color is an optinal back_coler
 
     The lines source_reg color back_reg and back_color need to be in order.
     
@@ -54,9 +52,12 @@ Primary routines:
     steer - unlike most of ksl's routines, at present
     the steering routine manages the entire process.
 
+    do_one - the routine that one would most likely call
+        from another script
+
 Notes:
 
-    The routine also produces a regiong file that shows
+    The routine also produces a region file that shows
     what fibers were used.
                                        
 History:
@@ -91,7 +92,7 @@ def read_reg(xfile,color=None):
         f=open(xfile)
         lines=f.readlines()
     except:
-        print('Error: Could not read :',xfile)
+        print('Error: GetRegSpec: Could not read regionfile:',xfile)
         return
 
     fibers=[]
@@ -128,7 +129,7 @@ def read_reg(xfile,color=None):
         print(qtab)
 
 
-    print('Selecting :', color)
+    # print('Selecting :', color)
     xtab=xtab[xtab['color']==color]
 
     return xtab
@@ -155,7 +156,7 @@ def get_spec(filename,xfib,xtype='ave'):
     i=1
     while i <len(x):
         one_name=x[i].header.get('EXTNAME')
-        print(one_name)
+        # print(one_name)
         if one_name.count('SKY'):
             sky_exists=True
             print('Sky Exists')
@@ -168,7 +169,8 @@ def get_spec(filename,xfib,xtype='ave'):
         foo_tab=xtab[xfib['fiberid']-1]
         xfib['fibstatus']=foo_tab['fibstatus']
         xfib=xfib[xfib['fibstatus']==0]
-        print('Of %d possible fibers, %d were rejected for fibstatus leaving %d' % (len(foo_tab),len(foo_tab)-len(xfib),len(xfib)))
+        if len(foo_tab)-len(xfib)>0:
+            print('Of %d possible fibers, %d were rejected for fibstatus leaving %d' % (len(foo_tab),len(foo_tab)-len(xfib),len(xfib)))
     except:
         print('No SLITMAP')
     wave=x['WAVE'].data
@@ -216,6 +218,21 @@ def get_spec(filename,xfib,xtype='ave'):
 
 
 def do_one(filename,source_reg,source_reg_color,back_reg=None, back_reg_color=None, xtype='ave',root='Spec'):
+    '''
+    Extract one spectrum and write it to .txt file., 
+
+    where
+        filename is the rss spectra
+        source_reg, source_reg_color  define a region file with all of the fibers, and a color to define
+            what fibers to extract for the source
+        back_reg, back_reg_color define a region file (possibly the same as above), and a color to define
+            what fibers to extract for bg
+        xtype define what to return the 'ave','med','sum' spectra for the source.  At present the median
+            background spectrum is always extracted
+        root a rootname 
+
+
+    '''
 
     try:
         x=fits.open(filename)
@@ -226,6 +243,7 @@ def do_one(filename,source_reg,source_reg_color,back_reg=None, back_reg_color=No
     print('\n Starting :', filename)
 
     source_fibers=read_reg(source_reg,source_reg_color)
+    print('Source from %d fibers with color: %s' % (len(source_fibers),source_reg_color))
 
     if len(source_fibers)==0:
         print('Error: No good science fibers for source')
@@ -236,11 +254,11 @@ def do_one(filename,source_reg,source_reg_color,back_reg=None, back_reg_color=No
     else:
         xspec=get_spec(filename=filename,xfib=source_fibers,xtype=xtype)
 
-    print('Taking spectra from: ',list(source_fibers['fiberid']))
+    # print('Taking spectra from: ',list(source_fibers['fiberid']))
     if back_reg!=None:
-        print('Getting Bakground spectrum with color: ',back_reg_color)
         bfibers=read_reg(back_reg,back_reg_color)
-        print('Taking background from: ',list(bfibers['fiberid']))
+        print('Getting Background from %d fibers with color: %s ' % (len(bfibers),back_reg_color))
+        # print('Taking background from: ',list(bfibers['fiberid']))
         bspec=get_spec(filename=filename,xfib=bfibers,xtype='med')
         xspec['SOURCE_FLUX']=xspec['FLUX']
         xspec['SOURCE_ERROR']=xspec['ERROR']
@@ -259,6 +277,12 @@ def do_one(filename,source_reg,source_reg_color,back_reg=None, back_reg_color=No
             xspec['BACK_ERROR']*=len(source_fibers)
             xspec['SOURCE_FLUX']*=len(source_fibers)
             xspec['SOURCE_ERROR']*=len(source_fibers)
+
+    # Add code do make a directory for storing the results if the root name contains a directory
+
+    if root.count('/'):
+        xdir=os.path.split(root)[0]
+        os.makedirs(xdir,exist_ok=True)
 
     if filename.count('SFra'):
         exposure=x['PRIMARY'].header['EXPOSURE']
@@ -290,8 +314,6 @@ def do_one(filename,source_reg,source_reg_color,back_reg=None, back_reg_color=No
 
     print('The output file is %s' % (outname))
     return outname
-
-
 
 
 

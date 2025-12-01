@@ -1,10 +1,6 @@
 #! /usr/bin/env python 
 
 '''
-                    Space Telescope Science Institute
-
-Synopsis:  
-
 This is a small set of routines that creates html files
 
 
@@ -86,6 +82,13 @@ def image(image='test.png',alt='Thumbnails',width=400,height=400):
 	string=string+'''</div>\n'''
 
 	return string 
+
+def two_panels(image1='test1.png',image2='test2.png',alt1='Thumb1',alt2='Thumb2', width=400):
+   string='''\n<div style="text-align: center; font-size: 0;">'''
+   string=string+'''\n  <img src="%s" alt="%s" style="display: inline-block; width: %dpx; height: auto;">\n''' % (image1,alt1,width)
+   string=string+'''\n  <img src="%s" alt="%s" style="display: inline-block; width: %dpx; height: auto;">\n''' % (image2,alt2,width)
+   string+=''' </div>'''
+   return string
 
 def table(lines):
 	'''

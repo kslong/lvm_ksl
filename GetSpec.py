@@ -24,9 +24,10 @@ Command line usage (if any):
     exp_no is the exposure
     ra and dec are the desired right ascension, written
         either in degrees or in h:m:s d:m:s
-    [rmin] is and optional inner radius, and 
-    [rmax] is an optinal outer radius
-    -back a1 a2 subtract a background
+    [rmin] is an optional inner radius (in arcsec), and 
+    [rmax] is an optinal outer radius (in arsec)
+    -back a1 a2 subtract a background (where a1 and a2 
+    give the inner and outer radius (in arcsec)
 
 Description:  
 
@@ -175,21 +176,29 @@ def get_spec(filename,xfib,nfib=1,xtype='ave'):
     flux=x['FLUX'].data[xxfib['fiberid']-1]
     ivar=x['IVAR'].data[xxfib['fiberid']-1]
     mask=x['MASK'].data[xxfib['fiberid']-1]
-    sky=x['SKY'].data[xxfib['fiberid']-1]
-    sky_ivar=x['SKY_IVAR'].data[xxfib['fiberid']-1]
-    lsf=x['LSF'].data[xxfib['fiberid']-1]
+    rss_combine=False
+    try:
+        sky=x['SKY'].data[xxfib['fiberid']-1]
+        sky_ivar=x['SKY_IVAR'].data[xxfib['fiberid']-1]
+        lsf=x['LSF'].data[xxfib['fiberid']-1]
+    except:
+        rss_combine=True
+
+
     # print(flux.shape)
 
     if xtype=='ave':
         xflux=np.nanmean(flux,axis=0)
-        xsky=np.nanmean(sky,axis=0)
         xmask=np.sum(mask,axis=0)
-        xlsf=np.nanmean(lsf,axis=0)
+        if rss_combine==False:
+            xsky=np.nanmean(sky,axis=0)
+            xlsf=np.nanmean(lsf,axis=0)
     elif xtype=='med':
         xflux=np.nanmedian(flux,axis=0)
-        xsky=np.nanmedian(sky,axis=0)
         xmask=np.sum(mask,axis=0)
-        xlsf=np.nanmedian(lsf,axis=0)
+        if rsscombine==False:
+            xsky=np.nanmedian(sky,axis=0)
+            xlsf=np.nanmedian(lsf,axis=0)
     else:
         print('Error: getspec: only ave or med allowd for xtype')
         return
@@ -201,15 +210,19 @@ def get_spec(filename,xfib,nfib=1,xtype='ave'):
     # print(xflux.shape)
     # print(xsky.shape)
     # print(xmask.shape)
-    xsky_error=np.nansum(sky_ivar,axis=0)
-    xsky_error=np.select([xsky_error>1],[1/np.sqrt(xsky_error)],default=np.nan)
-    xspec=Table([wave,xflux,xerr,xsky,xsky_error,xmask,xlsf],names=['WAVE','FLUX','ERROR','SKY','SKY_ERROR','MASK','LSF'])
+    if rss_combine==False:
+        xsky_error=np.nansum(sky_ivar,axis=0)
+        xsky_error=np.select([xsky_error>1],[1/np.sqrt(xsky_error)],default=np.nan)
+        xspec=Table([wave,xflux,xerr,xsky,xsky_error,xmask,xlsf],names=['WAVE','FLUX','ERROR','SKY','SKY_ERROR','MASK','LSF'])
+        xspec['SKY'].format='.3e'
+        xspec['SKY_ERROR'].format='.3e'
+        xspec['LSF'].format='.2f'
+    else:
+        xspec=Table([wave,xflux,xerr,xmask],names=['WAVE','FLUX','ERROR','MASK'])
+
     xspec['WAVE'].format='.1f'
     xspec['FLUX'].format='.3e'
     xspec['ERROR'].format='.3e'
-    xspec['SKY'].format='.3e'
-    xspec['SKY_ERROR'].format='.3e'
-    xspec['LSF'].format='.2f'
     return xspec
 
 header='''

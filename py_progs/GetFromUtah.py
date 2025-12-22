@@ -21,7 +21,7 @@ Command line usage (if any):
     -drp whatever wistchedst the default location to a different processing version
     mjd is the mjd of the observations one wants to retrieve
     expstart is the first exposure to retrieve
-    expstart, if given means to retrieve exposures from expstart to
+    expstop, if given means to retrieve exposures from expstart to
         expstop
 
 Description:  
@@ -112,10 +112,10 @@ def steer(argv):
     '''
     Run the routine
 
-    GetFromUtah -cp mjd exp_start exp_stop 
+    GetFromUtah -cp [-CFrame] -drp whatever [-out outdir] mjd exp_start exp_stop 
 
     '''
-    drp_ver="1.1.1"
+    drp_ver="1.2.0"
     copy=False
     xtile=1028683
     xtile='*'
@@ -141,6 +141,9 @@ def steer(argv):
         elif argv[i]=='-drp':
             i+=1
             drp_ver=argv[i]
+        elis argv[i]=='-out':
+            i+=1
+            xdest=argv[i]
         elif argv[i][0]=='-':
             print('Unknown switch: ',argv)
             return

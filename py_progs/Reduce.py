@@ -278,6 +278,7 @@ def do_many(xtab,clean=True,xcopy=True,nproc=8):
         print('STARTING  %d of %d:\n' % (i+1,len(xtab)))
         one=jobs[i]
         one.start()
+        time.sleep(60) # Space out starts to reduce concurrency issue with hdf metadate file
         i+=1
 
     njobs=get_no_jobs(jobs)
@@ -291,6 +292,7 @@ def do_many(xtab,clean=True,xcopy=True,nproc=8):
             print('STARTING  %d of %d:\n' % (i+1,len(xtab)))
             one=jobs[i]
             one.start()
+            time.sleep(60)  # Space out starts to reduceconcurrency issues with hdf metadata file 
             njobs+=1
             i+=1
 

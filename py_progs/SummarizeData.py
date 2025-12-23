@@ -423,7 +423,7 @@ def stack():
     x['MoonAlt'].format='.2f'
     x['MoonPhas'].format='.2f'
     x['MoonIll'].format='.2f'
-    x.sort('Exposure')
+    x.sort('expnum')
     x.write('All_Data.txt',format='ascii.fixed_width_two_line',overwrite=True)
     return
 

@@ -304,7 +304,7 @@ def steer(argv):
     exp_min=900
     out_name=''
 
-    ver='1.1.1'
+    ver='1.2.0'
 
     i=1
     while i<len(argv):

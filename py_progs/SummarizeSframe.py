@@ -19,7 +19,7 @@ Description:
     where:
 
     -h prints this documentatikon
-    -ver drp_ver where drp_ver is a version run of the drp, e.g the current default 1.1.1
+    -ver drp_ver where drp_ver is a version run of the drp, e.g the current default 1.2.0
     -percent is the percentile to use in the calculation, if missing use median or 50
     -emin sets the mimimum exposure time to include; the default is 900
     -out is name or rootname of output fits file
@@ -328,7 +328,7 @@ def steer(argv):
     percent=50
     out_name=''
 
-    ver='1.1.0'
+    ver='1.2.0'
 
     i=1
     while i<len(argv):

@@ -271,8 +271,9 @@ def setup(eso_sky_dir='',config=True):
         eso_sky_dir=xdir
 
     data_dir='%s/sm-01_mod2/data' % eso_sky_dir
+    print('What is going on:',data_dir)
     if os.path.isdir(data_dir)==False:
-        print('Error: %s does not appear to exist')
+        print('Error: %s really does not appear to exist'  % data_dir)
         return 
     safe_remove('data')
     os.symlink(data_dir,'data')

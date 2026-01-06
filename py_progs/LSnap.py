@@ -458,8 +458,8 @@ def display_fits_image(image_file, scale='linear', ymin=None, ymax=None,invert=T
     # Invert the colors if invert is True
 
     # Create a figure and axes using wcsaxes
-    fig = plt.figure(1,figsize=(10, 10))  # Adjust the figure size as needed
-    fig.clf()
+    plt.close(1)  # Close any existing figure 1 to avoid warning about ignored figsize
+    fig = plt.figure(1, figsize=(10, 10))  # Adjust the figure size as needed
     ax = WCSAxes(fig, [0.1, 0.1, 0.8, 0.8], wcs=wcs_info, aspect='equal')  # Set the aspect ratio to 'equal'
     fig.add_axes(ax)
 

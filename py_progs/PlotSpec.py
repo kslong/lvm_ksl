@@ -135,8 +135,8 @@ def do_all(xtab,ptype='scale',ymin=0.0,ymax=1e-14,frac=0.1):
     '''
     Create the figure
     '''
+    plt.close(2)
     plt.figure(2,(8,12))
-    plt.clf()
     
     wmin=3600
     wmax=9500

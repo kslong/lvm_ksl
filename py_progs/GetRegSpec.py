@@ -201,10 +201,15 @@ def get_spec(filename,xfib,xtype='ave'):
         return
 
     ivar=np.nansum(ivar,axis=0)
-    xerr=np.select([ivar>1],[1/np.sqrt(ivar)],default=np.nan)
+    xerr = np.full(ivar.shape, np.nan)
+    valid = ivar > 1
+    xerr[valid] = 1/np.sqrt(ivar[valid])
     if sky_exists:
         xsky_error=np.nansum(sky_ivar,axis=0)
-        xsky_error=np.select([xsky_error>1],[1/np.sqrt(xsky_error)],default=np.nan)
+        valid_sky = xsky_error > 1
+        xsky_err = np.full(xsky_error.shape, np.nan)
+        xsky_err[valid_sky] = 1/np.sqrt(xsky_error[valid_sky])
+        xsky_error = xsky_err
         xspec=Table([wave,xflux,xerr,xsky,xsky_error,xmask,xlsf],names=['WAVE','FLUX','ERROR','SKY','SKY_ERROR','MASK','LSF'])
         xspec['SKY'].format='.3e'
         xspec['SKY_ERROR'].format='.3e'

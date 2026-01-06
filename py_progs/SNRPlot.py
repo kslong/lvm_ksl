@@ -52,8 +52,8 @@ def limit_spectrum(xtab,w_cen=3728,vlim=1000,v_offset=280):
 
 def xplot(filename='Spec_09444_test_ave.txt',outroot='',vlim=1200,v_offset=280):
     xtab=ascii.read(filename)
+    plt.close(1)
     fig=plt.figure(1,(8,8))
-    plt.clf()
     gs= GridSpec(3, 3, figure=fig)
     ax1 = fig.add_subplot(gs[0, :])
     ax1.set_title(filename)

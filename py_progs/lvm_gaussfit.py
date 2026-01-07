@@ -644,8 +644,6 @@ def do_individual(filenames,vel,stype,outname,xplot=True):
             if np.nanmedian(xtab['FLUX'])<1:
                 xtab['FLUX']*=1e16
                 xtab['ERROR']*=1e16
-            efactor=2.25
-            xtab['ERROR']/=efactor
 
             results=do_one(xtab,vel,xplot)
         
@@ -762,9 +760,6 @@ def do_all(filename='data/lvmSFrame-00009088.fits',vel=0.0,outname='',xplot=Fals
     with np.errstate(divide='ignore', invalid='ignore'):
         error = 1. / np.sqrt(x['IVAR'].data) * 1e16
         error = np.where(np.isfinite(error), error, 1e30)
-
-    efactor=2.25
-    error/=efactor
 
         
     # Now get the good fibers from the science telecsope
@@ -900,8 +895,8 @@ def steer(argv):
     usage: lvm_gaussfit.py --h] [-lmc] [-smc] [-v vel] [-stype SOURCE][-out root] filename
     '''
     filename=''
-    lmc=262.
-    smc=146.
+    lmc=262.  # Simbad
+    smc=146.  # Simbad
     outname=''
     fitsfiles=[]
     specfiles=[]
@@ -948,7 +943,6 @@ def steer(argv):
     if len(specfiles)>0:
         do_individual(specfiles,vel,stype, outname)
 
-    print('Errors have been decreased by a factor of 2.25; this should be removed after a new processing')
 
     return
 

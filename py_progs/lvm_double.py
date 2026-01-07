@@ -502,7 +502,6 @@ def do_one(ztab,wmin=6715,wmax=6750,do_plot=True,label=''):
         return []
 
     scale_factor=1e16
-    e_factor=1./2.25
 
     stab=ztab.copy()
     stab=stab[stab['WAVE']>wmin]
@@ -514,7 +513,7 @@ def do_one(ztab,wmin=6715,wmax=6750,do_plot=True,label=''):
     mean_flux, median_flux, std_flux = sigma_clipped_stats(ydata, sigma_upper=1,sigma_lower=3)
     ydata-=median_flux
 
-    error=np.array(stab['ERROR'])*scale_factor*e_factor
+    error=np.array(stab['ERROR'])*scale_factor
 
     results=compare_models(xdata,ydata,error,do_plot=do_plot,label=label)
     return results
@@ -864,7 +863,6 @@ def steer(argv):
     if len(specfiles)>0:
         do_individual(specfiles,wmin,wmax,outname,do_plot)
 
-    print('Warning:  Errors have been rescaled by 2.25, which should change with a new reduction')
 
     return
 

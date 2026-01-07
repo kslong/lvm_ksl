@@ -1,53 +1,71 @@
 #!/usr/bin/env python 
 
-'''
-                    Space Telescope Science Institute
+"""GetFromUtah - Retrieve DRP Data from Utah
 
-Synopsis:  
+Space Telescope Science Institute
 
-Retrieve drp output data from Utah to a local computer
+Synopsis
+--------
 
+Retrieve drp output data from Utah to a local computer.
 
-Command line usage (if any):
+Command Line Usage
+------------------
 
-    usage: GetFromUtah.py [-h] [-cp] [-CFrame]  -drp 1.1.1 mjd expstart [expstop]
+::
 
-    where:
+    GetFromUtah.py [-h] [-cp] [-CFrame] -drp 1.1.1 mjd expstart [expstop]
 
-    -h prints out this help message
-    -cp copies the retrieved data to a local directory
-    -CFrame causes the CFrame data to be retrieved instead of the 
-        SFrame data
-    -drp whatever wistchedst the default location to a different processing version
-    mjd is the mjd of the observations one wants to retrieve
-    expstart is the first exposure to retrieve
-    expstop, if given means to retrieve exposures from expstart to
-        expstop
+**Options:**
 
-Description:  
+-h
+    Print help message
 
-    The routine retrieves data from Utah and stores it locally
-    in the local redux directory.
+-cp
+    Copy the retrieved data to a local directory
 
+-CFrame
+    Retrieve CFrame data instead of SFrame data
 
-Primary routines:
+-drp VERSION
+    Specify DRP processing version (default: 1.2.0)
 
+-out OUTDIR
+    Specify output directory
 
-Notes:
+**Arguments:**
 
-    At present the routine looks for data in the 1.0.3 directories
-    at Utah, which is what is used for the standard processing.
+mjd
+    MJD of the observations to retrieve
 
-    When it becomes desirable to specify the version of the
-    drp pipeline to use, this should be straightforward to
-    modify.
-                                       
-History:
+expstart
+    First exposure to retrieve
 
-240607 ksl Coding begun; adapted from a routine provided
-    by Alfredo
+expstop
+    Last exposure to retrieve (optional, defaults to expstart)
 
-'''
+Description
+-----------
+
+The routine retrieves data from Utah and stores it locally
+in the local redux directory.
+
+Notes
+-----
+
+At present the routine looks for data in the 1.0.3 directories
+at Utah, which is what is used for the standard processing.
+
+When it becomes desirable to specify the version of the
+drp pipeline to use, this should be straightforward to modify.
+
+Version History
+---------------
+
+240607 ksl
+    Coding begun; adapted from a routine provided by Alfredo
+
+"""
 #!/usr/bin/env python
 # coding: utf-8
 
@@ -109,12 +127,20 @@ def download_drp_product(drpver, tileid, mjd, expnum, channel=None, kind="SFrame
 
 
 def steer(argv):
-    '''
-    Run the routine
+    """Run the GetFromUtah routine.
 
-    GetFromUtah -cp [-CFrame] -drp whatever [-out outdir] mjd exp_start exp_stop 
+    Parameters
+    ----------
+    argv : list
+        Command line arguments including the script name
 
-    '''
+    Examples
+    --------
+    ::
+
+        GetFromUtah.py -cp [-CFrame] -drp 1.2.0 [-out outdir] mjd exp_start exp_stop
+
+    """
     drp_ver="1.2.0"
     copy=False
     xtile=1028683
@@ -141,7 +167,7 @@ def steer(argv):
         elif argv[i]=='-drp':
             i+=1
             drp_ver=argv[i]
-        elis argv[i]=='-out':
+        elif argv[i]=='-out':
             i+=1
             xdest=argv[i]
         elif argv[i][0]=='-':

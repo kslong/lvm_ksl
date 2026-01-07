@@ -552,7 +552,6 @@ def plot_results_with_shift(spectrum_table, lines_table):
 def fits2table(fib=300,wmin=6721,wmax=6741,filename='W28_all_ave.fits'):
     # print(fib,wmin,wmax,filename)
 
-    e_factor=2.25
 
     x=fits.open(filename)
     wave=x['WAVE'].data
@@ -564,7 +563,7 @@ def fits2table(fib=300,wmin=6721,wmax=6741,filename='W28_all_ave.fits'):
     spectrum=spectrum[spectrum['WAVE']>wmin]
     spectrum=spectrum[spectrum['WAVE']<wmax]
     spectrum=spectrum[spectrum['MASK']==0]
-    spectrum['ERROR']=1/np.sqrt(spectrum['ERROR'])*1e16/e_factor
+    spectrum['ERROR']=1/np.sqrt(spectrum['ERROR'])*1e16
     mean_flux, median_flux, std_flux = sigma_clipped_stats(spectrum['FLUX'], sigma_upper=2,sigma_lower=3)
     spectrum['FLUX']-=median_flux
     return spectrum
@@ -786,7 +785,6 @@ def steer(argv):
 
     do_all(w_in,w_out,wmin,wmax,fit_tab=specfile,rss_file=rssfile,do_plot=True)
 
-    print('Warning:  Errors have been rescaled by 2.25, which should change with a new reduction')
     return
     
 # Next lines permit one to run the routine from the command line

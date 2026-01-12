@@ -321,6 +321,7 @@ def steer(argv):
     while i<len(argv):
         if argv[i][:2]=='-h':
             print(__doc__)
+            return
         elif argv[i]=='-emin':
             i+=1
             exp_min=int(argv[i])

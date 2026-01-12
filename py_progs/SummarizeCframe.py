@@ -4,25 +4,36 @@
 '''
                     Space Telescope Science Institute
 
-Synopsis:  
+Synopsis:
 
-Summmarize the median spectrum in Cframe data for a large
-number of files
-
+Create a summary of CFrame data where each row contains the median spectrum
+(across science fibers) from a single exposure. Useful for comparing how
+spectra and sky levels vary across many exposures over time.
 
 Command line usage (if any):
 
-    usage: SummarizeCFrame [-out file_out]  [-emin 900]  [-ver drp_ver] exp_start expstop delta
+    usage: SummarizeCFrame [-h] [-out file_out] [-emin 900] [-ver drp_ver] exp_start exp_stop delta
 
-Description:  
+Description:
 
-    where
+    This script processes multiple CFrame files and computes the median spectrum
+    across all science fibers for each exposure. The output contains one row per
+    exposure, with columns for the science flux and both sky telescope spectra
+    (SKY_EAST and SKY_WEST).
 
-    -out file_out changes the output filename from the default
-    -ver selects a specific drp version (default 1.1.1)
-    -emin selects minimum exposurs to inclued1
-    
-    and 
+    Compare with SumCframe.py, which combines multiple exposures into a single
+    deep spectrum per fiber (averaging across time rather than across fibers).
+
+    Options:
+        -h                  prints out this help and quits
+        -out file_out       changes the output filename from the default
+        -ver drp_ver        selects a specific DRP version (default 1.1.1)
+        -emin               sets minimum exposure time to include (default 900)
+
+    Positional arguments:
+        exp_start           the starting exposure number to consider
+        exp_stop            the exposure number to stop on
+        delta               skip every Nth exposure 
 
 Primary routines:
 
@@ -309,7 +320,7 @@ def steer(argv):
     i=1
     while i<len(argv):
         if argv[i][:2]=='-h':
-            print(_doc_)
+            print(__doc__)
         elif argv[i]=='-emin':
             i+=1
             exp_min=int(argv[i])

@@ -13,14 +13,15 @@ position on the sky
 
 Command line usage (if any):
 
-    usage: SummarizeData.py [-h] [-all] [-redo]  [mjd1 mjd2 ...]
+    usage: SummarizeData.py [-h] [-all] [-redo] [-range] [mjd1 mjd2 ...]
 
     where:
 
-        -h will pring this summary and exit
-        -all means to summarize all of the data in various subdirecories
+        -h will print this summary and exit
+        -all means to summarize all of the data in various subdirectories
         -redo means to recreate the summary tables, if and only if -all has been
             selected
+        -range means to process all MJDs between mjd1 and mjd2 (inclusive)
         [mjd1 mjd2]  run on for specific mjds
 
 

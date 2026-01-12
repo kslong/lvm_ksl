@@ -4,27 +4,41 @@
 '''
                     Space Telescope Science Institute
 
-Synopsis:  
+Synopsis:
 
-Summmarize the median spectrum in Cframe data for a large
-number of files
-
+Combine multiple CFrame exposures into a single deep spectrum by averaging
+or taking the median across all exposures, producing one combined spectrum
+per fiber.
 
 Command line usage (if any):
 
-    usage: SumCFrame [-h] [-emin 900] [-out whatever] [-ver 1.1.3] [-drp_all drp_file] exp_start exp_stop [delta]
+    usage: SumCFrame [-h] [-emin 900] [-out whatever] [-ver 1.1.3] [-drp_all drp_file] [-med] [-ave] exp_start exp_stop [delta]
 
-Description:  
+Description:
 
-    where -h prints out this help and quits
-            =emin 900           resets the minimum exposure to another value
-            -out whatever       sets the root for the output fits file to soemthing other than the default
-            -ver 1.1.3          resets the location to lookd for the drp_all file
-            -drp_all drp_file   causes the program to read a speccial drp_all file or table named 'drp_file'
-                                as opposed to the drp_all file associated with the version of processing
-            exp_start           The starting exposure to consider
-            exp_stop            The exposure snumber to stop on
-            [delta]             The number of 'good' exposures to skip
+    This script stacks multiple CFrame files and combines them pixel-by-pixel
+    across exposures to create a deep combined observation. The output contains
+    one spectrum per fiber, representing the average or median of that fiber
+    across all input exposures.
+
+    Compare with SummarizeCframe.py, which instead produces one row per exposure
+    (the median across fibers within each exposure) for monitoring spectral
+    variations over time.
+
+    Options:
+        -h                  prints out this help and quits
+        -emin 900           sets the minimum exposure time to include (default 900)
+        -out whatever       sets the root for the output fits file
+        -ver 1.1.3          sets the DRP version for locating the drp_all file
+        -drp_all drp_file   reads a specific drp_all file or table instead of
+                            the one associated with the DRP version
+        -med                use median when combining frames
+        -ave                use average when combining frames (default)
+
+    Positional arguments:
+        exp_start           the starting exposure number to consider
+        exp_stop            the exposure number to stop on
+        [delta]             skip every Nth exposure (default 1, i.e., use all)
 
 
 Primary routines:

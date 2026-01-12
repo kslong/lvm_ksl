@@ -4,28 +4,39 @@
 '''
                     Space Telescope Science Institute
 
-Synopsis:  
+Synopsis:
 
-Look at how well skysubtraction is working on a large
-number of files
-
+Create a summary of SFrame (sky-subtracted) data where each row contains the
+median spectrum (across science fibers) from a single exposure. Useful for
+evaluating sky subtraction quality and comparing residuals across many exposures.
 
 Command line usage (if any):
 
-    usage: SummarizeSFrame.py  [-h] [-ver drp_ver][-percent 50] [-emin 900] [-out whatever] exp_start expstop delta
+    usage: SummarizeSFrame.py [-h] [-ver drp_ver] [-percent 50] [-emin 900] [-out whatever] exp_start exp_stop delta
 
-Description:  
+Description:
 
-    where:
+    This script processes multiple SFrame files and computes the median (or other
+    percentile) spectrum across all science fibers for each exposure. The output
+    contains one row per exposure, with the sky-subtracted flux, the sky spectrum,
+    and the inverse variance.
 
-    -h prints this documentatikon
-    -ver drp_ver where drp_ver is a version run of the drp, e.g the current default 1.2.0
-    -percent is the percentile to use in the calculation, if missing use median or 50
-    -emin sets the mimimum exposure time to include; the default is 900
-    -out is name or rootname of output fits file
-    exp_start is the number is the exposure to start with
-    exp_stop is the number of the exposure to stop with
-    delta is the number of exposures to skip in creating the output image
+    This is the SFrame equivalent of SummarizeCframe.py. While SummarizeCframe
+    works on CFrame files (before sky subtraction) and includes SKY_EAST/SKY_WEST,
+    this script works on SFrame files (after sky subtraction) and includes the
+    combined SKY and IVAR extensions.
+
+    Options:
+        -h                  prints this documentation
+        -ver drp_ver        DRP version to use (default 1.2.0)
+        -percent N          percentile to use instead of median (default 50)
+        -emin               minimum exposure time to include (default 900)
+        -out whatever       name or root name of output fits file
+
+    Positional arguments:
+        exp_start           the starting exposure number to consider
+        exp_stop            the exposure number to stop on
+        delta               skip every Nth exposure
 
 Primary routines:
 

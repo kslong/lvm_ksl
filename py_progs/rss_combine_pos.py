@@ -4,37 +4,79 @@
 '''
                     Space Telescope Science Institute
 
-Synopsis:  
+Synopsis:
 
-Make an rss_combined file given a set of images, a position and
-a size.  The purpose of this rooutine is to be able to make snap_shot 
-sized RSS files for examining a number of sources at one time.
+Create a combined RSS file from multiple SFrame images, centered on a
+user-specified position with a user-specified size. This routine is
+designed for making small "snapshot" RSS files for examining specific
+sources such as supernova remnants.
 
+Command line usage:
 
-Command line usage (if any):
+    usage: rss_combine_pos.py [-sum] [-med] [-size arcmin] [-out name]
+                              [-keep] ra dec filenames
 
-    usage: rss_combine_pos.py  -c_type med -size 20  -out test ra dec filenames
+    where:
+        ra dec          Center position in degrees (required)
+        filenames       Input SFrame FITS files to combine
+        -size arcmin    Size of output region in arcminutes (default: 20)
+        -out name       Output filename root (default: 'test')
+        -sum            Use get_nearest for apportionment (no fractional
+                        splitting; each input fiber's full flux goes to
+                        the single nearest output fiber). By default,
+                        frac_calc2 is used (flux split based on overlap).
+        -med            Use median for combining remapped images. By default,
+                        mean is used. Note: -med and -sum are independent;
+                        -med controls combination, -sum controls apportionment.
+        -keep           Keep temporary files in xtmp/ directory
 
-Description:  
+Description:
+
+    This routine differs from rss_combine.py in that it allows the user
+    to specify the exact center position and size of the output region,
+    rather than automatically calculating these from the input files.
+    This is useful for extracting small regions around specific targets
+    from a larger set of observations.
+
+    The routine:
+    * Creates a WCS centered on the specified RA/Dec with the given size
+    * Generates output fiber positions on a regular grid (35 arcsec spacing)
+    * Filters input fibers to only those within the specified region
+    * Apportions flux from input fibers to output fibers using frac_calc2
+      (based on circular overlap area) or get_nearest (with -sum flag)
+    * Combines the remapped images using mean (default) or median (-med)
+    * Writes the output to <outroot>.fits and <outroot>.tab
+
+    The -sum and -med options work the same as in rss_combine.py:
+    * -sum controls apportionment method (frac_calc2 vs get_nearest)
+    * -med controls combination method (mean vs median)
+
+    Unlike rss_combine.py, this routine always uses a regular grid for
+    output fiber positions (equivalent to fib_type='xy'), so the -orig
+    option is not available.
+
+    Output FITS extensions are the same as rss_combine.py:
+    * PRIMARY, FLUX, IVAR, MASK, WAVE, SLITMAP, WCS_INFO, EXPOSURE
 
 Primary routines:
 
-    doit
+    do_fixed
 
 Notes:
- 
-The goal here is to develop a procedure that will allow me to create an rss_file that just contains data centered around a particular position, nominally a SNR.  My plan is to be able to execute this on a large number of postions spread over the LMC or SMC
 
-Here are position for n49 and n49b
+    The goal is to create RSS files containing data centered around a
+    particular position, nominally a SNR. This can be executed on a
+    large number of positions spread over the LMC or SMC.
 
-ellipse(81.341994,-65.996487,79.03",77.48",90.0) # text={SNR_N49B}
-ellipse(81.501085,-66.082249,42.35",40.00",110.0) # text={SNR_N49}
+    Example positions for N49 and N49B:
+    ellipse(81.341994,-65.996487,79.03",77.48",90.0) # text={SNR_N49B}
+    ellipse(81.501085,-66.082249,42.35",40.00",110.0) # text={SNR_N49}
 
 
-                                       
 History:
 
-250702 ksl Coding begun
+250102 ksl Coding begun
+250203 ksl Added separate fib_type parameter to align with rss_combine.py
 
 '''
 
@@ -73,7 +115,45 @@ from lvm_ksl import rss_combine
 
 
 
-def do_fixed(filenames,ra, dec, pa, size,c_type='ave',outroot='',keep_tmp=False):
+def do_fixed(filenames, ra, dec, pa, size, fib_type='xy', c_type='ave', outroot='', keep_tmp=False):
+    '''
+    Create a combined RSS file centered on a fixed position.
+
+    This is the main processing routine that creates a WCS at the specified
+    position, generates output fiber positions on a regular grid, and combines
+    flux from multiple input SFrame files.
+
+    Unlike rss_combine.do_combine, this routine:
+    * Uses a user-specified center position rather than calculating from files
+    * Uses a user-specified size rather than calculating bounding box
+    * Filters input fibers to only those within the specified region
+    * Always uses a regular grid (no 'orig' option)
+
+    The fib_type and c_type parameters work the same as in rss_combine.py:
+    * fib_type controls apportionment method
+    * c_type controls combination method
+
+    Parameters:
+        filenames (list): List of input SFrame FITS filenames to combine.
+        ra (float): Right Ascension of the center in degrees.
+        dec (float): Declination of the center in degrees.
+        pa (float): Position angle in degrees (rotation of the WCS).
+        size (float): Size of the output region in degrees.
+        fib_type (str): Method for apportioning flux from input to output fibers:
+            - 'xy': use frac_calc2 (flux split based on circular overlap area)
+            - 'sum': use get_nearest (no fractional splitting; full flux to
+              nearest output fiber)
+        c_type (str): Method for combining the remapped images from multiple
+            input files:
+            - 'ave': combine using mean (default)
+            - 'med': combine using median (more robust to outliers/bad pixels)
+        outroot (str): Root name for output files. Default creates 'test_square'.
+        keep_tmp (bool): If True, keep the temporary xtmp/ directory.
+            Default is False (deletes temp files).
+
+    Returns:
+        str: The output root name used for the files.
+    '''
     wcs=rss_combine.create_wcs(ra_deg=ra, dec_deg=dec,pos_ang=pa, size_deg=size)
     new_slitmap_table=rss_combine.generate_grid(wcs,35.)
     # print('new: ',len(new_slitmap_table))
@@ -91,7 +171,7 @@ def do_fixed(filenames,ra, dec, pa, size,c_type='ave',outroot='',keep_tmp=False)
         filenames=gtab['Filename']
     slit=rss_combine.prep_tables_square(wcs, filenames)
     # print(slit)
-    # this list has many more fibers than we wnat
+    # this list has many more fibers than we want
     reduced=[]
     for one_tab in slit:
         one_tab=one_tab[one_tab['X']>xmin-1]
@@ -105,14 +185,14 @@ def do_fixed(filenames,ra, dec, pa, size,c_type='ave',outroot='',keep_tmp=False)
 
     zslit=[]
     for one_tab in slit:
-        if c_type=='sum':
+        if fib_type=='sum':
             one_tab=rss_combine.get_nearest(new_slitmap_table,one_tab)
         else:
             one_tab=rss_combine.frac_calc2(new_slitmap_table,one_tab)
         # print('toasty\n',one_tab)
         zslit.append(one_tab)
 
-    # zslit is a list of tables, now with added columns indicating how to approtion the data from indvidual files into the final image
+    # zslit is a list of tables, now with added columns indicating how to apportion the data from individual files into the final image
 
     print('The number of files being combined:',len(slit))
 
@@ -148,7 +228,7 @@ def do_fixed(filenames,ra, dec, pa, size,c_type='ave',outroot='',keep_tmp=False)
     eflux=np.zeros_like(final['FLUX'].data)
     new_slitmap_table['EXPOSURE']=0.0
 
-    # now we want to crate various arrays that indicate how each input file would be split into the new filters system
+    # now we want to create various arrays that indicate how each input file would be split into the new fibers system
     VERY_BIG = 1e50
     VERY_SMALL = 1e-50
 
@@ -156,7 +236,7 @@ def do_fixed(filenames,ra, dec, pa, size,c_type='ave',outroot='',keep_tmp=False)
 
     i=0
     while i < len(filenames):
-        print('starting to rmap  %s' % (filenames[i]),flush=True)
+        print('Starting to remap %s' % (filenames[i]),flush=True)
         q=zslit[i]
         for one_row in q:
             new_slitmap_table['EXPOSURE'][one_row['fib_master']-1]+=one_row['frac']
@@ -193,7 +273,7 @@ def do_fixed(filenames,ra, dec, pa, size,c_type='ave',outroot='',keep_tmp=False)
     mem=psutil.virtual_memory()
     print(f'Total Memory: {mem.total/1e9:.2f} GB')
     print(f' Used Memory: {mem.used/1e9:.2f} GB')
-    print('This is %.2f pecent of the available memory' % value)
+    print('This is %.2f percent of the available memory' % value)
 
 
     new_slitmap_table['fibstatus']=0
@@ -218,7 +298,7 @@ def do_fixed(filenames,ra, dec, pa, size,c_type='ave',outroot='',keep_tmp=False)
     hdu = fits.BinTableHDU(new_slitmap_table.as_array(), name='SLITMAP')
     final['SLITMAP']=hdu
 
-   # Before writing everythin out, we need to add the size to the hdr
+    # Before writing everything out, we need to add the size to the header
 
     nxmax=np.max(new_slitmap_table['X'])
     nymax=np.max(new_slitmap_table['Y'])
@@ -251,13 +331,24 @@ def do_fixed(filenames,ra, dec, pa, size,c_type='ave',outroot='',keep_tmp=False)
 
 def steer(argv):
     '''
-    rss_combine_pos.py  -c_type med -size 20  -out test ra dec filenames
+    Parse command line arguments and run the RSS combining process.
+
+    Usage:
+        rss_combine_pos.py [-sum] [-med] [-size arcmin] [-out name]
+                           [-keep] ra dec filenames
+
+    Parameters:
+        argv (list): Command line arguments (sys.argv).
+
+    Returns:
+        None: Calls do_fixed with parsed arguments.
     '''
     ra=-99.
     dec=-99.
     size=20.
     outroot='test'
-    c_type='med'
+    fib_type='xy'
+    c_type='ave'
     filenames=[]
     keep_tmp=False
 
@@ -274,9 +365,10 @@ def steer(argv):
             size=eval(argv[i])
         elif argv[i]=='-keep':
             keep_tmp=True
-        elif argv[i]=='-c_type':
-            i+=1
-            c_type=argv[i]
+        elif argv[i]=='-sum':
+            fib_type='sum'
+        elif argv[i][0:4]=='-med':
+            c_type='med'
         elif ra<0 and argv[i][0]=='-':
             print('Error: Cannot parse command line :',argv)
             return
@@ -293,7 +385,7 @@ def steer(argv):
 
 
 
-    do_fixed(filenames,ra, dec, pa=0, size=size/60.,c_type=c_type,outroot=outroot,keep_tmp=keep_tmp)
+    do_fixed(filenames, ra, dec, pa=0, size=size/60., fib_type=fib_type, c_type=c_type, outroot=outroot, keep_tmp=keep_tmp)
 
 
 

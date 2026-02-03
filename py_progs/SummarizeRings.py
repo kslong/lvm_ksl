@@ -283,6 +283,10 @@ def make_ring_specs(xtab, data_dir, outfile='', percentile=50,
         i += 1
     print('There are %d files to process' % (len(select_idx)))
 
+    if len(select_idx) == 0:
+        print('Warning: No files found to process. Check exposure range and data directory.')
+        return
+
     xtab = xtab[select_idx]
 
     i = 0
@@ -290,15 +294,17 @@ def make_ring_specs(xtab, data_dir, outfile='', percentile=50,
     xflux_middle = []
     xflux_outer = []
     xsky = []
+    wav = None
 
     while i < len(xfiles):
-        wav, flux_inner, flux_middle, flux_outer, sky_med = get_all_ring_specs(
+        xwav, flux_inner, flux_middle, flux_outer, sky_med = get_all_ring_specs(
             xfiles[i], ring_sets, percentile)
 
-        if wav is None:
+        if xwav is None:
             i += 1
             continue
 
+        wav = xwav
         xflux_inner.append(flux_inner)
         xflux_middle.append(flux_middle)
         xflux_outer.append(flux_outer)
@@ -308,6 +314,10 @@ def make_ring_specs(xtab, data_dir, outfile='', percentile=50,
             print('Finished %d of %d' % (i, len(xfiles)))
 
         i += 1
+
+    if wav is None or len(xflux_inner) == 0:
+        print('Warning: No valid data extracted from any files.')
+        return
 
     wav = np.array(wav)
     xflux_inner = np.array(xflux_inner)

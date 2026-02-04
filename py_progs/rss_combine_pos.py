@@ -64,7 +64,7 @@ output fiber positions (equivalent to fib_type='xy'), so the -orig
 option is not available.
 
 Output FITS extensions are the same as rss_combine.py:
-PRIMARY, FLUX, IVAR, MASK, WAVE, SLITMAP, WCS_INFO, EXPOSURE.
+PRIMARY, FLUX, IVAR, MASK, WAVE, LSF, SLITMAP, WCS_INFO, EXPOSURE.
 
 Primary routines:
 
@@ -219,6 +219,7 @@ def do_fixed(filenames, ra, dec, pa, size, fib_type='xy', c_type='ave', outroot=
     final.append(foo['IVAR'])
     final.append(foo['MASK'])
     final.append(foo['WAVE'])
+    final.append(foo['LSF'])
     final.append(foo['SLITMAP'])
     print('Adding WCS')
     # print(wcs)
@@ -233,6 +234,7 @@ def do_fixed(filenames, ra, dec, pa, size, fib_type='xy', c_type='ave', outroot=
 
     final['FLUX'].data=xzero_array.copy()
     final['IVAR'].data=xzero_array.copy()
+    final['LSF'].data=xzero_array.copy()
 
     final=rss_combine.add_extension_with_same_shape(final, 'FLUX','EXPOSURE')
 
@@ -279,9 +281,11 @@ def do_fixed(filenames, ra, dec, pa, size, fib_type='xy', c_type='ave', outroot=
     xfl=rss_combine.process_remapped_images(file_list=xfiles, extension='FLUX', xproc=c_type,memory_limit=1_000_000_000)
     xexp=rss_combine.process_remapped_images(file_list=xfiles, extension='EXPOSURE', xproc='sum',memory_limit=1_000_000_000)
     xvar=rss_combine.process_remapped_images(file_list=xfiles, extension='IVAR', xproc='sum',memory_limit=1_000_000_000)
+    xlsf=rss_combine.process_remapped_images(file_list=xfiles, extension='LSF', xproc=c_type,memory_limit=1_000_000_000)
     final['FLUX'].data=xfl
     final['EXPOSURE'].data=xexp
     final['IVAR'].data=xvar
+    final['LSF'].data=xlsf
 
 
     print('Finished creating output arrays.\n')
@@ -323,6 +327,18 @@ def do_fixed(filenames, ra, dec, pa, size, fib_type='xy', c_type='ave', outroot=
 
     if outroot=='':
         outroot='test_square'
+
+    # Append combination type to outroot
+    outroot = outroot + '.' + c_type
+
+    # Add keywords to primary header indicating options used
+    final['PRIMARY'].header['RSSCOMB'] = ('rss_combine_pos', 'RSS combination script used')
+    final['PRIMARY'].header['FIBTYPE'] = (fib_type, 'Fiber apportionment type (xy/sum)')
+    final['PRIMARY'].header['COMBTYPE'] = (c_type, 'Combination method (ave/med)')
+    final['PRIMARY'].header['NFILES'] = (len(filenames), 'Number of input files combined')
+    final['PRIMARY'].header['CENTRERA'] = (ra, 'Center RA in degrees')
+    final['PRIMARY'].header['CENTERDE'] = (dec, 'Center Dec in degrees')
+    final['PRIMARY'].header['SIZEDEG'] = (size, 'Region size in degrees')
 
     print ('\n Final Stats for output image : %s.fits' % outroot)
     print('Combined  FLUX  %10.3e %10.3e %10.e %10.3e'  % (np.nanmedian(final['FLUX'].data),np.nanstd(final['FLUX'].data),np.nanmin(final['FLUX'].data),np.nanmax(final['FLUX'].data)))
@@ -399,7 +415,11 @@ def steer(argv):
             return
         i+=1
 
-
+    # Validate outroot does not start with '-'
+    if outroot.startswith('-'):
+        print('Error: outroot cannot start with "-": %s' % outroot)
+        print('This may indicate a missing argument after -out')
+        return
 
     do_fixed(filenames, ra, dec, pa=0, size=size/60., fib_type=fib_type, c_type=c_type, outroot=outroot, keep_tmp=keep_tmp)
 

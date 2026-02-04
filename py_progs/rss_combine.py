@@ -64,7 +64,8 @@ A single FITS file is produced with the following extensions: PRIMARY (the
 primary header from one of the input images), FLUX (the flux array, with
 rows depending on how many artificial fibers were created), IVAR (the final
 inverse variance), MASK (set to 0 if this fiber and wavelength has any valid
-exposure, 1 otherwise), WAVE (the standard set of wavelengths), SLITMAP (a
+exposure, 1 otherwise), WAVE (the standard set of wavelengths), LSF (the
+line spread function, combined the same way as FLUX), SLITMAP (a
 version of the slitmap file with RAs, Decs, and X/Y positions of fibers),
 WCS_INFO (the WCS created to define fiber positions), and EXPOSURE (the
 effective number of exposures per fiber).
@@ -901,7 +902,8 @@ def remap_one(filename, q, final_slitmap, shape):
     xflux=xzero_array.copy()
     xvar=xzero_array.copy()
     xexp=xzero_array.copy()
-    # q contains the fraction allocation 
+    xlsf=xzero_array.copy()
+    # q contains the fraction allocation
     for one_row in q:
         xmask=x['MASK'].data[one_row['fiberid']-1]
         one_flux=np.select([xmask==0],[x['FLUX'].data[one_row['fiberid']-1]],default=0)
@@ -912,10 +914,12 @@ def remap_one(filename, q, final_slitmap, shape):
         if non_finite_sum>0:
             print('Found non_finite %d values' % non_finite_sum)
         one_vflux=x['IVAR'].data[one_row['fiberid']-1]
-        # so one_flux, one_exp, and one_var represent one row in the flux, var, and exposure arrays
+        one_lsf=np.select([xmask==0],[x['LSF'].data[one_row['fiberid']-1]],default=0)
+        # so one_flux, one_exp, one_var, and one_lsf represent one row in the flux, var, exposure, and lsf arrays
         xflux[one_row['fib_master']-1]+=one_flux*one_row['frac']
-        xvar[one_row['fib_master']-1]+=one_row['frac']*one_invar  
+        xvar[one_row['fib_master']-1]+=one_row['frac']*one_invar
         xexp[one_row['fib_master']-1]+=one_row['frac']*one_exp
+        xlsf[one_row['fib_master']-1]+=one_lsf*one_row['frac']
         xtab['frac'][one_row['fib_master']-1]+=one_row['frac']
             
     # Set lines in ivar with no spectra to nan
@@ -924,10 +928,12 @@ def remap_one(filename, q, final_slitmap, shape):
         if xtab['frac'][n]==0:
             xflux[n]=np.nan
             xvar[n]=np.nan
+            xlsf[n]=np.nan
         n+=1
 
     x['FLUX'].data=xflux
     x['IVAR'].data=xvar
+    x['LSF'].data=xlsf
     n=0
     x=add_extension_with_same_shape(x, 'FLUX','EXPOSURE')
     x['EXPOSURE'].data=xexp
@@ -1132,6 +1138,7 @@ def do_combine(filenames, outroot='', fib_type='xy', c_type='ave', keep_tmp=Fals
     final.append(foo['IVAR'])
     final.append(foo['MASK'])
     final.append(foo['WAVE'])
+    final.append(foo['LSF'])
     final.append(foo['SLITMAP'])
     print('Adding WCS')
     # print(wcs)
@@ -1146,6 +1153,7 @@ def do_combine(filenames, outroot='', fib_type='xy', c_type='ave', keep_tmp=Fals
 
     final['FLUX'].data=xzero_array.copy()
     final['IVAR'].data=xzero_array.copy()
+    final['LSF'].data=xzero_array.copy()
 
     final=add_extension_with_same_shape(final, 'FLUX','EXPOSURE')
     
@@ -1192,9 +1200,11 @@ def do_combine(filenames, outroot='', fib_type='xy', c_type='ave', keep_tmp=Fals
     xfl=process_remapped_images(file_list=xfiles, extension='FLUX', xproc=c_type,memory_limit=1_000_000_000)
     xexp=process_remapped_images(file_list=xfiles, extension='EXPOSURE', xproc='sum',memory_limit=1_000_000_000)
     xvar=process_remapped_images(file_list=xfiles, extension='IVAR', xproc='sum',memory_limit=1_000_000_000)
+    xlsf=process_remapped_images(file_list=xfiles, extension='LSF', xproc=c_type,memory_limit=1_000_000_000)
     final['FLUX'].data=xfl
     final['EXPOSURE'].data=xexp
     final['IVAR'].data=xvar
+    final['LSF'].data=xlsf
 
 
     print('Finished creating output arrays.\n')
@@ -1237,6 +1247,15 @@ def do_combine(filenames, outroot='', fib_type='xy', c_type='ave', keep_tmp=Fals
     
     if outroot=='':
         outroot='test_square'
+
+    # Append combination type to outroot
+    outroot = outroot + '.' + c_type
+
+    # Add keywords to primary header indicating options used
+    final['PRIMARY'].header['RSSCOMB'] = ('rss_combine', 'RSS combination script used')
+    final['PRIMARY'].header['FIBTYPE'] = (fib_type, 'Fiber apportionment type (xy/orig/sum)')
+    final['PRIMARY'].header['COMBTYPE'] = (c_type, 'Combination method (ave/med)')
+    final['PRIMARY'].header['NFILES'] = (len(filenames), 'Number of input files combined')
 
     print ('\n Final Stats for output image : %s.fits' % outroot)
     print('Combined  FLUX  %10.3e %10.3e %10.e %10.3e'  % (np.nanmedian(final['FLUX'].data),np.nanstd(final['FLUX'].data),np.nanmin(final['FLUX'].data),np.nanmax(final['FLUX'].data)))
@@ -1295,6 +1314,12 @@ def steer(argv):
         else:
             xfiles.append(argv[i])
         i+=1
+
+    # Validate outroot does not start with '-'
+    if outroot.startswith('-'):
+        print('Error: outroot cannot start with "-": %s' % outroot)
+        print('This may indicate a missing argument after -outroot')
+        return
 
     files=[]
     for one in xfiles:

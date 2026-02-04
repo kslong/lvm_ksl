@@ -15,17 +15,13 @@ the frame or frames
 
 Command line usage (if any):
 
-    usage: Prep4SkyCorr.py [-h] [-dir whatever]  -all filename1 filename2 ..
+    usage: Prep4SkyCorr.py [-h] [-dir whatever] [-all] filename1 filename2 ..
 
-Description:  
+    where filenames is a list of files to be processed. -h will print this help and quit.
+    -dir whatever will cause the directory whatever to be searched for the files that are indicated.
+    -all will cause all lvmCframe files to be processed.
 
-    where filenames is a list of files to be processed, and the optional
-    parameters
-
-    -h  will print this help, and quit
-    -dir whatever will cause the directory whatever to be serched for the files that are indcatdd
-    -all will cause all lvmCframe files to be processed
-    -
+Description:
 
 Primary routines:
 

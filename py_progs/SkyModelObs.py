@@ -10,20 +10,18 @@ Generate a prediction of the sky using the ESO Sky Model
 given an RA and Dec and a time
 
 
-Command line usage (if any):
+Command line usage::
 
-    usage: SkyModelObs.py [-h] [-config] [-data data_dir] [-out whatever] ra dec time
+    SkyModelObs.py [-h] [-config] [-data data_dir] [-out whatever] ra dec time
 
-    where
-        -h prints the _doc__ string and exits
-        -config forces a new set up of the directories needed to 
-            run the routines. (Regardless of this switch the directories will be set up the
-            first time the routine is run.)
-        -data data_dir  Sets the data directory for sky model to a location
-            not pointed to by ESO_SKY_MODEL
-        -out whatever changes the root name of the output file
-        ra, dec  a position in the sky in degrees
-        time time in one of serveral coordiantes, either a date_time string, mjd, or jd
+Arguments: ra and dec are positions in the sky in degrees; time is in one
+of several formats (date_time string, MJD, or JD).
+
+Options: -h prints this help and exits; -config forces a new setup of the
+directories needed to run the routines (directories are set up automatically
+the first time regardless); -data data_dir sets the data directory for sky
+model to a location not pointed to by ESO_SKY_MODEL; -out whatever changes
+the root name of the output file.
 
 Description:  
 

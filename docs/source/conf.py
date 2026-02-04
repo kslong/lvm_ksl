@@ -76,59 +76,73 @@ autodoc_mock_imports = [
 
 import os
 
-def sort_autoapi_toctree(app, exception):
-    """Sort the autoapi index.rst toctree alphabetically after build."""
-    if exception is not None:
-        return  # Build failed, don't process
-    
-    index_path = os.path.join(app.srcdir, 'api', 'index.rst')
+def sort_autoapi_toctree(index_path):
+    """Sort the autoapi index.rst toctree alphabetically."""
     if not os.path.exists(index_path):
         return
-    
+
     with open(index_path, 'r') as f:
-        lines = f.readlines()
-    
+        content = f.read()
+
+    # Split into lines for processing
+    lines = content.split('\n')
+
     # Find and sort the toctree entries
     new_lines = []
     in_toctree = False
     toctree_entries = []
-    indent = ''
-    
+    past_options = False
+
     for line in lines:
         if '.. toctree::' in line:
             in_toctree = True
+            past_options = False
             new_lines.append(line)
         elif in_toctree:
-            stripped = line.lstrip()
-            if stripped.startswith(':') or not stripped:
-                # toctree option or blank line
+            stripped = line.strip()
+            # Check for toctree options (start with :)
+            if stripped.startswith(':'):
                 new_lines.append(line)
-            elif line[0] not in (' ', '\t'):
-                # End of toctree
+                continue
+            # Empty line after options signals start of entries
+            if not stripped and not past_options:
+                new_lines.append(line)
+                past_options = True
+                continue
+            # If line starts with whitespace and we're past options, it's an entry
+            if line and line[0] in (' ', '\t') and stripped:
+                toctree_entries.append(line)
+            elif not line or not line[0] in (' ', '\t'):
+                # End of toctree - sort and add entries
                 in_toctree = False
-                # Sort and add collected entries
                 toctree_entries.sort(key=lambda x: x.strip().lower())
                 new_lines.extend(toctree_entries)
                 toctree_entries = []
                 new_lines.append(line)
             else:
-                # This is a toctree entry
-                if not indent and line != line.lstrip():
-                    indent = line[:len(line) - len(line.lstrip())]
-                toctree_entries.append(line)
+                new_lines.append(line)
         else:
             new_lines.append(line)
-    
-    # Don't forget remaining entries
+
+    # Don't forget remaining entries at end of file
     if toctree_entries:
         toctree_entries.sort(key=lambda x: x.strip().lower())
         new_lines.extend(toctree_entries)
-    
+
     # Write back
     with open(index_path, 'w') as f:
-        f.writelines(new_lines)
+        f.write('\n'.join(new_lines))
+
+def sort_before_read(app, docname, source):
+    """Sort the autoapi index.rst before Sphinx reads it."""
+    if docname == 'api/index':
+        index_path = os.path.join(app.srcdir, 'api', 'index.rst')
+        sort_autoapi_toctree(index_path)
+        # Re-read the sorted content
+        with open(index_path, 'r') as f:
+            source[0] = f.read()
 
 def setup(sphinx):
     """Sphinx setup hook to sort autoapi index."""
-    sphinx.connect('build-finished', sort_autoapi_toctree)
+    sphinx.connect('source-read', sort_before_read)
 

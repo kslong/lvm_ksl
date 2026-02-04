@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Script to recursively find files with non-ASCII characters in their names
-and rename them to ASCII equivalents.
+and rename them to ASCII equivalents. Uses argparse for command line options.
 """
 
 import os
@@ -284,8 +284,8 @@ def find_and_rename_files(directory,
         directory (str): Root directory to search
         rename_dirs (bool): Whether to also rename directories
         dry_run (bool): If True, don't actually rename files
-        **conversion_options: Options for filename conversion
-    
+        conversion_options: Additional keyword arguments for filename conversion
+
     Returns:
         dict: Results summary
     """

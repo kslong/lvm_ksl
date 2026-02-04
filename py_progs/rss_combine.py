@@ -15,100 +15,75 @@ exposures for a single tile into one RSS image with
 "fibers" centered on the mean position of the exposures.
 
 
-Command line usage (if any):
+Command line usage::
 
-    usage: rss_combine.py [-orig] [-sum] [-med] [-keep] [-outroot xxxx] filenames
+    rss_combine.py [-orig] [-sum] [-med] [-keep] [-outroot xxxx] filenames
 
-    where
-        -outroot xxxx   sets the name for the output file
-        -orig           instead of creating set of output fibers on
-                        a regular grid, here
-                        the 'output' fiber positions are taken to
-                        be the average of the positions of the input
-                        fibers; the fractional contributions are still
-                        calculated.
-        -sum            instead of calculating fractional contributions
-                        to the various 'output' fibers and dividing
-                        here the entire input fiber spectra is added to one
-                        of the 'output' fibers (assuming there is a
-                        fiber which is near enough).  As in -orig, the
-                        output fiber locations are taken from the input
-                        fiber locations.
-        -med            By default, after apportioning fluxes from each
-                        input image onto the output grid, the routine
-                        averages the results across all input images.
-                        With this switch, the median is used instead
-                        of the mean. The median is more robust to
-                        outliers and bad pixels. Note: -med does not
-                        affect how flux is apportioned (that is
-                        controlled by -orig and -sum); it only affects
-                        how the remapped images are combined.
-        -keep           Keep the temporary xtmp/ directory containing
-                        intermediate remapped files. By default, this
-                        directory is deleted after processing.
+The ``-outroot xxxx`` option sets the name for the output file.
+
+The ``-orig`` option uses the average of the input fiber positions as
+output fiber positions instead of creating a regular grid. The fractional
+contributions are still calculated.
+
+The ``-sum`` option assigns each input fiber's entire spectrum to the
+nearest output fiber (no fractional splitting). Output fiber locations
+are taken from the average input fiber locations as with -orig.
+
+The ``-med`` option uses the median instead of the mean when combining
+remapped images from multiple input files. This is more robust to outliers
+and bad pixels. Note that -med only affects the final combination, not
+how flux is apportioned (that is controlled by -orig and -sum).
+
+The ``-keep`` option keeps the temporary xtmp/ directory containing
+intermediate remapped files. By default, this directory is deleted
+after processing.
 
 
 Description:
 
-    The routine combines multiple RSS images to create a final output image,
-    with various options.
+The routine combines multiple RSS images to create a final output image,
+with various options.
 
-    With no switches the routine reads the input SFrames, and constructs
-    'output' fiber positions on a regular grid on the sky. Given the
-    positions of these fibers it apportions flux from the original images
-    to the output fibers, based on the area of overlap.
+With no switches the routine reads the input SFrames, and constructs
+output fiber positions on a regular grid on the sky. Given the positions
+of these fibers it apportions flux from the original images to the output
+fibers, based on the area of overlap.
 
-    With the -orig switch, the output grid is constructed from the input
-    grid, based on the average position (RA and Dec) of each of the input
-    fibers.  The original spectra are still apportioned based on the overlaps.
-    This may be a better approach for a single tile than the regular grid
-    approach.
+With the -orig switch, the output grid is constructed from the input grid,
+based on the average position (RA and Dec) of each of the input fibers.
+The original spectra are still apportioned based on the overlaps. This may
+be a better approach for a single tile than the regular grid approach.
 
-    With the -sum switch the positions of the RSS fibers in the output image
-    are taken as above, but additionally instead of splitting the spectra
-    between output fibers, all of the flux from an input fiber is assigned
-    to one output fiber.  This may be the best approach if the input SFrame
-    files were not dithered.
+With the -sum switch the positions of the RSS fibers in the output image
+are taken as above, but additionally instead of splitting the spectra
+between output fibers, all of the flux from an input fiber is assigned to
+one output fiber. This may be the best approach if the input SFrame files
+were not dithered.
 
-    A single FITS file is produced with the following extensions:
-
-    * PRIMARY - the primary header is simply taken from one of the input images
-    * FLUX  - the flux is stored here, note that the number of rows will
-        now depend on how many artificial fibers were created
-    * IVAR  - the final inverse variance as calculated by converting the
-        inverse variance of the individual exposures to variance and
-        then combining the variance depending on what fraction of
-        the flux from an input fiber was written into an output fiber.
-        We did not use inverse variance weighting in
-        creating the fluxes so we cannot simply sum the inverse variances.
-    * MASK - Set to 0 if this fiber and wavelength has any valid EXPOSURE,
-        1 otherwise
-    * WAVE - the standard set of wavelengths
-    * SLITMAP - a version of the slitmap file, that gives the RAs and Decs of
-        the fibers, and enough other information so that the DAP should run.
-        The SLITMAP also contains the X, Y positions of the fibers on
-        the WCS defined below.
-    * WCS_INFO - an extension that contains the WCS that was created to
-        redefine the fiber positions.  It is possible to use this to
-        create an "image" on the sky.
-    * EXPOSURE - the effective number of exposures that went into
-        each fiber.
+A single FITS file is produced with the following extensions: PRIMARY (the
+primary header from one of the input images), FLUX (the flux array, with
+rows depending on how many artificial fibers were created), IVAR (the final
+inverse variance), MASK (set to 0 if this fiber and wavelength has any valid
+exposure, 1 otherwise), WAVE (the standard set of wavelengths), SLITMAP (a
+version of the slitmap file with RAs, Decs, and X/Y positions of fibers),
+WCS_INFO (the WCS created to define fiber positions), and EXPOSURE (the
+effective number of exposures per fiber).
 
 Primary routines:
 
-    do_combine
+The main routine is do_combine.
 
 Notes:
 
-    The final image is not weighted by the errors.  All of the input
-    images are treated identically.
+The final image is not weighted by the errors. All of the input images are
+treated identically.
 
-    There is no attempt to scale the images to one another globally,
-    though one might argue that would be a good idea.
+There is no attempt to scale the images to one another globally, though one
+might argue that would be a good idea.
 
-    It is apparent that when one uses the mean, and one exposure is
-    somehow different, the effects of bad pixels are more apparent
-    than when one uses the median.
+It is apparent that when one uses the mean, and one exposure is somehow
+different, the effects of bad pixels are more apparent than when one uses
+the median.
 
 
 
@@ -146,8 +121,7 @@ def xcheck(xfiles):
         xfiles (list): List of FITS filenames to check.
 
     Returns:
-        astropy.table.Table: Table with metadata for each file and a 'Good'
-            column indicating whether the file passed quality checks.
+        astropy.table.Table: Table with metadata for each file including a Good column indicating whether the file passed quality checks.
     '''
     drp=[]
     commit=[]
@@ -280,8 +254,7 @@ def check_memory(percentage=80.):
     if it is greater than a given percentage.
 
     Parameters:
-        percentage (float): Threshold percentage above which to print warnings.
-            Default is 80%.
+        percentage (float): Threshold percentage above which to print warnings. Default is 80%.
 
     Returns:
         float: The current memory usage as a percentage.
@@ -305,13 +278,10 @@ def get_size(xfiles,rad=0.25):
 
     Parameters:
         xfiles (list): List of SFrame FITS filenames.
-        rad (float): Additional radius in degrees to add as padding
-            around the computed extent. Default is 0.25 degrees.
+        rad (float): Additional radius in degrees to add as padding around the computed extent. Default is 0.25 degrees.
 
     Returns:
-        tuple: (ra_center, dec_center, size) where ra_center and dec_center
-            are the center coordinates in degrees, and size is the diameter
-            of the bounding region in degrees.
+        tuple: (ra_center, dec_center, size) where ra_center and dec_center are the center coordinates in degrees, and size is the diameter of the bounding region in degrees.
     '''
     ra=[]
     dec=[]
@@ -355,8 +325,7 @@ def create_wcs(ra_deg, dec_deg, pos_ang, size_deg):
         ra_deg (float): Right Ascension in degrees (center of the image).
         dec_deg (float): Declination in degrees (center of the image).
         pos_ang (float): Position angle in degrees for rotation of the WCS.
-        size_deg (float): Size of the image in degrees. The image will have
-            3600 * size_deg pixels on each side.
+        size_deg (float): Size of the image in degrees. The image will have 3600 times size_deg pixels on each side.
 
     Returns:
         astropy.wcs.WCS: Configured WCS object with TAN projection.
@@ -440,8 +409,7 @@ def generate_grid(wcs, spacing_arcsec):
         spacing_arcsec (float): Spacing between grid points in arcseconds.
 
     Returns:
-        astropy.table.Table: Table with columns 'fiberid', 'X', 'Y', 'ra', 'dec'
-            containing the grid positions in both pixel and sky coordinates.
+        astropy.table.Table: Table with columns fiberid, X, Y, ra, dec containing the grid positions in both pixel and sky coordinates.
     """
     # Get the WCS reference pixel and pixel scale
     crpix = wcs.wcs.crpix  # Reference pixel coordinates (1-based)
@@ -700,17 +668,12 @@ def get_nearest(main_table, xtab, dd=35):
     This is written to be analogous to frac_calc2.
 
     Parameters:
-        main_table (astropy.table.Table): Table of output fiber positions
-            with 'fiberid', 'X', 'Y' columns.
-        xtab (astropy.table.Table): Table of input fiber positions
-            with 'X', 'Y' columns.
-        dd (float): Maximum distance in pixels for a fiber to be considered
-            overlapping. Default is 35 (matching fiber diameter).
+        main_table (astropy.table.Table): Table of output fiber positions with fiberid, X, Y columns.
+        xtab (astropy.table.Table): Table of input fiber positions with X, Y columns.
+        dd (float): Maximum distance in pixels for a fiber to be considered overlapping. Default is 35 (matching fiber diameter).
 
     Returns:
-        astropy.table.Table or list: Table with input fibers assigned to
-            output fibers with 'fib_master' and 'frac' columns added,
-            or empty list if no matches found.
+        astropy.table.Table or list: Table with input fibers assigned to output fibers with fib_master and frac columns added, or empty list if no matches found.
     '''
 
     if len(main_table)==0:
@@ -757,17 +720,12 @@ def frac_calc2(main_table, xtab, dd=35.):
     are in the right format; otherwise one will run into the issue of format conversions.
 
     Parameters:
-        main_table (astropy.table.Table): Table of output fiber positions
-            with 'fiberid', 'X', 'Y' columns.
-        xtab (astropy.table.Table): Table of input fiber positions
-            with 'X', 'Y' columns.
-        dd (float): Fiber diameter in pixels used to calculate overlap area.
-            Default is 35.
+        main_table (astropy.table.Table): Table of output fiber positions with fiberid, X, Y columns.
+        xtab (astropy.table.Table): Table of input fiber positions with X, Y columns.
+        dd (float): Fiber diameter in pixels used to calculate overlap area. Default is 35.
 
     Returns:
-        astropy.table.Table or list: Table with input fibers and their fractional
-            contributions to output fibers ('fib_master' and 'frac' columns added),
-            or empty list if no matches found.
+        astropy.table.Table or list: Table with input fibers and their fractional contributions to output fibers (fib_master and frac columns added), or empty list if no matches found.
     '''
     dd2=dd*dd
     xtables=[]
@@ -811,8 +769,7 @@ def gen_average_slit_tab(wcs, filenames):
         filenames (list): List of SFrame FITS filenames to process.
 
     Returns:
-        astropy.table.Table: Table with columns 'fiberid', 'orig_fiberid',
-            'X', 'Y', 'ra', 'dec' for the averaged fiber positions.
+        astropy.table.Table: Table with columns fiberid, orig_fiberid, X, Y, ra, dec for the averaged fiber positions.
     '''
 
     ra=[]
@@ -885,8 +842,7 @@ def check_for_nan(flux, max_frac=0.5):
 
     Parameters:
         flux (np.ndarray): The array to check.
-        max_frac (float): Maximum allowed fraction of NaN values.
-            Default is 0.5 (50%).
+        max_frac (float): Maximum allowed fraction of NaN values. Default is 0.5 (50%).
 
     Returns:
         bool: True if NaN fraction exceeds max_frac, False otherwise.
@@ -912,13 +868,12 @@ def remap_one(filename, q, final_slitmap, shape):
 
     Parameters:
         filename (str): Path to the input SFrame FITS file.
-        q (astropy.table.Table): Table containing the fractional mapping
-            with 'fiberid', 'fib_master', and 'frac' columns.
+        q (astropy.table.Table): Table containing the fractional mapping with fiberid, fib_master, and frac columns.
         final_slitmap (astropy.table.Table): The output fiber position table.
         shape (tuple): Shape of the output arrays (n_fibers, n_wavelengths).
 
     Returns:
-        None: Writes remapped data to 'xtmp/<filename>'.
+        None: Writes remapped data to xtmp directory.
     '''
 
     # q.info()
@@ -1001,18 +956,23 @@ def process_remapped_images(file_list, extension='FLUX', xproc='med', memory_lim
     Processes the images in batches to limit memory usage, ignoring NaN and Inf
     values in the computation.
 
-    Parameters:
-        file_list (list of str): List of FITS filenames to process.
-        extension (str): Name of the FITS extension to process. Default is 'FLUX'.
-        xproc (str): Type of processing to perform:
-            - 'med': compute median (default)
-            - 'sum': compute sum
-            - 'ave' or anything else: compute mean
-        memory_limit (int): Maximum memory usage in bytes. Default is 1GB.
+    Parameters
+    ----------
+    file_list : list of str
+        List of FITS filenames to process.
+    extension : str
+        Name of the FITS extension to process. Default is 'FLUX'.
+    xproc : str
+        Type of processing to perform. Options are 'med' for median,
+        'sum' for sum, or 'ave' (or anything else) for mean.
+    memory_limit : int
+        Maximum memory usage in bytes. Default is 1GB.
 
-    Returns:
-        np.ndarray: The combined image array with the specified statistic computed
-            along the file axis.
+    Returns
+    -------
+    np.ndarray
+        The combined image array with the specified statistic computed
+        along the file axis.
     """
 
     if not file_list:
@@ -1077,40 +1037,37 @@ def do_combine(filenames, outroot='', fib_type='xy', c_type='ave', keep_tmp=Fals
     '''
     Main routine that carries out the entire RSS combining process.
 
-    The basic steps are:
-    * Create a WCS for the output fibers
-    * Calculate the positions of the output fibers on this WCS
-    * Calculate the positions of all input fibers on this WCS
-    * Calculate how much of each input fiber should be apportioned to
-      the output fibers, by one of several methods
-    * Create intermediate images that contain the apportioned fluxes
-      from the input RSS file to the output file
-    * Average or median filter the flux results
-    * Calculate new IVAR and MASK extensions
-    * Write everything to an output FITS file
+    The basic steps are: (1) create a WCS for the output fibers,
+    (2) calculate the positions of output and input fibers on this WCS,
+    (3) calculate how much of each input fiber should be apportioned to
+    the output fibers, (4) create intermediate images with apportioned fluxes,
+    (5) average or median filter the flux results, (6) calculate new IVAR
+    and MASK extensions, and (7) write everything to an output FITS file.
 
-    Parameters:
-        filenames (list): List of input SFrame FITS filenames to combine.
-        outroot (str): Root name for the output file. Default creates 'test_square.fits'.
-        fib_type (str): Method for creating output fiber positions and
-            apportioning flux. This controls whether frac_calc2 or get_nearest
-            is used:
-            - 'xy': output fibers on a regular grid; flux is split between
-              output fibers based on overlap area (uses frac_calc2)
-            - 'orig': output fibers at average input positions; flux is still
-              split based on overlap area (uses frac_calc2)
-            - 'sum': output fibers at average input positions; each input
-              fiber's full flux goes to the single nearest output fiber
-              with no fractional splitting (uses get_nearest)
-        c_type (str): Method for combining the remapped images from multiple
-            input files. This is applied after the flux apportionment step:
-            - 'ave': combine using mean (default)
-            - 'med': combine using median (more robust to outliers/bad pixels)
-        keep_tmp (bool): If True, keep the temporary xtmp/ directory containing
-            intermediate remapped files. Default is False (deletes temp files).
+    Parameters
+    ----------
+    filenames : list
+        List of input SFrame FITS filenames to combine.
+    outroot : str
+        Root name for the output file. Default creates 'test_square.fits'.
+    fib_type : str
+        Method for creating output fiber positions and apportioning flux.
+        This controls whether frac_calc2 or get_nearest is used.
+        Options are 'xy' (regular grid, uses frac_calc2), 'orig' (average
+        input positions, uses frac_calc2), or 'sum' (average input positions,
+        uses get_nearest with no fractional splitting).
+    c_type : str
+        Method for combining the remapped images from multiple input files.
+        This is applied after the flux apportionment step. Options are
+        'ave' for mean (default) or 'med' for median.
+    keep_tmp : bool
+        If True, keep the temporary xtmp/ directory containing intermediate
+        remapped files. Default is False (deletes temp files).
 
-    Returns:
-        None: Writes output to '<outroot>.fits' and '<outroot>.tab'.
+    Returns
+    -------
+    None
+        Writes output to '<outroot>.fits' and '<outroot>.tab'.
     '''
     # Do Quality checks on the files
     xtab=xcheck(filenames)

@@ -2,39 +2,32 @@
 # coding: utf-8
 '''
 Create one or more images and fits files of
-snapshots of one or more sets of sources in 
+snapshots of one or more sets of sources in
 a masterfile
 
-Usaage:
+Usage:
+
     LSnap.py [-size 10] [-type ha] [-min -1] [-max 20] [-out outroot] image.fits  mastertable
 
-    image.fits   a fitsfile, with the data in the PRIMARY header
-    mastertable  a masterfile with postiions and sizes of objects in 
-        a standard format
+    where image.fits is a fitsfile with the data in the PRIMARY header, and mastertable
+    is a masterfile with positions and sizes of objects in a standard format.
 
-    The routine has two basic modes, if -size is not provided, a plot of
-    the first file will be made, and the regions will be ovelaid on the plot
-    (For LVM, this is useful for plotting fibers that are used for spectral
-    extraction.
+    The routine has two basic modes. If -size is not provided, a plot of
+    the first file will be made, and the regions will be overlaid on the plot
+    (for LVM, this is useful for plotting fibers that are used for spectral
+    extraction). If -size is provided, cutouts of the image will be made, with a size
+    in arcmin given by the number that follows the size command. This is intended for
+    making snapshot files and images of a larger image.
 
-    If -size is provided, cutouts of the image will be made, with a size 
-    in arcmin given by the number that follows the size command. This is intended fo
-    makeing snapshot files and images of a larger image.  T
+    -out is only relevant when a single image file is provided. If provided, it determines
+    the name of the output plot file. The fits images associated with each cutout will be
+    placed in the ximage directory, and the plots will be in the ximage directory.
 
-    -out is only relevant when a single image file is provided.  If provided the name it determines
-    the name of the output plot file
+    -type ha is just used to help name the plots.
 
-    The fits images associated with each cutout will be placed in the ximage 
-    directory, and the plots will be in the ximage directory
-
-
-
-    -type ha  is just used to help name the plots
-
-    In the absence of -min or -max, the images are autoscaled, if -xmin or -xmax
+    In the absence of -min or -max, the images are autoscaled. If -xmin or -xmax
     are provided then one or the other of these values will replace
-    what the autosaled values would have been 
-
+    what the autoscaled values would have been.
 
 Notes:
 

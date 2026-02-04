@@ -10,35 +10,30 @@ Combine multiple CFrame exposures into a single deep spectrum by averaging
 or taking the median across all exposures, producing one combined spectrum
 per fiber.
 
-Command line usage (if any):
+Command line usage::
 
-    usage: SumCFrame [-h] [-emin 900] [-out whatever] [-ver 1.1.3] [-drp_all drp_file] [-med] [-ave] exp_start exp_stop [delta]
+    SumCFrame [-h] [-emin 900] [-out whatever] [-ver 1.1.3] [-drp_all drp_file] [-med] [-ave] exp_start exp_stop [delta]
 
 Description:
 
-    This script stacks multiple CFrame files and combines them pixel-by-pixel
-    across exposures to create a deep combined observation. The output contains
-    one spectrum per fiber, representing the average or median of that fiber
-    across all input exposures.
+This script stacks multiple CFrame files and combines them pixel-by-pixel
+across exposures to create a deep combined observation. The output contains
+one spectrum per fiber, representing the average or median of that fiber
+across all input exposures.
 
-    Compare with SummarizeCframe.py, which instead produces one row per exposure
-    (the median across fibers within each exposure) for monitoring spectral
-    variations over time.
+Compare with SummarizeCframe.py, which instead produces one row per exposure
+(the median across fibers within each exposure) for monitoring spectral
+variations over time.
 
-    Options:
-        -h                  prints out this help and quits
-        -emin 900           sets the minimum exposure time to include (default 900)
-        -out whatever       sets the root for the output fits file
-        -ver 1.1.3          sets the DRP version for locating the drp_all file
-        -drp_all drp_file   reads a specific drp_all file or table instead of
-                            the one associated with the DRP version
-        -med                use median when combining frames
-        -ave                use average when combining frames (default)
+Options: -h prints this help and quits; -emin 900 sets the minimum exposure
+time to include (default 900); -out whatever sets the root for the output
+fits file; -ver 1.1.3 sets the DRP version for locating the drp_all file;
+-drp_all drp_file reads a specific drp_all file or table instead of the one
+associated with the DRP version; -med uses median when combining frames;
+-ave uses average when combining frames (default).
 
-    Positional arguments:
-        exp_start           the starting exposure number to consider
-        exp_stop            the exposure number to stop on
-        [delta]             skip every Nth exposure (default 1, i.e., use all)
+Arguments: exp_start is the starting exposure number; exp_stop is the exposure
+number to stop on; delta (optional) skips every Nth exposure (default 1).
 
 
 Primary routines:

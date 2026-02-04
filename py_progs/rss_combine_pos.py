@@ -11,52 +11,60 @@ user-specified position with a user-specified size. This routine is
 designed for making small "snapshot" RSS files for examining specific
 sources such as supernova remnants.
 
-Command line usage:
+Command line usage::
 
-    usage: rss_combine_pos.py [-sum] [-med] [-size arcmin] [-out name]
-                              [-keep] ra dec filenames
+    rss_combine_pos.py [-sum] [-med] [-size arcmin] [-out name] [-keep] ra dec filenames
 
-    where:
-        ra dec          Center position in degrees (required)
-        filenames       Input SFrame FITS files to combine
-        -size arcmin    Size of output region in arcminutes (default: 20)
-        -out name       Output filename root (default: 'test')
-        -sum            Use get_nearest for apportionment (no fractional
-                        splitting; each input fiber's full flux goes to
-                        the single nearest output fiber). By default,
-                        frac_calc2 is used (flux split based on overlap).
-        -med            Use median for combining remapped images. By default,
-                        mean is used. Note: -med and -sum are independent;
-                        -med controls combination, -sum controls apportionment.
-        -keep           Keep temporary files in xtmp/ directory
+Arguments: ra and dec are the center position in degrees (required).
+filenames are the input SFrame FITS files to combine.
+
+Options:
+
+-size arcmin
+    Size of output region in arcminutes (default: 20).
+
+-out name
+    Output filename root (default: 'test').
+
+-sum
+    Use get_nearest for apportionment (no fractional splitting; each input
+    fiber's full flux goes to the single nearest output fiber). By default,
+    frac_calc2 is used (flux split based on overlap).
+
+-med
+    Use median for combining remapped images. By default, mean is used.
+    Note that -med and -sum are independent; -med controls combination,
+    -sum controls apportionment.
+
+-keep
+    Keep temporary files in xtmp/ directory.
 
 Description:
 
-    This routine differs from rss_combine.py in that it allows the user
-    to specify the exact center position and size of the output region,
-    rather than automatically calculating these from the input files.
-    This is useful for extracting small regions around specific targets
-    from a larger set of observations.
+This routine differs from rss_combine.py in that it allows the user
+to specify the exact center position and size of the output region,
+rather than automatically calculating these from the input files.
+This is useful for extracting small regions around specific targets
+from a larger set of observations.
 
-    The routine:
-    * Creates a WCS centered on the specified RA/Dec with the given size
-    * Generates output fiber positions on a regular grid (35 arcsec spacing)
-    * Filters input fibers to only those within the specified region
-    * Apportions flux from input fibers to output fibers using frac_calc2
-      (based on circular overlap area) or get_nearest (with -sum flag)
-    * Combines the remapped images using mean (default) or median (-med)
-    * Writes the output to <outroot>.fits and <outroot>.tab
+The routine creates a WCS centered on the specified RA/Dec with the
+given size, generates output fiber positions on a regular grid (35
+arcsec spacing), filters input fibers to only those within the
+specified region, apportions flux from input fibers to output fibers
+using frac_calc2 (based on circular overlap area) or get_nearest
+(with -sum flag), combines the remapped images using mean (default)
+or median (-med), and writes the output to outroot.fits and outroot.tab.
 
-    The -sum and -med options work the same as in rss_combine.py:
-    * -sum controls apportionment method (frac_calc2 vs get_nearest)
-    * -med controls combination method (mean vs median)
+The -sum and -med options work the same as in rss_combine.py, where
+-sum controls apportionment method (frac_calc2 vs get_nearest) and
+-med controls combination method (mean vs median).
 
-    Unlike rss_combine.py, this routine always uses a regular grid for
-    output fiber positions (equivalent to fib_type='xy'), so the -orig
-    option is not available.
+Unlike rss_combine.py, this routine always uses a regular grid for
+output fiber positions (equivalent to fib_type='xy'), so the -orig
+option is not available.
 
-    Output FITS extensions are the same as rss_combine.py:
-    * PRIMARY, FLUX, IVAR, MASK, WAVE, SLITMAP, WCS_INFO, EXPOSURE
+Output FITS extensions are the same as rss_combine.py:
+PRIMARY, FLUX, IVAR, MASK, WAVE, SLITMAP, WCS_INFO, EXPOSURE.
 
 Primary routines:
 
@@ -129,30 +137,38 @@ def do_fixed(filenames, ra, dec, pa, size, fib_type='xy', c_type='ave', outroot=
     * Filters input fibers to only those within the specified region
     * Always uses a regular grid (no 'orig' option)
 
-    The fib_type and c_type parameters work the same as in rss_combine.py:
-    * fib_type controls apportionment method
-    * c_type controls combination method
+    The fib_type and c_type parameters work the same as in rss_combine.py,
+    where fib_type controls apportionment method and c_type controls
+    combination method.
 
-    Parameters:
-        filenames (list): List of input SFrame FITS filenames to combine.
-        ra (float): Right Ascension of the center in degrees.
-        dec (float): Declination of the center in degrees.
-        pa (float): Position angle in degrees (rotation of the WCS).
-        size (float): Size of the output region in degrees.
-        fib_type (str): Method for apportioning flux from input to output fibers:
-            - 'xy': use frac_calc2 (flux split based on circular overlap area)
-            - 'sum': use get_nearest (no fractional splitting; full flux to
-              nearest output fiber)
-        c_type (str): Method for combining the remapped images from multiple
-            input files:
-            - 'ave': combine using mean (default)
-            - 'med': combine using median (more robust to outliers/bad pixels)
-        outroot (str): Root name for output files. Default creates 'test_square'.
-        keep_tmp (bool): If True, keep the temporary xtmp/ directory.
-            Default is False (deletes temp files).
+    Parameters
+    ----------
+    filenames : list
+        List of input SFrame FITS filenames to combine.
+    ra : float
+        Right Ascension of the center in degrees.
+    dec : float
+        Declination of the center in degrees.
+    pa : float
+        Position angle in degrees (rotation of the WCS).
+    size : float
+        Size of the output region in degrees.
+    fib_type : str
+        Method for apportioning flux from input to output fibers.
+        Options are 'xy' (use frac_calc2, flux split based on overlap)
+        or 'sum' (use get_nearest, no fractional splitting).
+    c_type : str
+        Method for combining the remapped images from multiple input files.
+        Options are 'ave' for mean (default) or 'med' for median.
+    outroot : str
+        Root name for output files. Default creates 'test_square'.
+    keep_tmp : bool
+        If True, keep the temporary xtmp/ directory. Default is False.
 
-    Returns:
-        str: The output root name used for the files.
+    Returns
+    -------
+    str
+        The output root name used for the files.
     '''
     wcs=rss_combine.create_wcs(ra_deg=ra, dec_deg=dec,pos_ang=pa, size_deg=size)
     new_slitmap_table=rss_combine.generate_grid(wcs,35.)

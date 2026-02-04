@@ -14,20 +14,12 @@ Command line usage (if any):
 
     usage: Getspec.py  [-h] [-root whatever] -median -sum filename ra dec [rmin] [rmax] [-back a1 a2]
 
-
-
-    where 
-    -h prints out this help
-    -median constructs the median instead of the average spectrum
-    -sum constructs the sum instead of the median or average
-    -root whatever prepends a root to the standard file name
-    exp_no is the exposure
-    ra and dec are the desired right ascension, written
-        either in degrees or in h:m:s d:m:s
-    [rmin] is an optional inner radius (in arcsec), and 
-    [rmax] is an optinal outer radius (in arsec)
-    -back a1 a2 subtract a background (where a1 and a2 
-    give the inner and outer radius (in arcsec)
+    where -h prints out this help, -median constructs the median instead of the average spectrum,
+    -sum constructs the sum instead of the median or average, and -root whatever prepends a root
+    to the standard file name. exp_no is the exposure. ra and dec are the desired right ascension,
+    written either in degrees or in h:m:s d:m:s. [rmin] is an optional inner radius (in arcsec),
+    and [rmax] is an optional outer radius (in arcsec). -back a1 a2 subtracts a background where
+    a1 and a2 give the inner and outer radius (in arcsec).
 
 Description:  
 

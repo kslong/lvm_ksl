@@ -12,23 +12,12 @@ Command line usage (if any):
 
     usage: kslmap.py [-no_back]  [-band filter] filename
 
-    where image_type indicates a predefined filter to plot.  The
-    currenly allowed bands are 
-
-    * ha
-    * sii
-    * x
-
-    -no_back means not to subtract background from the image
-
-    for band x, there are aditional parameters to be entered, e.g.
-
-    -band x 6700 6800  will produce an image of the average flux 
-        between 6700 and 6800 A. For this no backgournd is
-        obtained
-
-    The routine produces and output fits file, which starts with x
-    normally, but starts with z if a CFrame file is provided.
+Options: -band filter specifies a predefined filter to plot (allowed bands
+are ha, sii, x); -no_back means not to subtract background from the image.
+For band x, additional parameters are needed, e.g. -band x 6700 6800 produces
+an image of the average flux between 6700 and 6800 A (no background is
+subtracted for this). The routine produces an output fits file starting with
+x normally, or z if a CFrame file is provided.
 
 Description:  
 
@@ -43,8 +32,7 @@ Notes:
 History:
 
 231216 ksl Coding begun
-240303 ksl Added redshift corrections if RA and DEC are near the LMC or
-    SMC
+240303 ksl Added redshift corrections if RA and DEC are near the LMC or SMC
 240630 ksl Modified to use ra and dec's recorded in the SLITMAP extension
 
 '''

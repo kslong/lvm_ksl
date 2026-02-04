@@ -13,14 +13,12 @@ using the drpall .fits file
 
 Command line usage (if any):
 
-    usage: LocatReduced.py [-h][-cp] [-dir whatever] [-file_type CFrame]exp_min exp_max
+    usage: LocateReduced.py [-h] [-cp] [-dir whatever] [-file_type CFrame] exp_min exp_max
 
-    where exp_min and exp_max are LVM exposure numbers that one wishes to locate  and
-
-    -h prints out this help file
-    -cp means not only to locate the files but to copy them to local data directory
-    -dir whatever gives an alternative place to copy the data.  Not that -dir implies -cp
-         even if it is not given
+    where exp_min and exp_max are LVM exposure numbers that one wishes to locate. -h prints
+    out this help file. -cp means not only to locate the files but to copy them to local
+    data directory. -dir whatever gives an alternative place to copy the data. Note that
+    -dir implies -cp even if it is not given.
 
 Description:
 

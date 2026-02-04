@@ -24,16 +24,12 @@ Description:
     Compare with SumCframe.py, which combines multiple exposures into a single
     deep spectrum per fiber (averaging across time rather than across fibers).
 
-    Options:
-        -h                  prints out this help and quits
-        -out file_out       changes the output filename from the default
-        -ver drp_ver        selects a specific DRP version (default 1.1.1)
-        -emin               sets minimum exposure time to include (default 900)
+    Options: -h prints out this help and quits; -out file_out changes the output
+    filename from the default; -ver drp_ver selects a specific DRP version
+    (default 1.1.1); -emin sets minimum exposure time to include (default 900).
 
-    Positional arguments:
-        exp_start           the starting exposure number to consider
-        exp_stop            the exposure number to stop on
-        delta               skip every Nth exposure 
+    Positional arguments: exp_start is the starting exposure number to consider;
+    exp_stop is the exposure number to stop on; delta skips every Nth exposure. 
 
 Primary routines:
 

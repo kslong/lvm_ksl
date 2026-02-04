@@ -2,8 +2,9 @@
 """
 Script to replace Unicode characters in text files with their ASCII equivalents.
 
-There are various options, but *.txt will fix all of the txt files in a directory
-This routine is not recursive in terms of directory structure
+There are various options. For example, specifying a wildcard pattern like
+``*.txt`` will fix all of the txt files in a directory. This routine is
+not recursive in terms of directory structure.
 """
 
 import os
@@ -266,8 +267,8 @@ def convert_file(input_path, output_path=None, encoding='utf-8', create_backup_f
         encoding (str): File encoding
         create_backup_flag (bool): Whether to create backup copies
         backup_dir (str): Directory for backup files
-        **conversion_options: Options for Unicode conversion
-    
+        conversion_options: Additional keyword arguments for Unicode conversion
+
     Returns:
         dict: Conversion results
     """

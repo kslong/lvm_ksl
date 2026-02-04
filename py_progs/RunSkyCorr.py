@@ -32,23 +32,20 @@ Primary routines:
 Notes:
 
 SkyCoor uses absolute paths in the 
-**These are the lines in lvm_base_par that (may) need to be edited**
- 
- ````
- INST_DIR=/Users/long/Projects/sdss/skycorr/
- INPUT_OBJECT_SPECTRUM=/Users/long/Projects/sdss/skycorr_test/data/XXOBJECT.fits
- INPUT_SKY_SPECTRUM=/Users/long/Projects/sdss/skycorr_test/data/XXSKY.fits
- OUTPUT_DIR=/Users/long/Projects/sdss/skycorr_demo/output
- ````
-# 
-All of the PATHS need to be full paths.  (SkyCorr can use relative paths, but they are relative to where SkyCorr is installed, not the directory in which SkyCorr is being run).  (Note The words XXOBJECT and XXSKY 
-should not be changed as they are used in the function update par below.)  
- 
-In this case, skycorr is beeing run from the directory skycorr_demo, the data are located in skycorr_test/data/
- 
+These are the lines in lvm_base_par that (may) need to be edited::
 
-For the routine to work, the skycorr (the executable) must be in one's path, or alternatively (but not recommened), one 
-one must alter one line in run_sky below to point at the executable for sky_corr**
+    INST_DIR=/Users/long/Projects/sdss/skycorr/
+    INPUT_OBJECT_SPECTRUM=/Users/long/Projects/sdss/skycorr_test/data/XXOBJECT.fits
+    INPUT_SKY_SPECTRUM=/Users/long/Projects/sdss/skycorr_test/data/XXSKY.fits
+    OUTPUT_DIR=/Users/long/Projects/sdss/skycorr_demo/output
+
+All of the PATHS need to be full paths.  (SkyCorr can use relative paths, but they are relative to where SkyCorr is installed, not the directory in which SkyCorr is being run).  (Note The words XXOBJECT and XXSKY
+should not be changed as they are used in the function update par below.)
+
+In this case, skycorr is beeing run from the directory skycorr_demo, the data are located in skycorr_test/data/
+
+For the routine to work, the skycorr (the executable) must be in one's path, or alternatively (but not recommened), one
+one must alter one line in run_sky below to point at the executable for sky_corr.
 
                                        
 History:

@@ -15,15 +15,13 @@ Command line usage (if any):
 
     usage: SkyID.py [-h] [-sep 60] [-out whatever ] Observations.txt  skyfields.txt
 
-    where 
+    Observation.txt is a file produced by the routine SummarizeData. skyfields.txt
+    is a file containing the skyfield positions (or any file with the columns
+    Source_name, RA and Dec).
 
-        Observation.txt is a file produced by the routine SummarizeData
-        skyfields.txt is file containing the skyfield positions (or any file with the
-            columns Source_name, RA and Dec
-
-        -h prints this documentation an quits
-        -sep whatever sets the maximum separation for a match
-        -out whatever changes a portion of the names of the output file
+    Options: -h prints this documentation and quits; -sep whatever sets the maximum
+    separation for a match; -out whatever changes a portion of the names of the
+    output file.
 
 Description:  
 

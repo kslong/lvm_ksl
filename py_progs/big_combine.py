@@ -19,26 +19,13 @@ Command line usage (if any):
 
     usage: rss_combine.py [-orig] [-sum] [-med] [-outroot xxxx] filenames
 
-    where 
-        -outroot xxxx   sets the name for the output file
-        -orig           instead of creating set of output fibers on
-                        a regular grid, here
-                        the 'output' fiber positions are taken to
-                        be the average of the positions of the input
-                        fibers; the fractional contributions are still
-                        calculated.
-        -sum            instead of calculating fractional contributions
-                        to the various 'output' fibers and dividing 
-                        here the entire input fiber spectra  is added to one
-                        of the 'output' fibers (assuming there is a
-                        fiber which is near enough.  As in -orig, the
-                        output fiber locations are taken from the input
-                        fiber locations.  
-        -med            By default the routine takes all of the
-                        images, apportions the fluxes from each
-                        of the images onto a new grid, and ultimately
-                        averages the fluxes created.  With this
-                        switch, the median is created.
+    Options: -outroot xxxx sets the name for the output file; -orig uses the
+    average of the input fiber positions as output fiber positions instead of
+    creating output fibers on a regular grid, with fractional contributions still
+    calculated; -sum assigns the entire input fiber spectrum to one output fiber
+    instead of calculating fractional contributions, with output fiber locations
+    taken from the input fiber locations; -med creates the median instead of the
+    average (by default, fluxes are apportioned onto a new grid and averaged).
                    
 
 Description:  
@@ -63,29 +50,36 @@ Description:
     to one ouput fiber.  This may be the best approach if the input SFrame
     files were not dithered.
 
-    A single fits file is produced.  
+    A single fits file is produced with the following extensions:
 
-    * The primary header is simply taken from one of the imnput images
-    * FLUX  - the flux is stored here, note that the number of rows will
-        now depend on how many artificial fibers were created
-    * IVAR  - the final inverse variance as calculated by converting the 
-        inverse variance of the individual exposures to variance and
-        the combining the varianance depending on what fraction of
-        the flux from an input fiber was written into an output fiber.
-        We did not use inverse variance weighting in
-        creating the fluxes so we cannot simply sum the inverse variances.
-    * MASK - Set to 0 if this fiber and waveleenght has anny valid EXPOSURE, 
-        1 otherwise
-    * WAVE - the standard set of wavelengtths
-    * SLITMAP - a version of the slitmap file, that gives the ra's and dec's of
-        the fibers, and enough other information so that the DAP should run.
-        The SLITMAP also contains the X, Y positions of the fibers on
-        the WCS defined below.
-    * WCS_INFO - an extension that contains the WCS that contains the
-        WCS that was created to redifine the fiber positions.  It is possile
-        to use this to create an "image" on the sky, but one can equally ge
-    * EXPOSURE - the effective number of exposures that went into
-        each fiber. 
+    PRIMARY: the primary header is simply taken from one of the input images
+
+    FLUX: the flux is stored here, note that the number of rows will
+    now depend on how many artificial fibers were created
+
+    IVAR: the final inverse variance as calculated by converting the
+    inverse variance of the individual exposures to variance and
+    the combining the varianance depending on what fraction of
+    the flux from an input fiber was written into an output fiber.
+    We did not use inverse variance weighting in
+    creating the fluxes so we cannot simply sum the inverse variances.
+
+    MASK: Set to 0 if this fiber and wavelength has any valid EXPOSURE,
+    1 otherwise
+
+    WAVE: the standard set of wavelengths
+
+    SLITMAP: a version of the slitmap file, that gives the ra's and dec's of
+    the fibers, and enough other information so that the DAP should run.
+    The SLITMAP also contains the X, Y positions of the fibers on
+    the WCS defined below.
+
+    WCS_INFO: an extension that contains the WCS that was created to
+    redefine the fiber positions.  It is possible to use this to create
+    an "image" on the sky.
+
+    EXPOSURE: the effective number of exposures that went into
+    each fiber. 
 
 Primary routines:
 

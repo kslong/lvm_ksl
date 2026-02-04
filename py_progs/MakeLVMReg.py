@@ -4,58 +4,60 @@
 '''
                     Space Telescope Science Institute
 
-Synopsis:  
+Synopsis:
 
 Read an rss file and create a region file containing all the fibers, and
-read in a separate region file with one or more sources defined as 
-regions with different colors.  Write out a new region file thaqt
+read in a separate region file with one or more sources defined as
+regions with different colors. Write out a new region file that
 contains all of the fiber positions, and use the second region file
 to set the colors of the fibers.
 
 
 Command line usage (if any):
 
-    usage: MakeLVMReg.py [-h] *.fits masterfile  or whatever.reg.txt
+    usage: MakeLVMReg.py [-h] filename.fits masterfile
 
-Description:  
-    At a base level, this creates a region file for one or more rss 
-    files that contains a region for each good science fiber.
+    or
 
-    Additionally, from the command line, one must provide either
-    a master file which defines a source or a source and background
-    region for each file, or altenatively one must provide a ds9 region
-    file which contains information that can be converted into a 
-    masterfile.
+    usage: MakeLVMReg.py [-h] filename.fits whatever.reg.txt
 
-    Most of the time one will input a masterfile, but if one enters
-    a regionfile a mastefile will be created on the fly.
+Description:
 
-    The routine looks at the fiber positions and assigns colors
-    to the fiber positions based on the infomation in the masterfile
+At a base level, this creates a region file for one or more rss files that
+contains a region for each good science fiber.
 
-    The routine then writes out this to a new region file.
+Additionally, from the command line, one must provide either a master file
+which defines a source or a source and background region for each file, or
+alternatively one must provide a ds9 region file which contains information
+that can be converted into a masterfile.
 
-    
+Most of the time one will input a masterfile, but if one enters a regionfile
+a masterfile will be created on the fly.
+
+The routine looks at the fiber positions and assigns colors to the fiber
+positions based on the information in the masterfile.
+
+The routine then writes out this to a new region file.
 
 Primary routines:
 
-    do_complex
+The main routine is do_complex.
 
 Notes:
-    The routine creates one region file for each rss file and source
-    in the input master or region file.  So if you give it a masterfile
-    containing 20 lines, but 10 different sources it will create
-    20 region files for each rss file.
 
-    Currently the routine understands region types, box, circle, ellipse
-    and (circular) annulus.
+The routine creates one region file for each rss file and source in the input
+master or region file. So if you give it a masterfile containing 20 lines,
+but 10 different sources it will create 20 region files for each rss file.
 
-    The main reason for allowing multiple rss files from the command line
-    is to deal with tiling, where different fibers may be returned 
-    because of small offsets
+Currently the routine understands region types: box, circle, ellipse, and
+circular annulus.
 
-    This routine uses reg2master.py (which is not currently part of lvm_ksl)
-                                       
+The main reason for allowing multiple rss files from the command line is to
+deal with tiling, where different fibers may be returned because of small
+offsets.
+
+This routine uses reg2master.py (which is not currently part of lvm_ksl).
+
 History:
 
 241106 ksl Coding begun
@@ -77,25 +79,16 @@ def check_positions_in_rectangle(table, center_ra, center_dec, width, height, th
     """
     Check which positions in an astropy table fall within a rotated rectangle on the sky.
     
-    Parameters
-    ----------
-    table : astropy.table.Table
-        Table containing positions. Must have columns 'RA' and 'Dec' in degrees
-    center_ra : float
-        Right ascension of rectangle center in degrees
-    center_dec : float
-        Declination of rectangle center in degrees
-    width : float
-        Width of rectangle in arcseconds
-    height : float
-        Height of rectangle in arcseconds
-    theta : float
-        Position angle in degrees from North (positive toward East)
-        
-    Returns
-    -------
-    table : astropy.table.Table
-        Input table with new boolean column 'in_rectangle' added
+    Parameters:
+        table (astropy.table.Table): Table containing positions with RA and Dec columns in degrees.
+        center_ra (float): Right ascension of rectangle center in degrees.
+        center_dec (float): Declination of rectangle center in degrees.
+        width (float): Width of rectangle in arcseconds.
+        height (float): Height of rectangle in arcseconds.
+        theta (float): Position angle in degrees from North (positive toward East).
+
+    Returns:
+        astropy.table.Table: Input table with new boolean column in_rectangle added.
     """
     # Convert everything to radians for calculations
     try:
@@ -134,25 +127,16 @@ def check_positions_in_ellipse(table, center_ra, center_dec, semi_major, semi_mi
     """
     Check which positions fall within a rotated ellipse on the sky.
     
-    Parameters
-    ----------
-    table : astropy.table.Table
-        Table containing positions. Must have columns 'RA' and 'Dec' in degrees
-    center_ra : float
-        Right ascension of ellipse center in degrees
-    center_dec : float
-        Declination of ellipse center in degrees
-    semi_major : float
-        Semi-major axis in arcseconds
-    semi_minor : float
-        Semi-minor axis in arcseconds
-    theta : float
-        Position angle in degrees from North (positive toward East)
-        
-    Returns
-    -------
-    table : astropy.table.Table
-        Input table with new boolean column 'in_ellipse' added
+    Parameters:
+        table (astropy.table.Table): Table containing positions with RA and Dec columns in degrees.
+        center_ra (float): Right ascension of ellipse center in degrees.
+        center_dec (float): Declination of ellipse center in degrees.
+        semi_major (float): Semi-major axis in arcseconds.
+        semi_minor (float): Semi-minor axis in arcseconds.
+        theta (float): Position angle in degrees from North (positive toward East).
+
+    Returns:
+        astropy.table.Table: Input table with new boolean column in_ellipse added.
     """
     # Convert to radians
     # Convert everything to radians for calculations
@@ -215,8 +199,8 @@ def write_reg(filename,xtab,color='yellow',size=5):
 
 def get_closest(fiber_pos,xra,xdec):
     '''
-    Sort a slit table with RA's and DEC's in order
-    of the separation from a given RA and Dec
+    Sort a slit table with RA and Dec values in order
+    of the separation from a given RA and Dec.
     '''
 
     xdistance=[]
@@ -314,21 +298,20 @@ def get_fibers_in_region(fiber_tab,region_tab,size_min=17.5):
 
 def do_complex(filename,qtab,outroot='',size_min=17.5):
     '''
-    Process one rss file producing a region file for
-    each source in the masterfile.  There can be
-    mulitple lines in the masterfile that correspond
-    to a single source, which allows one to create
-    a complex set of fibers
+    Process one rss file producing a region file for each source in
+    the masterfile.  There can be multiple lines in the masterfile
+    that correspond to a single source, which allows one to create
+    a complex set of fibers. Returns the name of the region file
+    that was written.
 
-    do_complex returns the name of the region file 
-    that was written
-    
-    where 
-        filename is the name of an rss file
-        qtab is an already opened masterfile
-        size is a minium size for any region parameter, 
-            design so that one will find at least one fiber
-            for each region
+    Parameters:
+        filename (str): The name of an rss file.
+        qtab (astropy.table.Table): An already opened masterfile.
+        outroot (str): Optional root name for output files.
+        size_min (float): Minimum size for any region parameter, designed so that one will find at least one fiber for each region. Default is 17.5.
+
+    Returns:
+        str: The name of the region file that was written.
     '''
     # print('XXX = Starting ', filename)
 

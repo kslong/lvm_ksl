@@ -13,10 +13,7 @@ Command line usage (if any):
     usage: kslmap.py [-no_back]  [-image_type filter] filename
 
     where image_type indicates a predefined filter to plot.  The
-    currenly allowed bands are 
-
-    * ha
-    * sii
+    currenly allowed bands are: ha, sii
 
     -no_back means not to subtract background from the image
 
@@ -33,8 +30,7 @@ Notes:
 History:
 
 231216 ksl Coding begun
-w40303 ksl Added redshift corrections if RA and DEC are near the LMC or
-    SMC
+240303 ksl Added redshift corrections if RA and DEC are near the LMC or SMC
 
 '''
 

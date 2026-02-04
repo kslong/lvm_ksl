@@ -12,17 +12,14 @@ from series of LVM exposures
 
 Command line usage (if any):
 
-    usage: LocatDate.py [-h][-cp] -dir whatever exp_min exp_max
-    usage: LocateData.py [-h] [-cp] [-dir whatever] [-drp 1.2.0] '-CFrame] exp_start [exp_stop]
+    usage: LocateData.py [-h] [-cp] [-dir whatever] [-drp 1.2.0] [-CFrame] exp_start [exp_stop]
 
-    where exp_start and exp_stop are LVM exposure numbers that one wishes to locate. If 
-        exp_stop is not provided , a single exposure will be returned
-    -h prints out this help file
-    -cp means not only to locate the files but to copy them to local data directory
-    -dir whatever gives an alternative place to copy the data.  Note that -dir implies -cp
-         even if it is not given
-    -drp 1.2.0 select data from a specic drp run, e.g. 1.2.0
-    -CFrame located CFrame files instead of SFrame files, which is the default
+    where exp_start and exp_stop are LVM exposure numbers that one wishes to locate. If
+    exp_stop is not provided, a single exposure will be returned. -h prints out this help file.
+    -cp means not only to locate the files but to copy them to local data directory.
+    -dir whatever gives an alternative place to copy the data. Note that -dir implies -cp
+    even if it is not given. -drp 1.2.0 selects data from a specific drp run, e.g. 1.2.0.
+    -CFrame locates CFrame files instead of SFrame files, which is the default.
 
 Description:
 

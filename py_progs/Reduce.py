@@ -10,31 +10,20 @@ Reduce one or more  LVM datasets from one or more MJDs
 
 Command line usage (if any):
 
-    usage: Reduce.py [-h] [-keep] [-cp]  -np exposures to process 
+    usage: Reduce.py [-h] [-keep] [-cp] [-np N] exposures_to_process
 
-    where
+    where -h prints this help message, -keep retains the ancillary files which are otherwise
+    deleted (the default is to delete these files to save disk space), -cp causes the routine
+    to copy the reduced frames to a directory ./data relative to where the program is being run,
+    and -np N is the number of threads to use to process the data.
 
-    -h  prints this help message
-    -keep retains the ancillary fiels which are otherwise deleteed
-    -cp causes the routine to copy the reduced frames to a directory .data 
-        relative to where the program is being run
-    -keep causes the routine to keep the ancilary fits files that are made
-        The default is to delete these files to save disk space
-    -np is the number of threads to use to process the data
+    The exposures_to_process is a string of words interpreted as follows: a word greater than
+    50000 is treated as an MJD, a word less than 500 means process this exposure, 500-510 means
+    process exposures 500 to 510 inclusive, and 500,505,513 means process exposures 500, 505,
+    and 513.
 
-    and exposures s to process is a string of words that is interpreted as follows
-
-    word > 50000, this is a mjd
-    word < 500 process this exposure
-    500-510  process exposures 500 to 510 incluse
-    500,505,513  process exposures 500, 505 and 513
-
-    so and exaple set of words might be
-
-    60188 4155-4157  60189 4321  60190 5011,5012,5013
-
-    which would mean to process 4155-4157 from mjd 60188, 4321 from 60189, and 4011,5012,
-    and 5013 from 60190
+    An example set of words might be: 60188 4155-4157 60189 4321 60190 5011,5012,5013 which would
+    mean to process 4155-4157 from MJD 60188, 4321 from 60189, and 5011, 5012, and 5013 from 60190.
 
 
 

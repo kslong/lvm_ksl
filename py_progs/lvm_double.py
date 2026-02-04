@@ -84,20 +84,16 @@ def print_and_visualize_results(model_row, x_data, y_data, y_errors, single_resu
     Print detailed results and create visualization for model comparison.
 
     Parameters:
-    -----------
-    model_row : astropy.table.Row
-        Table row containing model comparison results
-    x_data : array-like
-        X-axis data (e.g., wavelength)
-    y_data : array-like
-        Observed y-axis data
-    y_errors : array-like or None
-        Errors in y_data
-    single_result : lmfit ModelResult
-        Result of single Gaussian model fit
-    double_result : lmfit ModelResult
-        Result of double Gaussian model fit
-    label: a plot label
+        model_row (astropy.table.Row): Table row containing model comparison results.
+        x_data (array-like): X-axis data (e.g., wavelength).
+        y_data (array-like): Observed y-axis data.
+        y_errors (array-like or None): Errors in y_data.
+        single_result (lmfit.ModelResult): Result of single Gaussian model fit.
+        double_result (lmfit.ModelResult): Result of double Gaussian model fit.
+        label (str): A plot label. Default is empty string.
+
+    Returns:
+        None: Creates a matplotlib figure showing the fit comparison.
     """
 
     model_row=sanitize_table(model_row)

@@ -26,17 +26,13 @@ Description:
     this script works on SFrame files (after sky subtraction) and includes the
     combined SKY and IVAR extensions.
 
-    Options:
-        -h                  prints this documentation
-        -ver drp_ver        DRP version to use (default 1.2.0)
-        -percent N          percentile to use instead of median (default 50)
-        -emin               minimum exposure time to include (default 900)
-        -out whatever       name or root name of output fits file
+    Options: -h prints this documentation; -ver drp_ver sets the DRP version to
+    use (default 1.2.0); -percent N sets the percentile to use instead of median
+    (default 50); -emin sets minimum exposure time to include (default 900); -out
+    whatever sets the name or root name of output fits file.
 
-    Positional arguments:
-        exp_start           the starting exposure number to consider
-        exp_stop            the exposure number to stop on
-        delta               skip every Nth exposure
+    Positional arguments: exp_start is the starting exposure number to consider;
+    exp_stop is the exposure number to stop on; delta skips every Nth exposure.
 
 Primary routines:
 

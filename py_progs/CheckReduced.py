@@ -21,20 +21,15 @@ Description:
     which normally copies reduced files to a subdirectory data,
     and a copy of the drp run log file to a subdirectory xlog.
 
-    With none of the optional switches the routine assumes prcessed
+    With none of the optional switches the routine assumes processed
     data files are in the data directory, and the log files are
-    in the xlog.  This can be changed with
-
-    -d whatever where whatever is where the SF to be looked at exist
-    -l whatever where whatever is an alternative directory for the log
-        files created with Reduce.py
-
-    -h as usual prints this documentation and quits.
+    in the xlog. Options: -d whatever specifies where the SFrame files
+    to be looked at exist; -l whatever specifies an alternative directory
+    for the log files created with Reduce.py; -h prints this documentation
+    and quits.
 
     The results are written to the screen but also stored for reference
-    in 
-    * commits.txt for the commit information
-    * problmes.txt for the errors.
+    in commits.txt for the commit information and problems.txt for the errors.
 
 Primary routines:
 

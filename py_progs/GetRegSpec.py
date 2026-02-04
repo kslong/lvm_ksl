@@ -10,56 +10,44 @@ RA and DEC based on a region file that conntains the one
 region per fiber.  
 
 
-Command line usage (if any):
+Command line usage::
 
-    usage: GetRegSpec.py  [-h] [-root whatever] [-median]-sum filename[s] source_reg  [color] [back_reg] [back_color}
+    GetRegSpec.py [-h] [-root whatever] [-median] [-sum] filename[s] source_reg [color] [back_reg] [back_color]
 
+Options: -h prints this help; -median constructs the median instead of the
+average spectrum; -sum constructs the sum instead of the median or average;
+-root whatever prepends a root to the standard file name.
 
-    where 
-    -h prints out this help
-    -median constructs the median instead of the average spectrum
-    -sum constructs the sum instead of the median or average
-    -root whatever prepends a root to the standard file name
-
-    filename[s] one or more rss spectra fiiles
-    source_reg is the name of a region file (that must have an extension .reg)
-    [color] is to define the color of fibers to be extracted
-    back_reg is an optional background region file
-    back_color is an optinal back_coler
-
-    The lines source_reg color back_reg and back_color need to be in order.
+Arguments: filename[s] is one or more RSS spectra files; source_reg is the
+name of a region file (must have extension .reg); color defines the color
+of fibers to be extracted; back_reg is an optional background region file;
+back_color is an optional background color. The arguments source_reg, color,
+back_reg, and back_color must appear in order.
     
 
-Description:  
+Description:
 
-    The routine looks for a file where the RA's and Dec's have
-    been assigned to fibers (by MakeLVMReg.py) and finds the
-    fiber or fibers that are closest to this position 
-    and extract the spectral information from for this.
+The routine looks for a file where the RA and Dec values have been assigned
+to fibers (by MakeLVMReg.py) and finds the fiber or fibers that are closest
+to this position and extracts the spectral information for this.
 
-    If multiple fibers are selected the resulting spectrum
-    the routine generally returns the average flux in
-    the fibers, rather than the sum.  The routine
-    also return an average or median of various other
-    quantities.
+If multiple fibers are selected the resulting spectrum the routine generally
+returns the average flux in the fibers, rather than the sum. The routine also
+returns an average or median of various other quantities.
 
-    The errors are the errors for one fiber, not something
-    that has been reduced by the number of fibers.
-
+The errors are the errors for one fiber, not something that has been reduced
+by the number of fibers.
 
 Primary routines:
 
-    steer - unlike most of ksl's routines, at present
-    the steering routine manages the entire process.
-
-    do_one - the routine that one would most likely call
-        from another script
+The steer function, unlike most of ksl routines, manages the entire process
+at present. The do_one function is the routine that one would most likely
+call from another script.
 
 Notes:
 
-    The routine also produces a region file that shows
-    what fibers were used.
-                                       
+The routine also produces a region file that shows what fibers were used.
+
 History:
 
 231212 ksl Coding begun
@@ -224,19 +212,19 @@ def get_spec(filename,xfib,xtype='ave'):
 
 def do_one(filename,source_reg,source_reg_color,back_reg=None, back_reg_color=None, xtype='ave',root='Spec'):
     '''
-    Extract one spectrum and write it to .txt file., 
+    Extract one spectrum and write it to a txt file.
 
-    where
-        filename is the rss spectra
-        source_reg, source_reg_color  define a region file with all of the fibers, and a color to define
-            what fibers to extract for the source
-        back_reg, back_reg_color define a region file (possibly the same as above), and a color to define
-            what fibers to extract for bg
-        xtype define what to return the 'ave','med','sum' spectra for the source.  At present the median
-            background spectrum is always extracted
-        root a rootname 
+    Parameters:
+        filename (str): The rss spectra file.
+        source_reg (str): Region file with all of the fibers.
+        source_reg_color (str): Color defining what fibers to extract for the source.
+        back_reg (str): Optional region file for background (possibly the same as source_reg).
+        back_reg_color (str): Optional color defining what fibers to extract for background.
+        xtype (str): Type of spectrum to return (ave, med, or sum). At present the median background spectrum is always extracted.
+        root (str): Root name for the output file.
 
-
+    Returns:
+        str: The name of the output file.
     '''
 
     try:

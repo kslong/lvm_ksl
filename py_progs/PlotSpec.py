@@ -14,14 +14,12 @@ have been sky subtracted.
 
 Command line usage (if any):
 
-    usage: PlotSpec.py [-h] [-frac 0.1] -min whatever - max whateverspectrum [backspec]
+    usage: PlotSpec.py [-h] [-frac 0.1] [-min whatever] [-max whatever] spectrum [backspec]
 
-    where frac controls the autoscaling for the 
-        maximum value in each panel and
-        backspec is an optional spectrum to 
-            be subtracted from the intial spectrum
-        -min fixes the lower limit in all panels
-        -max fixes the upper limit in all panels
+    where -frac controls the autoscaling for the maximum value in each panel,
+    backspec is an optional spectrum to be subtracted from the initial spectrum,
+    -min fixes the lower limit in all panels, and -max fixes the upper limit in all panels.
+
 Description:  
 
 Primary routines:

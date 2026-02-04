@@ -11,22 +11,31 @@ lvm using a file derived from DRP_All and a set of postions
 containing the exposures asscoated with each object.
 
 
-Command line usage (if any):
+Command line usage::
 
-    Usage: rss_snap.py [-h] [-keep] [-redo] [-all] xfile  source_name
+    rss_snap.py [-h] [-keep] [-redo] [-all] xfile source_name
 
-Description:  
+Arguments: xfile is a version of an expanded master file containing
+the source names and associated exposures (one row per exposure to be
+combined). source_name is one or more of the source_names in xfile.
 
-    where:
-        -h prints this documentation
-        -keep retains the temporary files from individual exposures in the 
-            directory xtmp. Without this switch the temporary files are deleted
-        -redo recreates the combined fits files, even if they exist in the Snap
-            directory
-        -all causes all of the sources in xfile to be done
-        xfile is a version of an expanded master file containing the sources names and associated exposures
-            This file has one row for exposure to be combined.  
-        source_name is one or more of the source_names in xfile
+Options:
+
+-h
+    Prints this documentation.
+
+-keep
+    Retains the temporary files from individual exposures in the
+    directory xtmp. Without this switch the temporary files are deleted.
+
+-redo
+    Recreates the combined fits files, even if they exist in the Snap
+    directory.
+
+-all
+    Causes all of the sources in xfile to be done.
+
+Description:
 
 Primary routines:
 

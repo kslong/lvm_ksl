@@ -11,17 +11,13 @@ to identify all data associated with a specific object or
 position on the sky
 
 
-Command line usage (if any):
+Command line usage::
 
-    usage: SummarizeData.py [-h] [-all] [-redo]  [mjd1 mjd2 ...]
+    SummarizeData.py [-h] [-all] [-redo] [mjd1 mjd2 ...]
 
-    where:
-
-        -h will pring this summary and exit
-        -all means to summarize all of the data in various subdirecories
-        -redo means to recreate the summary tables, if and only if -all has been
-            selected
-        [mjd1 mjd2]  run on for specific mjds
+Options: -h prints this summary and exits; -all summarizes all of the data
+in various subdirectories; -redo recreates the summary tables (only if -all
+has been selected). Arguments mjd1 and mjd2 specify which MJDs to process.
 
 
 Description:  

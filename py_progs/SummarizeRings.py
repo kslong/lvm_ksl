@@ -23,20 +23,16 @@ Description:
     in the slitmap. The output contains one row per exposure, with the
     sky-subtracted flux for each ring set and the median sky spectrum.
 
-    Options:
-        -h                  prints this documentation
-        -ver drp_ver        DRP version to use (default 1.2.0)
-        -percent N          percentile to use (default 50 = median)
-        -emin               minimum exposure time to include (default 900)
-        -out whatever       name or root name of output fits file
-        -inner min max      ring range for inner set (default 1 9)
-        -middle min max     ring range for middle set (default 10 19)
-        -outer min max      ring range for outer set (default 20 25)
+    Options: -h prints this documentation; -ver drp_ver sets the DRP version to
+    use (default 1.2.0); -percent N sets the percentile to use (default 50 =
+    median); -emin sets minimum exposure time to include (default 900); -out
+    whatever sets the name or root name of output fits file; -inner min max sets
+    ring range for inner set (default 1 9); -middle min max sets ring range for
+    middle set (default 10 19); -outer min max sets ring range for outer set
+    (default 20 25).
 
-    Positional arguments:
-        exp_start           the starting exposure number to consider
-        exp_stop            the exposure number to stop on
-        delta               skip every Nth exposure
+    Positional arguments: exp_start is the starting exposure number to consider;
+    exp_stop is the exposure number to stop on; delta skips every Nth exposure.
 
 Primary routines:
 

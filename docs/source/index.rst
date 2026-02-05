@@ -21,3 +21,6 @@ it as well.
    :maxdepth: 2
    :caption: Contents:
 
+   rss_combining
+   snapshots
+

@@ -6,9 +6,9 @@
 # -- Project information -----------------------------------------------------
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#project-information
 
-project = 'KRED'
-copyright = '2025, Knox Long & Sean Points'
-author = 'Knox Long & Sean Points'
+project = 'LVM_ksl'
+copyright = '2025, Knox Long'
+author = 'Knox Long'
 release = '1.0'
 
 # -- General configuration ---------------------------------------------------

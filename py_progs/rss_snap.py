@@ -13,7 +13,7 @@ containing the exposures asscoated with each object.
 
 Command line usage::
 
-    rss_snap.py [-h] [-keep] [-redo] [-all] xfile source_name
+    rss_snap.py [-h] [-keep] [-redo] [-all] [-med] xfile source_name
 
 Arguments: xfile is a version of an expanded master file containing
 the source names and associated exposures (one row per exposure to be
@@ -34,6 +34,9 @@ Options:
 
 -all
     Causes all of the sources in xfile to be done.
+
+-med
+    Use median for combining remapped images. By default, mean is used.
 
 Description:
 
@@ -346,10 +349,10 @@ smc=146
 galaxy=0
 
 
-def one_snapshot(xsum,source_name,size_arcmin=10.,keep_tmp=False,redo=True):
-    
+def one_snapshot(xsum,source_name,size_arcmin=10.,keep_tmp=False,redo=True,c_type='ave'):
+
     print('OK sports fans: ', redo)
-    root_fit='Snap/%s'  % source_name
+    root_fit='Snap/%s.%s'  % (source_name,c_type)
     print('OK',root_fit)
     # This has to be here to get the ra and dec
     ra,dec,filenames=get_files(xsum=xsum,source_name=source_name)
@@ -372,13 +375,13 @@ def one_snapshot(xsum,source_name,size_arcmin=10.,keep_tmp=False,redo=True):
             print('No files for one_snapshot to use for source %s at %.3f %.3f' % (source_name,ra,dec))
             return
 
-        rss_combine_pos.do_fixed(filenames,ra, dec, pa=0, size=size_arcmin/60.,c_type='ave',outroot=root_fit,keep_tmp=keep_tmp)
+        rss_combine_pos.do_fixed(filenames,ra, dec, pa=0, size=size_arcmin/60.,c_type=c_type,outroot='Snap/%s' % source_name,keep_tmp=keep_tmp)
 
     os.makedirs('./Snap_gauss',exist_ok=True)
     root_spec='./Snap_gauss/%s' % source_name
     vel=get_vel(ra,dec)
 
-    results=lvm_gaussfit.do_all('%s.fits' % root_fit, vel=vel,outname=root_spec,xplot=False) 
+    results=lvm_gaussfit.do_all('%s.fits' % root_fit, vel=vel,outname=root_spec,xplot=False)
 
     results['flux_sii']=results['flux_sii_a']+results['flux_sii_b']
     results['s2:ha']=results['flux_sii']/results['flux_ha']
@@ -392,7 +395,7 @@ def one_snapshot(xsum,source_name,size_arcmin=10.,keep_tmp=False,redo=True):
 
 def steer(argv):
     '''
-    Usage: rss_snap.py [-h] [-keep] [-redo] [-all] file  source_name
+    Usage: rss_snap.py [-h] [-keep] [-redo] [-all] [-med] file  source_name
     '''
 
     sources=[]
@@ -401,6 +404,7 @@ def steer(argv):
     size=10.
     xall=False
     redo=False
+    c_type='ave'
 
     i=1
     while i<len(argv):
@@ -413,6 +417,8 @@ def steer(argv):
             redo=True
         elif argv[i]=='-all':
             xall=True
+        elif argv[i][0:4]=='-med':
+            c_type='med'
         elif argv[i]=='-size':
             i+=1
             size=eval(argv[i])
@@ -437,7 +443,7 @@ def steer(argv):
         print('!! Beginning: %s: %d of %d sources to process' % (source_name,i+1,len(sources)))
         print('What ', redo)
 
-        one_snapshot(xfile,source_name,size_arcmin=size,keep_tmp=keep_tmp,redo=redo)
+        one_snapshot(xfile,source_name,size_arcmin=size,keep_tmp=keep_tmp,redo=redo,c_type=c_type)
 
         print('!! Finished : %s: %d of %d sources to process' % (source_name,i+1,len(sources)))
 

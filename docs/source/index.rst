@@ -12,8 +12,10 @@ routines are intended both for science analysis and for use in developing
 better softwared (associated largely with sky subtraction) for reducint
 the data.
 
-This documentation is primarly for his own use, but others are welcome to use
-it as well.
+This documentation is primarly for his own use, but others will hopefull find 
+the package and the documeantion useful as well.  Note that some of the routines
+are well developed in the sense that Knox has used them multiple times and some
+are experimwenatls.  Those that have detailed documantion are the most reliable.
 
 
 
@@ -21,6 +23,12 @@ it as well.
    :maxdepth: 2
    :caption: Contents:
 
+   installation
+   data_retrieval
+   summarize
+   sky_subtraction
+   spectral_fitting
+   visualization
    rss_combining
    snapshots
 

@@ -78,8 +78,17 @@ import requests
 import inspect
 
 import warnings
-from astropy.coordinates.baseframe import NonRotationTransformationWarning
+
+# NonRotationTranformattionWarning has been removed from astropy, but drp still uses it
+# Next few lines are for backword compatibility
+
+try:
+    from astropy.coordinates.baseframe import NonRotationTransformationWarning
+except ImportError:
+    from astropy.utils.exceptions import AstropyWarning as NonRotationTransformationWarning
+
 warnings.simplefilter('ignore', NonRotationTransformationWarning)
+
 
 # This section is a fairly flexiable way to convert times
 # The main routine is convert_time

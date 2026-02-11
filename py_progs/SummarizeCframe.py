@@ -6,27 +6,28 @@
 
 Synopsis:
 
-Create a summary of CFrame data where each row contains the median spectrum
-(across science fibers) from a single exposure. Useful for comparing how
-spectra and sky levels vary across many exposures over time.
+Create a summary of CFrame data where each row contains the median or
+percentile spectrum (across science fibers) from a single exposure. Useful
+for comparing how spectra and sky levels vary across many exposures over time.
 
 Command line usage (if any):
 
-    usage: SummarizeCFrame [-h] [-out file_out] [-emin 900] [-ver drp_ver] exp_start exp_stop delta
+    usage: SummarizeCFrame [-h] [-out file_out] [-emin 900] [-ver drp_ver] [-percent 50] exp_start exp_stop delta
 
 Description:
 
-    This script processes multiple CFrame files and computes the median spectrum
-    across all science fibers for each exposure. The output contains one row per
-    exposure, with columns for the science flux and both sky telescope spectra
-    (SKY_EAST and SKY_WEST).
+    This script processes multiple CFrame files and computes the median (or other
+    percentile) spectrum across all science fibers for each exposure. The output
+    contains one row per exposure, with columns for the science flux and both sky
+    telescope spectra (SKY_EAST and SKY_WEST).
 
     Compare with SumCframe.py, which combines multiple exposures into a single
     deep spectrum per fiber (averaging across time rather than across fibers).
 
     Options: -h prints out this help and quits; -out file_out changes the output
     filename from the default; -ver drp_ver selects a specific DRP version
-    (default 1.1.1); -emin sets minimum exposure time to include (default 900).
+    (default 1.1.1); -emin sets minimum exposure time to include (default 900);
+    -percent N sets the percentile to use instead of median (default 50).
 
     Positional arguments: exp_start is the starting exposure number to consider;
     exp_stop is the exposure number to stop on; delta skips every Nth exposure. 
@@ -187,7 +188,7 @@ def scifib(xtab,select='all',telescope=''):
     return ztab
 
 
-def get_med_spec(filename= '/Users/long/Projects/lvm_data/sas/sdsswork/lvm/spectro/redux/1.1.0/0011XX/11111/60192/lvmSFrame-00004336.fits'):
+def get_med_spec(filename= '/Users/long/Projects/lvm_data/sas/sdsswork/lvm/spectro/redux/1.1.0/0011XX/11111/60192/lvmSFrame-00004336.fits',percentile=50):
 
     if filename.count('SFrame'):
         filename=filename.replace('SFrame','CFrame')
@@ -208,22 +209,35 @@ def get_med_spec(filename= '/Users/long/Projects/lvm_data/sas/sdsswork/lvm/spect
     sci_flux=x['FLUX'].data[science_fibers['fiberid']-1]
     sky_e_flux=x['SKY_EAST'].data[science_fibers['fiberid']-1]
     sky_w_flux=x['SKY_WEST'].data[science_fibers['fiberid']-1]
+    sci_lsf=x['LSF'].data[science_fibers['fiberid']-1]
     sci_mask=x['MASK'].data[science_fibers['fiberid']-1]
     sci_flux=np.ma.masked_array(sci_flux,sci_mask)
     sky_e_flux=np.ma.masked_array(sky_e_flux,sci_mask)
     sky_w_flux=np.ma.masked_array(sky_w_flux,sci_mask)
+    sci_lsf=np.ma.masked_array(sci_lsf,sci_mask)
 
-    sci_flux_med=np.ma.median(sci_flux,axis=0)
-    sky_e_flux_med=np.ma.median(sky_e_flux,axis=0)
-    sky_w_flux_med=np.ma.median(sky_w_flux,axis=0)
+    if percentile==50:
+        sci_flux_med=np.ma.median(sci_flux,axis=0)
+        sky_e_flux_med=np.ma.median(sky_e_flux,axis=0)
+        sky_w_flux_med=np.ma.median(sky_w_flux,axis=0)
+        sci_lsf_med=np.ma.median(sci_lsf,axis=0)
+    else:
+        sci_flux = np.ma.filled(sci_flux, np.nan)
+        sky_e_flux = np.ma.filled(sky_e_flux, np.nan)
+        sky_w_flux = np.ma.filled(sky_w_flux, np.nan)
+        sci_lsf = np.ma.filled(sci_lsf, np.nan)
+        sci_flux_med=np.nanpercentile(sci_flux,percentile,axis=0)
+        sky_e_flux_med=np.nanpercentile(sky_e_flux,percentile,axis=0)
+        sky_w_flux_med=np.nanpercentile(sky_w_flux,percentile,axis=0)
+        sci_lsf_med=np.nanpercentile(sci_lsf,percentile,axis=0)
 
     # print(sci_flux_med.shape,sky_e_flux_med.shape,sky_w_flux_med.shape)
 
 
-    return wav, sci_flux_med, sky_e_flux_med,sky_w_flux_med
+    return wav, sci_flux_med, sky_e_flux_med,sky_w_flux_med,sci_lsf_med
 
 
-def make_med_spec(xtab,data_dir,outfile=''):
+def make_med_spec(xtab,data_dir,outfile='',percentile=50):
     i=0
     select=[]
     xfiles=[]
@@ -243,11 +257,13 @@ def make_med_spec(xtab,data_dir,outfile=''):
     xsci_flux=[]
     xsci_sky_e=[]
     xsci_sky_w=[]
+    xsci_lsf=[]
     while i<len(xfiles):
-        wav, sci_flux, sky_e_flux,sky_w_flux=get_med_spec(xfiles[i])
+        wav, sci_flux, sky_e_flux,sky_w_flux,sci_lsf=get_med_spec(xfiles[i],percentile)
         xsci_flux.append(sci_flux)
         xsci_sky_e.append(sky_e_flux)
         xsci_sky_w.append(sky_w_flux)
+        xsci_lsf.append(sci_lsf)
         if i%10==0:
             print('Finished %d of %d' % (i,len(xfiles)))
                                           
@@ -256,6 +272,7 @@ def make_med_spec(xtab,data_dir,outfile=''):
     xsci_flux=np.array(xsci_flux)
     xsci_sky_e=np.array(xsci_sky_e)
     xsci_sky_w=np.array(xsci_sky_w)
+    xsci_lsf=np.array(xsci_lsf)
     print(xsci_flux.shape,xsci_sky_e.shape,xsci_sky_w.shape)
     hdu1 = fits.PrimaryHDU(data=None)
     hdu1.header['Title'] = 'CFrame_Summmary'
@@ -263,6 +280,7 @@ def make_med_spec(xtab,data_dir,outfile=''):
     hdu3=fits.ImageHDU(data=xsci_flux,name='FLUX')
     hdu4=fits.ImageHDU(data=xsci_sky_e,name='SKY_EAST')
     hdu5=fits.ImageHDU(data=xsci_sky_w,name='SKY_WEST')
+    hdu5a=fits.ImageHDU(data=xsci_lsf,name='LSF')
     hdu6 = fits.BinTableHDU(xtab, name='drp_all')
 
     wmin=wav[0]
@@ -277,8 +295,9 @@ def make_med_spec(xtab,data_dir,outfile=''):
     hdu3.header.update(wcs.to_header())
     hdu4.header.update(wcs.to_header())
     hdu5.header.update(wcs.to_header())
+    hdu5a.header.update(wcs.to_header())
 
-    hdul = fits.HDUList([hdu1, hdu2, hdu3,hdu4,hdu5,hdu6])
+    hdul = fits.HDUList([hdu1, hdu2, hdu3,hdu4,hdu5,hdu5a,hdu6])
 
     if outfile=='':
         outfile='XCFrame_test.fits'
@@ -291,14 +310,14 @@ def make_med_spec(xtab,data_dir,outfile=''):
 
 
 
-def doit(exp_start=4000,exp_stop=8000,delta=5,exp_min=900.,out_name='',drp_ver='1.1.0'):
+def doit(exp_start=4000,exp_stop=8000,delta=5,exp_min=900.,out_name='',drp_ver='1.1.0',percentile=50):
     xtop=find_top()
     xtab=read_drpall(drp_ver)
     ztab=select(xtab,exp_start,exp_stop,delta)
-    
+
     if out_name=='':
-        out_name='XCframe_%s_%d_%d_%d.fits' % (drp_ver,exp_start,exp_stop,delta)
-    make_med_spec(xtab=ztab,data_dir=xtop,outfile=out_name)
+        out_name='XCframe_%s_%d_%d_%d_%d.fits' % (drp_ver,exp_start,exp_stop,delta,percentile)
+    make_med_spec(xtab=ztab,data_dir=xtop,outfile=out_name,percentile=percentile)
 
 def steer(argv):
     '''
@@ -309,6 +328,7 @@ def steer(argv):
     delta=-1
 
     exp_min=900
+    percent=50
     out_name=''
 
     ver='1.2.0'
@@ -327,6 +347,9 @@ def steer(argv):
         elif argv[i]=='-out':
             i+=1
             out_name=(argv[i])
+        elif argv[i][:5]=='-perc':
+            i+=1
+            percent=eval(argv[i])
         elif argv[i][0]=='-':
             print('Unknown option : ',argv)
         elif exp_start<0:
@@ -341,7 +364,7 @@ def steer(argv):
         delta=1
                 
 
-    doit(exp_start,exp_stop,delta,exp_min,out_name,drp_ver=ver)
+    doit(exp_start,exp_stop,delta,exp_min,out_name,drp_ver=ver,percentile=percent)
 
 
 

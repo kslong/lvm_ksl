@@ -204,11 +204,13 @@ def get_med_spec(filename= '/Users/long/Projects/lvm_data/sas/sdsswork/lvm/spect
     sci_flux=x['FLUX'].data[science_fibers['fiberid']-1]
     sci_sky=x['SKY'].data[science_fibers['fiberid']-1]
     sci_var=x['IVAR'].data[science_fibers['fiberid']-1]
+    sci_lsf=x['LSF'].data[science_fibers['fiberid']-1]
 
     sci_mask=x['MASK'].data[science_fibers['fiberid']-1]
     sci_flux=np.ma.masked_array(sci_flux,sci_mask)
     sci_sky=np.ma.masked_array(sci_sky,sci_mask)
     sci_var=np.ma.masked_array(sci_var,sci_mask)
+    sci_lsf=np.ma.masked_array(sci_lsf,sci_mask)
 
     # foo=np.ma.median(sci_sky,axis=0)
     # print(foo.shape)
@@ -217,12 +219,15 @@ def get_med_spec(filename= '/Users/long/Projects/lvm_data/sas/sdsswork/lvm/spect
         # print('using median')
         sci_flux_med=np.ma.median(sci_flux,axis=0)
         sci_sky_med=np.ma.median(sci_sky,axis=0)
+        sci_lsf_med=np.ma.median(sci_lsf,axis=0)
     else:
         # print('Using percentile %d' % percentile)
         sci_flux = np.ma.filled(sci_flux, np.nan)
         sci_sky  = np.ma.filled(sci_sky, np.nan)
+        sci_lsf  = np.ma.filled(sci_lsf, np.nan)
         sci_flux_med=np.nanpercentile(sci_flux,percentile,axis=0)
         sci_sky_med=np.nanpercentile(sci_sky,percentile,axis=0)
+        sci_lsf_med=np.nanpercentile(sci_lsf,percentile,axis=0)
         # print(sci_flux_med.shape)
         # print(sci_flux_med)
 
@@ -246,7 +251,7 @@ def get_med_spec(filename= '/Users/long/Projects/lvm_data/sas/sdsswork/lvm/spect
     # skyw_sky=np.ma.masked_array(skyw_sky,skyw_mask)
     # skyw_flux_med=np.ma.median(skyw_flux,axis=0)
     # skyw_sky_med=np.ma.median(skyw_sky,axis=0)
-    return wav, sci_flux_med, sci_sky_med, sci_var_med
+    return wav, sci_flux_med, sci_sky_med, sci_var_med, sci_lsf_med
 
 
 def make_med_spec(xtab,data_dir,outfile='',percentile=50):
@@ -267,11 +272,13 @@ def make_med_spec(xtab,data_dir,outfile='',percentile=50):
     xsci_flux=[]
     xsci_sky=[]
     xsci_var=[]
+    xsci_lsf=[]
     while i<len(xfiles):
-        wav,sci_flux,sci_sky,sci_var=get_med_spec(xfiles[i],percentile)
+        wav,sci_flux,sci_sky,sci_var,sci_lsf=get_med_spec(xfiles[i],percentile)
         xsci_flux.append(sci_flux)
         xsci_sky.append(sci_sky)
         xsci_var.append(sci_var)
+        xsci_lsf.append(sci_lsf)
         if i%10==0:
             print('Finished %d of %d' % (i,len(xfiles)))
                                           
@@ -279,6 +286,7 @@ def make_med_spec(xtab,data_dir,outfile='',percentile=50):
     wav=np.array(wav)
     xsci_flux=np.array(xsci_flux)
     xsci_sky=np.array(xsci_sky)
+    xsci_lsf=np.array(xsci_lsf)
     print(xsci_flux.shape,xsci_sky.shape)
     hdu1 = fits.PrimaryHDU(data=None)
     hdu1.header['Title'] = 'SFrame_Suummary'
@@ -286,6 +294,7 @@ def make_med_spec(xtab,data_dir,outfile='',percentile=50):
     hdu3=fits.ImageHDU(data=xsci_flux,name='FLUX')
     hdu4=fits.ImageHDU(data=xsci_sky,name='SKY')
     hdu5=fits.ImageHDU(data=xsci_var,name='IVAR')
+    hdu5a=fits.ImageHDU(data=xsci_lsf,name='LSF')
     hdu6 = fits.BinTableHDU(xtab, name='drp_all')
 
     wmin=wav[0]
@@ -300,8 +309,9 @@ def make_med_spec(xtab,data_dir,outfile='',percentile=50):
     hdu3.header.update(wcs.to_header())
     hdu4.header.update(wcs.to_header())
     hdu5.header.update(wcs.to_header())
+    hdu5a.header.update(wcs.to_header())
 
-    hdul = fits.HDUList([hdu1, hdu2, hdu3,hdu4,hdu5,hdu6])
+    hdul = fits.HDUList([hdu1, hdu2, hdu3,hdu4,hdu5,hdu5a,hdu6])
 
     if outfile=='':
         outfile='test.fits'

@@ -38,12 +38,26 @@ import subprocess
 
 
 
+RSYNC_PASSWORD_FILE = os.path.expanduser('~/.sdss_rsync_password')
+
+def get_rsync_password_args():
+    '''Return --password-file argument list, or [] with instructions if file is missing.'''
+    if not os.path.isfile(RSYNC_PASSWORD_FILE):
+        print('Warning: rsync password file not found at ~/.sdss_rsync_password')
+        print('To set up passwordless rsync access to dtn.sdss.org, create it with:')
+        print('  echo "<sdss_rsync_password>" > ~/.sdss_rsync_password')
+        print('  chmod 600 ~/.sdss_rsync_password')
+        print('Proceeding - rsync will prompt for the password interactively.')
+        return []
+    return ['--password-file', RSYNC_PASSWORD_FILE]
+
+
 def get_file(xfile,path='data'):
     '''
     xfile is the name of a spectrum
     '''
 
-    os.environ["RSYNC_PASSWORD"] = "panoPtic-5"
+    password_args = get_rsync_password_args()
     print(xfile)
     if xfile[0]!='/':
         xfile='/%s' % xfile
@@ -52,7 +66,7 @@ def get_file(xfile,path='data'):
         os.makedirs(path)
 
     # Get the raw frames
-    raw_frames_process = subprocess.run(["rsync", "-av", "--no-motd", f"rsync://sdss5@dtn.sdss.org%s" % xfile, "%s/" % path])
+    raw_frames_process = subprocess.run(["rsync", "-av", "--no-motd"] + password_args + [f"rsync://sdss5@dtn.sdss.org%s" % xfile, "%s/" % path])
     if raw_frames_process.returncode == 0:
         print(f"%s successfully downloaded." % xfile)
     else:

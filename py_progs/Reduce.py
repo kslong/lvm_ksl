@@ -129,11 +129,25 @@ def process_one(mjd,i,clean):
         return  reduction_process.returncode
 
 
+RSYNC_PASSWORD_FILE = os.path.expanduser('~/.sdss_rsync_password')
+
+def get_rsync_password_args():
+    '''Return --password-file argument list, or [] with instructions if file is missing.'''
+    if not os.path.isfile(RSYNC_PASSWORD_FILE):
+        print('Warning: rsync password file not found at ~/.sdss_rsync_password')
+        print('To set up passwordless rsync access to dtn.sdss.org, create it with:')
+        print('  echo "<sdss_rsync_password>" > ~/.sdss_rsync_password')
+        print('  chmod 600 ~/.sdss_rsync_password')
+        print('Proceeding - rsync will prompt for the password interactively.')
+        return []
+    return ['--password-file', RSYNC_PASSWORD_FILE]
+
+
 # Function to run rsync command with ignore-existing and dry-run options
 def run_forced_dry_rsync(mjd,xnumb,verbose=False):
     # Run rsync command with dry-run and ignore-existing options
     rsync_process = subprocess.Popen(
-        ["rsync", "-avn", "--no-motd", "--ignore-existing",
+        ["rsync", "-avn", "--no-motd", "--ignore-existing"] + get_rsync_password_args() + [
          f"rsync://sdss5@dtn.sdss.org/sdsswork/data/lvm/lco/{mjd}/sdR-s-*-{xnumb}.fits.gz",
          f"{os.environ['SAS_BASE_DIR']}/sdsswork/data/lvm/lco/{mjd}/"],
         stdout=subprocess.PIPE,
@@ -165,8 +179,8 @@ def get_data(mjd,i):
     qmjd is a string
     '''
 
-    os.environ["RSYNC_PASSWORD"] = "panoPtic-5"
     os.environ["LVMAGCAM_DIR"] = os.path.join(os.environ["SAS_BASE_DIR"], "sdsswork/data/agcam/lco/")
+    password_args = get_rsync_password_args()
     mjd='%s' % mjd
     xmjd='%d' % (int(mjd)+1)
     xnumb = format_number(i)
@@ -184,7 +198,7 @@ def get_data(mjd,i):
 
 
     # Get the raw frames
-    raw_frames_process = subprocess.run(["rsync", "-av", "--no-motd", f"rsync://sdss5@dtn.sdss.org/sdsswork/data/lvm/lco/{qmjd}/sdR-s-*-{xnumb}.fits.gz", f"{os.environ['SAS_BASE_DIR']}/sdsswork/data/lvm/lco/{qmjd}/"])
+    raw_frames_process = subprocess.run(["rsync", "-av", "--no-motd"] + password_args + [f"rsync://sdss5@dtn.sdss.org/sdsswork/data/lvm/lco/{qmjd}/sdR-s-*-{xnumb}.fits.gz", f"{os.environ['SAS_BASE_DIR']}/sdsswork/data/lvm/lco/{qmjd}/"])
     if raw_frames_process.returncode == 0:
         print(f"Raw frames for {xnumb} successfully downloaded.")
     else:
@@ -192,7 +206,7 @@ def get_data(mjd,i):
 
     # Get the coadd with astrometry
     os.makedirs(f"{os.environ['SAS_BASE_DIR']}/sdsswork/data/agcam/lco/{qmjd}/coadds/", exist_ok=True)
-    coadd_process = subprocess.run(["rsync", "-av", "--no-motd", f"rsync://sdss5@dtn.sdss.org/sdsswork/data/agcam/lco/{qmjd}/coadds/lvm.sci.coadd_s{xnumb}.fits", f"{os.environ['SAS_BASE_DIR']}/sdsswork/data/agcam/lco/{mjd}/coadds/"])
+    coadd_process = subprocess.run(["rsync", "-av", "--no-motd"] + password_args + [f"rsync://sdss5@dtn.sdss.org/sdsswork/data/agcam/lco/{qmjd}/coadds/lvm.sci.coadd_s{xnumb}.fits", f"{os.environ['SAS_BASE_DIR']}/sdsswork/data/agcam/lco/{mjd}/coadds/"])
     if coadd_process.returncode == 0:
         print(f"Coadd for {xnumb} successfully downloaded.")
     else:

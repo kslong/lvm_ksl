@@ -13,7 +13,7 @@ containing the exposures asscoated with each object.
 
 Command line usage::
 
-    rss_snap.py [-h] [-keep] [-redo] [-all] [-med] xfile source_name
+    rss_snap.py [-h] [-keep] [-redo] [-all] [-med] [-size arcmin] xfile source_name
 
 Arguments: xfile is a version of an expanded master file containing
 the source names and associated exposures (one row per exposure to be
@@ -76,7 +76,7 @@ def find_top():
     elif os.path.isdir(XRAINBOW):
         loc='Rainbow'
         topdir=XRAINBOW
-    elif ox.path.isdir(XMUSKIE):
+    elif os.path.isdir(XMUSKIE):
         loc='Muskie'
         topdir=XMUSKIE
     else:
@@ -395,7 +395,7 @@ def one_snapshot(xsum,source_name,size_arcmin=10.,keep_tmp=False,redo=True,c_typ
 
 def steer(argv):
     '''
-    Usage: rss_snap.py [-h] [-keep] [-redo] [-all] [-med] file  source_name
+    Usage: rss_snap.py [-h] [-keep] [-redo] [-all] [-med] [-size arcmin] xfile source_name
     '''
 
     sources=[]

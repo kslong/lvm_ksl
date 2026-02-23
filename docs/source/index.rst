@@ -31,4 +31,6 @@ are experimwenatls.  Those that have detailed documantion are the most reliable.
    visualization
    rss_combining
    snapshots
+   region_files
+   mc_snr_analysis
 

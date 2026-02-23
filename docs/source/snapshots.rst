@@ -120,8 +120,7 @@ The script creates three output directories:
 **Snap_gauss/**
     Gaussian fit results for each source.
 
-    - ``<source_name>.fits`` - FITS table with fit parameters per fiber
-    - ``<source_name>.tab`` - ASCII version of fit results
+    - ``<source_name>.gauss.txt`` - ASCII table of fit parameters per fiber
 
 **Snap_fig/**
     Diagnostic plots.

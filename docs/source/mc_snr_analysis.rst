@@ -234,18 +234,19 @@ See :doc:`api/GetRegSpec/index` for API documentation.
 
 .. _mc-step4:
 
-Step 4 — Inspect Spectra (``PlotSpec.py``)
--------------------------------------------
+Step 4 — Inspect Spectra (``PlotSpec.py`` and ``SNRPlot.py``)
+--------------------------------------------------------------
 
-``PlotSpec.py`` creates a multi-panel overview plot covering the full LVM
-wavelength range (3600–9560 Å) for each extracted spectrum, with common
-emission lines labelled.  Running it after step 3 gives a quick visual check
-that the background subtraction is behaving sensibly before committing to
-full Gaussian fitting.
+Two complementary tools are run after step 3 to visually verify the
+extracted spectra before committing to full Gaussian fitting.
 
-When ``BACK_FLUX`` is present (as it is in all spectra produced by step 3),
-the background is overlaid in black so source and background levels can be
-compared directly in every panel.
+**PlotSpec.py** — full-wavelength panel view
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+``PlotSpec.py`` divides the full LVM wavelength range (3600–9560 Å) into
+panels with common emission lines labelled.  When ``BACK_FLUX`` is present
+(as it always is in spectra produced by step 3), the background is overlaid
+in black so source and background levels can be compared in every panel.
 
 **Command**::
 
@@ -260,16 +261,36 @@ needed::
 
 **Outputs**
 
-- ``Overview_Plot/<spectrum_name>.overview.png`` — full-wavelength overview
-  plot with emission line labels; one file per input spectrum
+- ``Overview_Plot/<spectrum_name>.overview.png`` — one file per input spectrum
+
+**SNRPlot.py** — zoomed line panels
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+``SNRPlot.py`` produces a complementary layout: a top panel with the full
+spectrum and six sub-panels zoomed to ±1200 km/s around the key diagnostic
+lines ([OII] 3728, [OIII] 5007, [OI] 6300, Hα 6563, [SII] 6720,
+[SIII] 9531).  ``FLUX`` and ``ERROR`` are overlaid in each panel.  Use
+``-smc`` or ``-lmc`` to set the systemic velocity offset.
+
+**Command**::
+
+    SNRPlot.py -smc Snap_spec/*back*txt
+
+**Outputs**
+
+- ``SNRPlot_fig/<spectrum_name>.png`` — one file per input spectrum
+- ``SNRPlot_fig/README.txt`` — records the date, command, and velocity
+  offset used to generate the plots
 
 **Verification**
 
-- Confirm that H-alpha, [NII] 6548/6583, and [SII] 6717/6731 are visible
-  as positive peaks in the ``FLUX`` (blue) trace.
-- Check that the ``BACK_FLUX`` (black) trace is smooth and shows no sharp
-  emission features, which would indicate the background annulus overlaps
-  the SNR shell.
+- In the ``PlotSpec.py`` panels, confirm that H-alpha, [NII] 6548/6583,
+  and [SII] 6717/6731 are positive peaks in the ``FLUX`` (blue) trace and
+  that the ``BACK_FLUX`` (black) trace is smooth with no sharp emission
+  features.
+- In the ``SNRPlot.py`` panels, check that the line centres are at the
+  expected wavelength for the systemic velocity and that the ERROR is
+  well below the line flux.
 - If continuum levels look unreasonably high or negative, re-examine the
   fiber assignments from step 3.
 
@@ -333,28 +354,6 @@ and ``Gauss_smc_snr.txt``.
 See :doc:`api/lvm_gaussfit/index` for API documentation.
 
 
-Output Directory Reference
---------------------------
-
-The workflow writes results to the following directories (all created
-automatically):
-
-=================  =============  =====================================================
-Directory          Created by     Contents
-=================  =============  =====================================================
-``Snap/``          Step 1         Combined RSS FITS snapshot per source
-``Snap_gauss/``    Step 1         Gaussian fit parameters per fiber (ASCII)
-``Snap_fig/``      Step 1         4-panel H-alpha/[SII]/ratio/FWHM diagnostic plots
-``ximage/``        Preparation    Broadband cutout plots with source regions overlaid
-``xdata/``         Preparation    Broadband FITS cutout files used in step 3
-``FiberReg/``      Step 3         DS9 region files with fiber color assignments
-``Snap_spec/``     Step 3         Background-subtracted spectra (one per source)
-``zimage/``        Step 3         Broadband cutouts with LVM fiber overlay
-``Overview_Plot/`` Step 4         Full-wavelength overview plots (one per spectrum)
-=================  =============  =====================================================
-
-Gaussian fit summary tables (``Gauss_*.txt``) are written to the current
-working directory by step 5.
 
 
 Complete Worked Example
@@ -377,11 +376,166 @@ The preparation step and main workflow can be run in either order::
 
     # Step 4: inspect extracted spectra
     PlotSpec.py -med Snap_spec/*back*txt
+    SNRPlot.py -smc  Snap_spec/*back*txt
 
     # Step 5: fit emission lines in all three spectral variants
     lvm_gaussfit.py -smc -stype BACK   -out smc_snr Snap_spec/*back*txt
     lvm_gaussfit.py -smc -stype SOURCE -out smc_snr Snap_spec/*back*txt
     lvm_gaussfit.py -smc               -out smc_snr Snap_spec/*back*txt
+
+
+Output Summary
+--------------
+
+After a complete run the working directory should contain the following
+subdirectories.  All are created automatically by the relevant script.
+File counts are per source unless otherwise noted.
+
+``Snap/`` — RSS snapshots (Step 1)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Created by ``rss_snap.py``.
+
+- ``<source>.ave.fits`` — combined RSS FITS file; one per source.
+  Extensions: ``FLUX``, ``ERROR``, ``MASK``, ``SKY``, ``LSF``, and a
+  fibre-position table.  This is the primary input to steps 3 onward.
+- ``<source>.ave.tab`` — ASCII fibre position table (RA, Dec, fibre index).
+
+``Snap_gauss/`` — per-fibre Gaussian fits (Step 1)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Created by ``rss_snap.py``.
+
+- ``<source>.gauss.txt`` — ASCII table of Gaussian fit parameters
+  (centre, amplitude, FWHM) for H-alpha and [SII] in every fibre.
+  Used to generate the Snap_fig diagnostic maps.
+
+``Snap_fig/`` — snapshot diagnostic plots (Step 1)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Created by ``rss_snap.py``.
+
+- ``<source>.png`` — 4-panel image: H-alpha flux map, [SII] flux map,
+  [SII]/H-alpha ratio map, and H-alpha FWHM map.  Coloured circles show
+  individual fibre values.  Used to confirm that the snapshot combination
+  has captured coherent spatial structure.
+
+``ximage/`` — broadband cutout plots (Preparation)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Created by ``LSnap.py -size``.
+
+- ``<source>.ha.png`` — H-alpha image cutout with source region overlaid.
+- ``<source>.sii.png`` — [SII] image cutout with source region overlaid.
+
+Inspect these to verify that the source ellipse is correctly centred on
+the known SNR position.
+
+``xdata/`` — broadband FITS cutouts (Preparation)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Created by ``LSnap.py -size``.
+
+- ``<source>_<image_file>`` — FITS cutout used by step 3 to overlay LVM
+  fibre assignments on the broadband image.  One file per source per
+  input mosaic (e.g. one for H-alpha, one for [SII]).
+
+``FiberReg/`` — DS9 region files (Step 3)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Created by ``GetRegSpec.py -all`` (via ``MakeLVMReg.do_complex()``).
+
+- ``<source>.ave.source.<source>.reg`` — DS9 region file assigning each
+  LVM fibre a colour: **red** for source fibres inside the SNR ellipse,
+  **green** for background annulus fibres, **yellow** for all others.
+
+Load these in DS9 alongside the snapshot FITS file to confirm that the
+red fibres cover the SNR shell and the green fibres form a clean
+surrounding ring free of source emission.
+
+``Snap_spec/`` — extracted spectra (Step 3)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Created by ``GetRegSpec.py -all``.
+
+- ``Spec_<source>.ave_ave_back.txt`` — background-subtracted spectrum;
+  one per source.  Columns:
+
+  ================  ==============================================
+  Column            Contents
+  ================  ==============================================
+  WAVE              Wavelength in Angstroms
+  FLUX              Background-subtracted flux (source − background)
+  ERROR             Combined source and background uncertainty
+  SOURCE_FLUX       Mean spectrum of red (source) fibres
+  SOURCE_ERROR      Uncertainty on source spectrum
+  BACK_FLUX         Median spectrum of green (background) fibres
+  BACK_ERROR        Uncertainty on background spectrum
+  SKY               Sky spectrum (if present in SFrame)
+  SKY_ERROR         Sky uncertainty
+  MASK              Sum of mask flags across selected fibres
+  LSF               Mean line spread function
+  ================  ==============================================
+
+Use ``FLUX`` for science measurements.  ``SOURCE_FLUX`` and ``BACK_FLUX``
+are retained so the subtraction can be inspected and, if necessary, redone
+with different weights.
+
+``zimage/`` — broadband fibre overlay plots (Step 3)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Created by ``GetRegSpec.py -all -imgdir xdata``.
+
+- ``<image_file>.<reg_root>.png`` — broadband cutout with the DS9 fibre
+  colour assignments overlaid.  One file per source per input broadband
+  image.  Confirms that the fibre selection matches the known SNR
+  morphology.
+
+``Overview_Plot/`` — full-wavelength overview plots (Step 4)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Created by ``PlotSpec.py``.
+
+- ``<spectrum_name>.overview.png`` — full-wavelength plot (3600–9560 Å)
+  divided into 750 Å panels, each autoscaled to the local median.
+  Common emission lines are labelled in red.  Where ``BACK_FLUX`` is
+  present it is overlaid in black.
+
+Check that ``FLUX`` shows positive peaks at H-alpha, [NII] 6548/6583,
+and [SII] 6717/6731, and that ``BACK_FLUX`` is smooth with no sharp line
+features.
+
+``SNRPlot_fig/`` — zoomed line-panel plots (Step 4)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Created by ``SNRPlot.py``.
+
+- ``<spectrum_name>.png`` — one plot per spectrum.  Top panel: full
+  spectrum with ``FLUX`` and ``ERROR``.  Lower six panels: ±1200 km/s
+  zoom around [OII] 3728, [OIII] 5007, [OI] 6300, Hα 6563, [SII] 6720,
+  and [SIII] 9531, each with ``FLUX`` and ``ERROR``.
+- ``README.txt`` — records the date, command line, and velocity offset
+  used to generate the plots.
+
+Check that line centres fall at the expected wavelength for the systemic
+velocity and that ``ERROR`` is well below the line peak flux.
+
+Gaussian fit tables — emission-line measurements (Step 5)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Written to the **current working directory** by ``lvm_gaussfit.py``.
+
+- ``Gauss_<name>.BACK.txt`` — Gaussian fits to the background spectrum
+  (``BACK_FLUX``).
+- ``Gauss_<name>.SOURCE.txt`` — Gaussian fits to the raw source spectrum
+  (``SOURCE_FLUX``).
+- ``Gauss_<name>.txt`` — Gaussian fits to the background-subtracted
+  spectrum (``FLUX``).
+
+Each file has one row per source.  Check that H-alpha fluxes are positive,
+line widths are physically reasonable (FWHM ≲ a few hundred km/s for
+thermal/shock-ionised gas), and that ``Gauss_<name>.txt`` shows elevated
+[SII]/H-alpha ratios (> 0.4) characteristic of shock-ionised SNR gas.
 
 
 See Also
@@ -393,4 +547,5 @@ See Also
 - :doc:`api/GetRegSpec/index` — API documentation for ``GetRegSpec.py``
 - :doc:`api/MakeLVMReg/index` — API documentation for ``MakeLVMReg.py``
 - :doc:`api/PlotSpec/index` — API documentation for ``PlotSpec.py``
+- :doc:`api/SNRPlot/index` — API documentation for ``SNRPlot.py``
 - :doc:`api/lvm_gaussfit/index` — API documentation for ``lvm_gaussfit.py``

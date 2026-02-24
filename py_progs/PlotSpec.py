@@ -14,11 +14,30 @@ have been sky subtracted.
 
 Command line usage (if any):
 
-    usage: PlotSpec.py [-h] [-frac 0.1] [-min whatever] [-max whatever] spectrum [backspec]
+    usage: PlotSpec.py [-h] [-frac 0.1] [-min ymin] [-max ymax] [-med] [-delta 1e-15]
+                       [-mode sep_back] file [files ...]
 
-    where -frac controls the autoscaling for the maximum value in each panel,
-    backspec is an optional spectrum to be subtracted from the initial spectrum,
-    -min fixes the lower limit in all panels, and -max fixes the upper limit in all panels.
+    Plots are written to Overview_Plot/<basename>.overview.png.
+
+    Default mode (no -mode flag):
+        One or more spectrum files are given.  Each is plotted independently.
+        If a file contains a BACK_FLUX column (as produced by GetRegSpec.py),
+        the background is overlaid in black (alpha 0.4); no further subtraction
+        is done because FLUX in that case is already the background-subtracted
+        spectrum.
+
+    -mode sep_back:
+        Exactly two files are expected: a source spectrum and a separate
+        background spectrum.  The background FLUX is subtracted from the
+        source FLUX before plotting.
+
+    Scaling options (mutually exclusive; last one wins if combined):
+    -frac   autoscale upper limit to frac * max(FLUX) per panel (default 0.1)
+    -max    fix the upper y-limit in all panels (also selects fixed-scale mode)
+    -min    fix the lower y-limit in all panels
+    -med    centre each panel on the median FLUX in that wavelength range,
+            with limits median +/- delta
+    -delta  half-range for -med mode (default 3e-15)
 
 Description:  
 
@@ -40,6 +59,7 @@ History:
 
 
 
+import os
 from astropy.io import ascii
 import matplotlib.pyplot as plt
 from astropy.table import Table,vstack, hstack
@@ -52,11 +72,12 @@ def do_one_region(spectab,wmin=3600,wmax=4100,frac=0.1):
     xx=xx[xx['WAVE']<wmax+extra]
     mask=np.isfinite(xx['FLUX'])
     xx=xx[mask]
-    good=np.where(mask)[0]
+    if 'BACK_FLUX' in xx.colnames:
+        plt.plot(xx['WAVE'],xx['BACK_FLUX'],'k',alpha=0.4)
     plt.plot(xx['WAVE'],xx['FLUX'])
     plt.xlim(wmin-extra,wmax+extra)
-    if frac<1.0:
-        ymin,ymax=plt.ylim()
+    if frac<1.0 and len(xx)>0:
+        ymax=np.max(xx['FLUX'])
         ymin=np.median(xx['FLUX'])-0.05*ymax
         plt.ylim(ymin,frac*ymax)
     return
@@ -68,19 +89,36 @@ def do_one_region_fixed(spectab,wmin=3600,wmax=4100,ymin=0, ymax=1e-13):
     xx=xx[xx['WAVE']<wmax+extra]
     mask=np.isfinite(xx['FLUX'])
     xx=xx[mask]
-    good=np.where(mask)[0]
     if 'SOURCE_FLUX' in xx.colnames:
         plt.plot(xx['WAVE'],xx['SOURCE_FLUX'],'k',alpha=0.2)
+    if 'BACK_FLUX' in xx.colnames:
+        plt.plot(xx['WAVE'],xx['BACK_FLUX'],'k',alpha=0.4)
     plt.plot(xx['WAVE'],xx['FLUX'])
     plt.xlim(wmin-extra,wmax+extra)
     plt.ylim(ymin,ymax)
     return
 
-def xmark(line='[SIII]',w=9069.3,frac=0.8):
+
+def do_one_region_med(spectab,wmin=3600,wmax=4100,med_delta=1e-15):
+    extra=10
+    xx=spectab[spectab['WAVE']>wmin-extra]
+    xx=xx[xx['WAVE']<wmax+extra]
+    mask=np.isfinite(xx['FLUX'])
+    xx=xx[mask]
+    if len(xx)==0:
+        return
+    ymed=np.median(xx['FLUX'])
+    if 'BACK_FLUX' in xx.colnames:
+        plt.plot(xx['WAVE'],xx['BACK_FLUX'],'k',alpha=0.4)
+    plt.plot(xx['WAVE'],xx['FLUX'])
+    plt.xlim(wmin-extra,wmax+extra)
+    plt.ylim(ymed-0.5*med_delta,ymed+med_delta)
+    return
+
+def xmark(line='[SIII]',w=9069.3,frac=0.90):
 
     ymin,ymax=plt.ylim()
-    # print(w,ymin,ymax)
-    plt.text(w,frac *ymax,line,ha='center',color='red',clip_on=True)
+    plt.text(w,frac*ymax,line,ha='center',va='top',color='red',clip_on=True)
 
 def do_lines():
     '''
@@ -129,19 +167,17 @@ def do_lines():
 
 
 
-def do_all(xtab,ptype='scale',ymin=0.0,ymax=1e-14,frac=0.1):
+def do_all(xtab,ptype='scale',ymin=0.0,ymax=1e-14,frac=0.1,med_delta=3e-15,title=''):
     '''
     Create the figure
     '''
     plt.close(2)
     plt.figure(2,(8,12))
-    
+
     wmin=3600
-    wmax=9500
     wmax=9559
     delta=750
     nmax=int((wmax-wmin)/delta)+1
-    # print(nmax)
     i=0
     while i<nmax:
         plt.subplot(nmax,1,i+1)
@@ -150,29 +186,32 @@ def do_all(xtab,ptype='scale',ymin=0.0,ymax=1e-14,frac=0.1):
         if ptype=='scale':
             do_one_region(xtab,wwmin,wwmax,frac)
         elif ptype=='fixed':
-            do_one_region_fixed(xtab,wwmin,wwmax,ymin, ymax)
+            do_one_region_fixed(xtab,wwmin,wwmax,ymin,ymax)
+        elif ptype=='med':
+            do_one_region_med(xtab,wwmin,wwmax,med_delta)
         else:
-            print('Error: Indecipheragle type of plot: ',ptype)
+            print('Error: Indecipherable plot type: ',ptype)
             return
 
         do_lines()
         i+=1
+    if title:
+        plt.suptitle(title,fontsize=12)
     plt.tight_layout()
 
 
 def steer(argv):
     '''
-    Steering routine for creating plots of
-    the spectra
+    Steering routine for creating plots of the spectra.
     '''
-
 
     frac=0.1
     ymin=0.
     ymax=0.
+    med_delta=3e-15
     itype='scale'
-    filename=''
-    backname=''
+    mode=''
+    filenames=[]
 
     i=1
     while i<len(argv):
@@ -188,44 +227,61 @@ def steer(argv):
         elif argv[i]=='-max':
             i+=1
             ymax=eval(argv[i])
+        elif argv[i]=='-med':
+            itype='med'
+        elif argv[i]=='-delta':
+            i+=1
+            med_delta=eval(argv[i])
+        elif argv[i]=='-mode':
+            i+=1
+            mode=argv[i]
         elif argv[i][0]=='-':
-            print('Error: Unknown switch: ',argv)
+            print('Error: Unknown switch: ',argv[i])
             return
-        elif filename=='':
-            filename=argv[i]
-        elif backname=='':
-            backname=argv[i]
         else:
-            print('Error: Badly formed command line args :',argv)
+            filenames.append(argv[i])
         i+=1
 
-    try:
-        xtab=ascii.read(filename)
-    except:
-        print('Error: Could not read %s' % filename)
+    if not filenames:
+        print('Error: No input files specified')
         return
 
-    if backname!='':
+    if itype!='med' and ymax>0.0:
+        itype='fixed'
 
+    os.makedirs('Overview_Plot',exist_ok=True)
+
+    if mode=='sep_back':
+        # Two positional args: source file and separate background file
+        if len(filenames)<2:
+            print('Error: -mode sep_back requires a source file and a background file')
+            return
+        filename,backname=filenames[0],filenames[1]
+        try:
+            xtab=ascii.read(filename)
+        except:
+            print('Error: Could not read %s' % filename)
+            return
         try:
             btab=ascii.read(backname)
         except:
-            print('Error: Could not read file to subract %s ' % backname)
+            print('Error: Could not read %s' % backname)
             return
         xtab['FLUX']-=btab['FLUX']
-
-
-    
-    if ymax>0.0:
-        itype='fixed'
-
-
-
-    do_all(xtab,ptype=itype,ymin=ymin,ymax=ymax,frac=frac)
-    words=filename.split('/')
-    outname=words[-1].replace('.txt','')
-    outname=outname.replace('.tab','')
-    plt.savefig('%s.overview.png' % outname)
+        outname=os.path.basename(filename).replace('.txt','').replace('.tab','')
+        do_all(xtab,ptype=itype,ymin=ymin,ymax=ymax,frac=frac,med_delta=med_delta,title=os.path.basename(filename))
+        plt.savefig('Overview_Plot/%s.overview.png' % outname)
+    else:
+        # Default: each file is plotted independently
+        for filename in filenames:
+            try:
+                xtab=ascii.read(filename)
+            except:
+                print('Error: Could not read %s, skipping' % filename)
+                continue
+            outname=os.path.basename(filename).replace('.txt','').replace('.tab','')
+            do_all(xtab,ptype=itype,ymin=ymin,ymax=ymax,frac=frac,med_delta=med_delta,title=os.path.basename(filename))
+            plt.savefig('Overview_Plot/%s.overview.png' % outname)
 
 
 

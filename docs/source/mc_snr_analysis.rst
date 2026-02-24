@@ -4,21 +4,26 @@ Magellanic Cloud SNR Analysis
 This page describes an end-to-end procedure for analysing individual
 sources — primarily supernova remnants (SNRs) — observed with LVM in
 the Magellanic Clouds.  The procedure verifies that snapshot combination,
-background region assignment, fiber selection, and spectral extraction
-all work as expected.
+background region assignment, spectral extraction, and broadband image
+context all work as expected.
 
-The four steps are:
+The main workflow has five steps:
 
 1. :ref:`mc-step1` — combine dithered exposures into per-source RSS snapshots
 2. :ref:`mc-step2` — pair each source with an annular background region
-3. :ref:`mc-step3` — map source and background regions onto individual fibers
-4. :ref:`mc-step4` — extract background-subtracted spectra
+3. :ref:`mc-step3` — extract background-subtracted spectra and overlay fiber maps
+4. :ref:`mc-step4` — inspect extracted spectra with overview plots
+5. :ref:`mc-step5` — fit emission lines in the extracted spectra
+
+An independent preparation step, :ref:`mc-prep`, creates per-source
+broadband image cutouts from survey mosaics (e.g. MCELS).  This can be
+done at any time and does not depend on the main workflow steps.
 
 
 Starting Point: the Input Files
 ---------------------------------
 
-Two files drive the entire procedure.
+Two files drive the main workflow.
 
 **Source catalog** (e.g. ``smc_snr_cotton24.txt``)
     One row per source.  Contains the source name, sky position, region
@@ -38,8 +43,7 @@ Two files drive the entire procedure.
 
 **Observed file** (e.g. ``smc_snr_observed.txt``)
     All columns from the source catalog, plus one row per exposure per
-    source (multiple rows for sources covered by more than one pointing).
-    Additional columns include:
+    source.  Additional columns include:
 
     ============  =========================================================
     Column        Description
@@ -55,6 +59,43 @@ Two files drive the entire procedure.
     against the LVM DRP-All file.
 
 
+.. _mc-prep:
+
+Preparation — Broadband Image Cutouts (``LSnap.py``)
+-----------------------------------------------------
+
+This step is independent of the main workflow and can be run at any time.
+``LSnap.py`` reads a large broadband survey mosaic (e.g. an MCELS H-alpha
+or [SII] image) and produces per-source cutout images and FITS files using
+the source catalog.  The cutout FITS files in ``xdata/`` are later used by
+step 3 to overlay LVM fiber assignments on the broadband images.
+
+**Commands**::
+
+    LSnap.py -size 10 -type ha  mcels_ha.fits  smc_snr_cotton24.txt
+    LSnap.py -size 10 -type sii mcels_sii.fits smc_snr_cotton24.txt
+
+The ``-size`` value sets the cutout side length in arcminutes.  ``-type``
+labels the output filenames.
+
+**Outputs**
+
+- ``ximage/<source_name>.ha.png`` — H-alpha cutout plot with source
+  regions overlaid
+- ``ximage/<source_name>.sii.png`` — [SII] cutout plot with source
+  regions overlaid
+- ``xdata/<source_name>_<image_file>`` — FITS cutout files used in step 3
+
+**Verification**
+
+- Confirm that ``ximage/`` contains ``.ha.png`` and ``.sii.png`` for
+  each source.
+- Check that the source region ellipse is centered correctly on the
+  known SNR position in each image.
+
+See :doc:`api/LSnap/index` for API documentation.
+
+
 .. _mc-step1:
 
 Step 1 — Create Spectral Snapshots (``rss_snap.py``)
@@ -68,9 +109,8 @@ fitting, and produces a 4-panel diagnostic plot.
 
     rss_snap.py -all smc_snr_observed.txt
 
-To reprocess sources that have already been run, add ``-redo``.  To use
-median rather than mean combination, add ``-med``.  To process a single
-source::
+To reprocess existing outputs add ``-redo``; to use median combination
+add ``-med``.  To process a single source::
 
     rss_snap.py smc_snr_observed.txt J0056-7209
 
@@ -83,14 +123,12 @@ source::
 
 **Verification**
 
-- Confirm that ``Snap/`` contains one ``.ave.fits`` file per source.
-- Open the PNG files in ``Snap_fig/`` and check that the H-alpha and
-  [SII] maps show coherent spatial structure consistent with the known
-  source morphology.
-- Inspect ``Snap_gauss/<source_name>.gauss.txt`` and verify that
-  H-alpha fluxes and FWHM values are physically reasonable.
+- Confirm that ``Snap/`` contains one ``.ave.fits`` per source.
+- Check the PNG files in ``Snap_fig/`` for coherent spatial structure.
+- Inspect ``Snap_gauss/<source_name>.gauss.txt`` and verify that H-alpha
+  fluxes and FWHM values are physically reasonable.
 
-See :doc:`snapshots` for full documentation of this step.
+See :doc:`snapshots` for full documentation.
 
 
 .. _mc-step2:
@@ -98,11 +136,9 @@ See :doc:`snapshots` for full documentation of this step.
 Step 2 — Generate Annular Background Regions (``GenAnnularBackground.py``)
 ---------------------------------------------------------------------------
 
-``GenAnnularBackground.py`` reads the source catalog (one row per
-source) and creates a paired background annulus for each entry.  It is
-important to use the source catalog here rather than the observed file,
-because the observed file contains multiple rows per source and would
-produce duplicate region entries.
+``GenAnnularBackground.py`` reads the source catalog (one row per source)
+and creates a paired background annulus for each entry.  Use the source
+catalog here, not the observed file, to avoid duplicate entries.
 
 **Command**::
 
@@ -112,104 +148,59 @@ produce duplicate region entries.
 
 - ``smc_snr_cotton24.ann_reg.txt`` — interleaved table with one source
   row (``SourceBack='Source'``) and one background annulus row
-  (``SourceBack='Back'``) per source, sorted by source number.
+  (``SourceBack='Back'``) per source.
 
-The annulus geometry applied to each source:
-
-- Source aperture: ``max(Major, 35")`` × ``max(Minor, 35")``
-- Annulus inner radius: ``source_major + 35"``
-- Annulus outer radius: ``2 × source_major + 35"``
+The annulus geometry enforces a minimum source size of 35 arcsec, places
+the annulus inner radius at ``source_major + 35"`` and the outer radius
+at ``2 × source_major + 35"``.
 
 **Verification**
 
-- Open the output file and confirm that each source row is immediately
-  followed by a background annulus row with the same ``Source_name``.
-- Verify that annulus radii are larger than the source aperture by the
-  expected gap.
-- Confirm that background rows have ``Color='green'`` and
-  ``RegType='annulus'``.
+- Confirm each source row is immediately followed by a background annulus
+  row with the same ``Source_name``.
+- Verify background rows have ``Color='green'`` and ``RegType='annulus'``.
 
-See :doc:`region_files` for full documentation of this step.
+See :doc:`region_files` for full documentation.
 
 
 .. _mc-step3:
 
-Step 3 — Assign Fibers to Regions (``MakeLVMReg.py``)
-------------------------------------------------------
+Step 3 — Extract Spectra and Overlay Fiber Maps (``GetRegSpec.py -all``)
+------------------------------------------------------------------------
 
-``MakeLVMReg.py`` reads the snapshot FITS file and the annotated region
-table from step 2.  For each source it produces a DS9-format ``.reg``
-file in which every good science fiber is colour-coded:
+``GetRegSpec.py -all`` processes every source in the region table.  For
+each source it:
 
-- **red** — fiber falls within the source aperture
-- **green** — fiber falls within the background annulus
-- **yellow** — fiber is outside both regions
+1. Calls ``MakeLVMReg.do_complex()`` to read the snapshot and assign fiber
+   colors: **red** for source fibers, **green** for background annulus
+   fibers, **yellow** for everything else.  The ``.reg`` file is written
+   to disk for inspection in DS9.
+2. Calls ``do_one()`` to average the red fibers, subtract the median
+   green fibers, and write the spectrum.
+3. If ``-imgdir`` is provided, calls ``LSnap.make_one_image()`` for every
+   FITS file in that directory whose name begins with the source name.
+   This overlays the fiber color assignments on the broadband cutouts
+   produced in the preparation step, writing output plots to ``zimage/``.
 
-**Command**::
+**Command without broadband overlay**::
 
-    MakeLVMReg.py Snap/<source_name>.ave.fits smc_snr_cotton24.ann_reg.txt
+    GetRegSpec.py -all smc_snr_cotton24.ann_reg.txt
 
-To process all sources in a single call, pass all snapshot files at once::
+**Command with broadband fiber overlay** (requires preparation step)::
 
-    MakeLVMReg.py Snap/*.ave.fits smc_snr_cotton24.ann_reg.txt
+    GetRegSpec.py -all -imgdir xdata smc_snr_cotton24.ann_reg.txt
 
-An optional ``-root`` label can be appended to output filenames to
-distinguish different region runs::
+**Outputs**
 
-    MakeLVMReg.py -root source Snap/<source_name>.ave.fits smc_snr_cotton24.ann_reg.txt
+- ``FiberReg/<source_name>.ave.source.<source_name>.reg`` — DS9 region
+  file with fiber color assignments (source=red, background=green,
+  other=yellow)
+- ``Snap_spec/Spec_<source_name>.ave_ave_back.txt`` — background-subtracted
+  spectrum
+- ``zimage/<image_file>.<reg_root>.png`` — broadband cutout with LVM fiber
+  overlay (only when ``-imgdir`` is used)
 
-**Output**
-
-One ``.reg`` file per (snapshot, source) combination, named::
-
-    <snapshot_root>.<source_name>.reg
-    # e.g.  J0056-7209.ave.J0056-7209.reg
-    # or    J0056-7209.ave.source.J0056-7209.reg  (with -root source)
-
-**Verification**
-
-- Load a snapshot FITS file and the corresponding ``.reg`` file in DS9.
-- Confirm that red fibers lie on the source and green fibers form a
-  surrounding ring.
-- Verify that the number of red and green fibers is consistent with
-  the source angular size and the 35 arcsec fiber spacing.
-
-See :doc:`api/MakeLVMReg/index` for API documentation.
-
-
-.. _mc-step4:
-
-Step 4 — Extract Spectra (``GetRegSpec.py``)
---------------------------------------------
-
-``GetRegSpec.py`` reads the snapshot RSS file and the ``.reg`` file from
-step 3.  It averages the spectra of the red (source) fibers, subtracts
-the median of the green (background) fibers, and writes the result to
-an ASCII table.  The same ``.reg`` file is used for both source and
-background because both fiber sets are encoded in a single file using
-color labels.
-
-**Command**::
-
-    GetRegSpec.py Snap/<source_name>.ave.fits \
-        <source_name>.ave.<source_name>.reg red \
-        <source_name>.ave.<source_name>.reg green
-
-To store outputs in a subdirectory::
-
-    GetRegSpec.py -root Snap_spec/<source_name> \
-        Snap/<source_name>.ave.fits \
-        <source_name>.ave.<source_name>.reg red \
-        <source_name>.ave.<source_name>.reg green
-
-**Output**
-
-An ASCII fixed-width table with a name constructed from the root, the
-snapshot filename, the combination type (``ave``), and a ``back`` suffix
-indicating background subtraction was applied, e.g.
-``Snap_spec/J0056-7209_J0056-7209.ave_ave_back.txt``.
-
-Columns:
+Output spectrum columns:
 
 ==================  ================================================
 Column              Description
@@ -229,40 +220,168 @@ LSF                 Mean line spread function
 
 **Verification**
 
-- Plot ``FLUX`` vs ``WAVE`` and confirm that emission lines (H-alpha,
-  [NII] 6548/6583, [SII] 6717/6731) are present at the expected velocity.
-- Compare ``SOURCE_FLUX`` and ``BACK_FLUX`` to confirm that the background
-  subtraction has removed continuum without over-subtracting line emission.
-- Check that ``ERROR`` values are consistent with the signal-to-noise
-  expected for the source.
+- Plot ``FLUX`` vs ``WAVE`` and confirm emission lines (H-alpha,
+  [NII] 6548/6583, [SII] 6717/6731) at the expected velocity.
+- Compare ``SOURCE_FLUX`` and ``BACK_FLUX`` to confirm the background
+  subtraction removed continuum without over-subtracting line emission.
+- Load the ``.reg`` file from ``FiberReg/`` in DS9 to confirm red fibers
+  lie on the source and green fibers form a surrounding ring.
+- Check the ``zimage/`` overlay plots to confirm the fiber assignments
+  are consistent with the known SNR morphology in the broadband images.
 
 See :doc:`api/GetRegSpec/index` for API documentation.
+
+
+.. _mc-step4:
+
+Step 4 — Inspect Spectra (``PlotSpec.py``)
+-------------------------------------------
+
+``PlotSpec.py`` creates a multi-panel overview plot covering the full LVM
+wavelength range (3600–9560 Å) for each extracted spectrum, with common
+emission lines labelled.  Running it after step 3 gives a quick visual check
+that the background subtraction is behaving sensibly before committing to
+full Gaussian fitting.
+
+When ``BACK_FLUX`` is present (as it is in all spectra produced by step 3),
+the background is overlaid in black so source and background levels can be
+compared directly in every panel.
+
+**Command**::
+
+    PlotSpec.py -med Snap_spec/*back*txt
+
+The ``-med`` flag scales each panel around the local median flux, which works
+well for SNR spectra that are faint in the continuum but bright in lines.
+The default half-range is ``3e-15`` erg/s/cm²/Å; adjust with ``-delta`` if
+needed::
+
+    PlotSpec.py -med -delta 1e-15 Snap_spec/*back*txt
+
+**Outputs**
+
+- ``Overview_Plot/<spectrum_name>.overview.png`` — full-wavelength overview
+  plot with emission line labels; one file per input spectrum
+
+**Verification**
+
+- Confirm that H-alpha, [NII] 6548/6583, and [SII] 6717/6731 are visible
+  as positive peaks in the ``FLUX`` (blue) trace.
+- Check that the ``BACK_FLUX`` (black) trace is smooth and shows no sharp
+  emission features, which would indicate the background annulus overlaps
+  the SNR shell.
+- If continuum levels look unreasonably high or negative, re-examine the
+  fiber assignments from step 3.
+
+
+.. _mc-step5:
+
+Step 5 — Fit Emission Lines (``lvm_gaussfit.py``)
+--------------------------------------------------
+
+``lvm_gaussfit.py`` fits Gaussian profiles to the prominent emission lines
+in the extracted spectra.  The spectra produced by step 3 each contain
+three spectral columns: the background-subtracted flux (``FLUX``), the raw
+source flux before subtraction (``SOURCE_FLUX``), and the background flux
+(``BACK_FLUX``).  The ``-stype`` option selects which column to fit;
+omitting it fits the background-subtracted spectrum.
+
+All three variants are normally run to allow comparison of line fluxes
+across the source, background, and net spectra.  The ``-smc`` flag sets
+the systemic velocity to 146 km/s (SMC); use ``-lmc`` for LMC targets
+(262 km/s).
+
+**Commands**::
+
+    lvm_gaussfit.py -smc -stype BACK   Snap_spec/*back*txt
+    lvm_gaussfit.py -smc -stype SOURCE Snap_spec/*back*txt
+    lvm_gaussfit.py -smc               Snap_spec/*back*txt
+
+**What each command fits**
+
+===================  ========================================================
+Command              Spectrum fitted
+===================  ========================================================
+``-stype BACK``      Background annulus (``BACK_FLUX`` / ``BACK_ERROR``)
+``-stype SOURCE``    Raw source before subtraction (``SOURCE_FLUX`` / ``SOURCE_ERROR``)
+no ``-stype``        Background-subtracted source (``FLUX`` / ``ERROR``)
+===================  ========================================================
+
+**Outputs**
+
+Output files are named ``Gauss_<date>.<stype>.txt`` for the ``BACK`` and
+``SOURCE`` runs and ``Gauss_<date>.txt`` for the background-subtracted run,
+where ``<date>`` is today's date in YYMMDD format.  To use a fixed name
+rather than a date, add ``-out <name>``::
+
+    lvm_gaussfit.py -smc -stype BACK   -out smc_snr Snap_spec/*back*txt
+    lvm_gaussfit.py -smc -stype SOURCE -out smc_snr Snap_spec/*back*txt
+    lvm_gaussfit.py -smc               -out smc_snr Snap_spec/*back*txt
+
+This produces ``Gauss_smc_snr.BACK.txt``, ``Gauss_smc_snr.SOURCE.txt``,
+and ``Gauss_smc_snr.txt``.
+
+**Verification**
+
+- Open the output files and confirm that H-alpha fluxes are positive and
+  physically plausible for SNRs (line widths, velocity offsets).
+- Compare ``SOURCE`` and ``BACK`` fits to confirm that the background
+  contribution is being properly characterised.
+- Check that the background-subtracted fits (no ``-stype``) show enhanced
+  [SII]/H-alpha ratios characteristic of shock-ionised SNR gas.
+
+See :doc:`api/lvm_gaussfit/index` for API documentation.
+
+
+Output Directory Reference
+--------------------------
+
+The workflow writes results to the following directories (all created
+automatically):
+
+=================  =============  =====================================================
+Directory          Created by     Contents
+=================  =============  =====================================================
+``Snap/``          Step 1         Combined RSS FITS snapshot per source
+``Snap_gauss/``    Step 1         Gaussian fit parameters per fiber (ASCII)
+``Snap_fig/``      Step 1         4-panel H-alpha/[SII]/ratio/FWHM diagnostic plots
+``ximage/``        Preparation    Broadband cutout plots with source regions overlaid
+``xdata/``         Preparation    Broadband FITS cutout files used in step 3
+``FiberReg/``      Step 3         DS9 region files with fiber color assignments
+``Snap_spec/``     Step 3         Background-subtracted spectra (one per source)
+``zimage/``        Step 3         Broadband cutouts with LVM fiber overlay
+``Overview_Plot/`` Step 4         Full-wavelength overview plots (one per spectrum)
+=================  =============  =====================================================
+
+Gaussian fit summary tables (``Gauss_*.txt``) are written to the current
+working directory by step 5.
 
 
 Complete Worked Example
 -----------------------
 
-The following sequence processes a single SMC SNR from start to finish::
+The preparation step and main workflow can be run in either order::
 
-    # Step 1: create snapshot, fit lines, make diagnostic plot
-    rss_snap.py smc_snr_observed.txt J0056-7209
+    # Preparation (independent): create per-source broadband image cutouts
+    LSnap.py -size 10 -type ha  mcels_ha.fits  smc_snr_cotton24.txt
+    LSnap.py -size 10 -type sii mcels_sii.fits smc_snr_cotton24.txt
 
-    # Step 2: generate source + background annulus table (run once for all sources)
-    GenAnnularBackground.py smc_snr_cotton24.txt
-
-    # Step 3: assign fiber colors for this source
-    MakeLVMReg.py Snap/J0056-7209.ave.fits smc_snr_cotton24.ann_reg.txt
-
-    # Step 4: extract background-subtracted spectrum
-    GetRegSpec.py -root Snap_spec/J0056-7209 \
-        Snap/J0056-7209.ave.fits \
-        J0056-7209.ave.J0056-7209.reg red \
-        J0056-7209.ave.J0056-7209.reg green
-
-To run the full catalog through steps 1 and 2::
-
+    # Step 1: create snapshots, fit lines, make diagnostic plots
     rss_snap.py -all smc_snr_observed.txt
+
+    # Step 2: generate source + background annulus table
     GenAnnularBackground.py smc_snr_cotton24.txt
+
+    # Step 3: extract spectra and overlay fiber maps on broadband images
+    GetRegSpec.py -all -imgdir xdata smc_snr_cotton24.ann_reg.txt
+
+    # Step 4: inspect extracted spectra
+    PlotSpec.py -med Snap_spec/*back*txt
+
+    # Step 5: fit emission lines in all three spectral variants
+    lvm_gaussfit.py -smc -stype BACK   -out smc_snr Snap_spec/*back*txt
+    lvm_gaussfit.py -smc -stype SOURCE -out smc_snr Snap_spec/*back*txt
+    lvm_gaussfit.py -smc               -out smc_snr Snap_spec/*back*txt
 
 
 See Also
@@ -270,5 +389,8 @@ See Also
 
 - :doc:`snapshots` — detailed documentation for ``rss_snap.py``
 - :doc:`region_files` — detailed documentation for ``GenAnnularBackground.py``
-- :doc:`api/MakeLVMReg/index` — API documentation for ``MakeLVMReg.py``
+- :doc:`api/LSnap/index` — API documentation for ``LSnap.py``
 - :doc:`api/GetRegSpec/index` — API documentation for ``GetRegSpec.py``
+- :doc:`api/MakeLVMReg/index` — API documentation for ``MakeLVMReg.py``
+- :doc:`api/PlotSpec/index` — API documentation for ``PlotSpec.py``
+- :doc:`api/lvm_gaussfit/index` — API documentation for ``lvm_gaussfit.py``

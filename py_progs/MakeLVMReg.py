@@ -296,7 +296,7 @@ def get_fibers_in_region(fiber_tab,region_tab,size_min=17.5):
 
 
 
-def do_complex(filename,qtab,outroot='',size_min=17.5):
+def do_complex(filename,qtab,outroot='',size_min=17.5,reg_dir=''):
     '''
     Process one rss file producing a region file for each source in
     the masterfile.  There can be multiple lines in the masterfile
@@ -309,6 +309,8 @@ def do_complex(filename,qtab,outroot='',size_min=17.5):
         qtab (astropy.table.Table): An already opened masterfile.
         outroot (str): Optional root name for output files.
         size_min (float): Minimum size for any region parameter, designed so that one will find at least one fiber for each region. Default is 17.5.
+        reg_dir (str): Directory in which to write the region file.
+            Created if it does not exist.  Default is '' (current directory).
 
     Returns:
         str: The name of the region file that was written.
@@ -333,10 +335,14 @@ def do_complex(filename,qtab,outroot='',size_min=17.5):
     if outroot!='':
         root='%s_%s' % (root,outroot)
 
+    if reg_dir:
+        os.makedirs(reg_dir,exist_ok=True)
+
     sources=np.unique(qtab['Source_name'])
     #  print('XXX sources:',sources)
     for one_source in sources:
-        outfile='%s.%s.reg' % (root,one_source)
+        basename='%s.%s.reg' % (root,one_source)
+        outfile=os.path.join(reg_dir,basename) if reg_dir else basename
         one_object_tab=qtab[qtab['Source_name']==one_source]
         if 'SourceBack' in one_object_tab.colnames:
             source_tab=one_object_tab[one_object_tab['SourceBack']=='Source']

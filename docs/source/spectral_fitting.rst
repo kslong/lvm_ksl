@@ -71,6 +71,20 @@ A table (FITS and ASCII) with one row per fiber containing:
 - Fit quality metrics
 - Fiber positions (ra, dec)
 
+**Units:**
+
+The LVM DRP stores flux density in units of erg/s/cm²/Å.  Before fitting,
+all spectra are multiplied by 10¹⁶ to bring values into a numerically
+convenient range.  Because the Gaussian model is parameterized by its
+integrated flux (i.e. the analytic integral over wavelength), the output
+``flux_*`` columns have units of **erg/s/cm² × 10¹⁶**.  To convert to
+physical integrated line fluxes divide by 10¹⁶::
+
+    flux_physical [erg/s/cm²]  =  flux_col  ×  1e-16
+
+Wavelengths (line centers, FWHM) are in Ångströms.  The ``back_*`` columns
+retain the scaled flux-density units (erg/s/cm²/Å × 10¹⁶).
+
 **Example**::
 
     # Fit lines in an LMC observation
@@ -228,6 +242,8 @@ Notes
 - Fits include error estimates from the covariance matrix
 - Failed fits are flagged in the output table
 - For RSS files, the output table includes fiber positions for mapping
+- All ``flux_*`` output columns are integrated line fluxes in units of
+  erg/s/cm² × 10¹⁶.  Divide by 10¹⁶ to obtain physical values in erg/s/cm².
 
 
 See Also

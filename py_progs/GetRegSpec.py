@@ -186,6 +186,10 @@ def get_spec(filename,xfib,xtype='ave'):
     '''
     Retrieve the spectra from the first
     nfib fibers in the xfib table
+
+    Returns (xspec, n_good) where n_good is the number of fibers that
+    passed the fibstatus filter and were actually included in the average.
+    This count is needed by do_one to correctly scale the sum spectrum.
     '''
 
     x=fits.open(filename)
@@ -259,7 +263,7 @@ def get_spec(filename,xfib,xtype='ave'):
     xspec['WAVE'].format='.1f'
     xspec['FLUX'].format='.3e'
     xspec['ERROR'].format='.3e'
-    return xspec
+    return xspec, len(xxfib)
 
 
 def do_one(filename,source_reg,source_reg_color,back_reg=None, back_reg_color=None, xtype='ave',root='Spec'):
@@ -295,16 +299,16 @@ def do_one(filename,source_reg,source_reg_color,back_reg=None, back_reg_color=No
         return
 
     if xtype=='sum':
-        xspec=get_spec(filename=filename,xfib=source_fibers,xtype='ave')
+        xspec, n_source_good=get_spec(filename=filename,xfib=source_fibers,xtype='ave')
     else:
-        xspec=get_spec(filename=filename,xfib=source_fibers,xtype=xtype)
+        xspec, _=get_spec(filename=filename,xfib=source_fibers,xtype=xtype)
 
     # print('Taking spectra from: ',list(source_fibers['fiberid']))
     if back_reg!=None:
         bfibers=read_reg(back_reg,back_reg_color)
         print('Getting Background from %d fibers with color: %s ' % (len(bfibers),back_reg_color))
         # print('Taking background from: ',list(bfibers['fiberid']))
-        bspec=get_spec(filename=filename,xfib=bfibers,xtype='med')
+        bspec, _=get_spec(filename=filename,xfib=bfibers,xtype='med')
         xspec['SOURCE_FLUX']=xspec['FLUX']
         xspec['SOURCE_ERROR']=xspec['ERROR']
         xspec['FLUX']-=bspec['FLUX']
@@ -313,15 +317,18 @@ def do_one(filename,source_reg,source_reg_color,back_reg=None, back_reg_color=No
         xspec['BACK_ERROR']=bspec['ERROR']
 
     if xtype=='sum':
-        xspec['FLUX']*=len(source_fibers)
-        xspec['ERROR']*=len(source_fibers)
-        xspec['SKY']*=len(source_fibers)
-        xspec['SKY_ERROR']*=len(source_fibers)
+        n_total=len(source_fibers)
+        print('Scaling sum spectrum by %d total fibers in region (%d good, %d bad assumed equal to mean)' % (n_total, n_source_good, n_total-n_source_good))
+        xspec['FLUX']*=n_total
+        xspec['ERROR']*=n_total
+        if 'SKY' in xspec.colnames:
+            xspec['SKY']*=n_total
+            xspec['SKY_ERROR']*=n_total
         if back_reg!=None:
-            xspec['BACK_FLUX']*=len(source_fibers)
-            xspec['BACK_ERROR']*=len(source_fibers)
-            xspec['SOURCE_FLUX']*=len(source_fibers)
-            xspec['SOURCE_ERROR']*=len(source_fibers)
+            xspec['BACK_FLUX']*=n_total
+            xspec['BACK_ERROR']*=n_total
+            xspec['SOURCE_FLUX']*=n_total
+            xspec['SOURCE_ERROR']*=n_total
 
     # Add code do make a directory for storing the results if the root name contains a directory
 
@@ -419,12 +426,15 @@ def do_all(masterfile, snap_dir='Snap', out_dir='Snap_spec', c_type='ave', xtype
 
         filename = '%s/%s.%s.fits' % (snap_dir, source_name, c_type)
         if not os.path.isfile(filename):
-            print('Skipping %s: snapshot file not found' % filename)
-            continue
+            if os.path.isfile(filename + '.gz'):
+                filename = filename + '.gz'
+            else:
+                print('Skipping %s: snapshot file not found' % filename)
+                continue
 
         source_tab = xtab[xtab['Source_name'] == source_name]
         reg_file = MakeLVMReg.do_complex(filename=filename, qtab=source_tab,
-                                         outroot='source', size_min=35, reg_dir=reg_dir)
+                                         outroot='source', buffer=17.5, reg_dir=reg_dir)
         if reg_file is None:
             print('Skipping %s: could not create region file' % source_name)
             continue

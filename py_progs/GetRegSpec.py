@@ -11,9 +11,9 @@ RA and Dec based on a region file that contains one region per fiber.
 
 Command line usage::
 
-    GetRegSpec.py [-h] [-root whatever] [-med] [-sum] filename[s] source_reg [color] [back_reg] [back_color]
+    GetRegSpec.py [-h] [-root whatever] [-ave] [-med] filename[s] source_reg [color] [back_reg] [back_color]
 
-    GetRegSpec.py [-h] [-all] [-snap snap_dir] [-out out_dir] [-med] [-ctype ave|med] masterfile
+    GetRegSpec.py [-h] [-all] [-snap snap_dir] [-out out_dir] [-ave] [-med] [-ctype ave|med] ann_reg_file
 
 Options:
 
@@ -23,16 +23,17 @@ Options:
 -root whatever
     Prepend a root string to the output filename.
 
--med
-    Construct the median instead of the average source spectrum.
+-ave
+    Construct the average (per-fiber) source spectrum instead of the sum.
 
--sum
-    Construct the sum instead of the average source spectrum.
+-med
+    Construct the median (per-fiber) source spectrum instead of the sum.
 
 -all
-    Batch mode: process all sources listed in masterfile. Calls
+    Batch mode: process all sources listed in ann_reg_file. Calls
     MakeLVMReg.do_complex to assign fiber colors for each source,
     then extracts source (red) and background (green) spectra.
+    Default combination type is sum.
 
 -snap snap_dir
     Directory containing snapshot FITS files (default: Snap).
@@ -66,26 +67,29 @@ optional background region file; back_color is the corresponding
 background color.  The positional arguments source_reg, color,
 back_reg, and back_color must appear in order.
 
-Arguments (batch mode): masterfile is a source catalog with SourceBack,
-Source_name, RA, Dec, RegType, Major, Minor, and Theta columns, such
-as that produced by GenAnnularBackground.py.
+Arguments (batch mode): ann_reg_file is an annular-background catalog
+produced by GenAnnularBackground.py.  It must contain SourceBack,
+Source_name, RA, Dec, RegType, Major, Minor, and Theta columns.
+Background subtraction requires the SourceBack column; if it is absent
+the user will be prompted before proceeding.
 
 Description:
 
 The routine reads a region file produced by MakeLVMReg.py in which
 every science fiber has been assigned a color, and extracts the
-average (or median) spectrum of fibers with the requested color.
-If a background region is provided the median background spectrum
+sum (default), average, or median spectrum of fibers with the requested
+color.  If a background region is provided the median background spectrum
 is subtracted.
 
-If multiple fibers are selected the routine returns the average flux
-across fibers rather than the sum.  Errors are per-fiber, not reduced
-by the number of fibers.
+By default the sum spectrum is returned: the per-fiber average is
+computed and then multiplied by the total number of fibers in the region
+(including bad fibers, which are assumed to equal the mean of the good
+ones).  Use -ave or -med to return a per-fiber spectrum instead.
 
 Primary routines:
 
     do_one   - extract spectrum for a single RSS file
-    do_all   - batch-process all sources in a masterfile
+    do_all   - batch-process all sources in an annular-background catalog
 
 Notes:
 
@@ -370,16 +374,21 @@ def do_one(filename,source_reg,source_reg_color,back_reg=None, back_reg_color=No
 
 
 
-def do_all(masterfile, snap_dir='Snap', out_dir='Snap_spec', c_type='ave', xtype='ave', img_dir='', reg_dir='FiberReg'):
+def do_all(ann_reg_file, snap_dir='Snap', out_dir='Snap_spec', c_type='ave', xtype='sum', img_dir='', reg_dir='FiberReg'):
     '''
-    Process all sources in a masterfile, creating a background-subtracted
-    spectrum for each one.
+    Process all sources in an annular-background catalog, creating a
+    background-subtracted spectrum for each one.
 
-    For every unique Source_name in masterfile the routine:
+    The input file should be produced by GenAnnularBackground.py and must
+    contain a SourceBack column (values 'Source' / 'Back') for background
+    subtraction to occur.  If the column is absent the user is warned and
+    must confirm before processing continues without background subtraction.
+
+    For every unique Source_name in ann_reg_file the routine:
 
     1. Locates the snapshot file snap_dir/<source_name>.<c_type>.fits
     2. Calls MakeLVMReg.do_complex to assign fiber colors (red=source,
-       green=background annulus) using the region geometry in masterfile.
+       green=background annulus) using the region geometry in ann_reg_file.
     3. Calls do_one to extract the average source spectrum (red fibers)
        and subtract the median background (green fibers).
     4. If img_dir is provided, calls LSnap.make_one_image for every FITS
@@ -387,17 +396,17 @@ def do_all(masterfile, snap_dir='Snap', out_dir='Snap_spec', c_type='ave', xtype
        the fiber color assignments on each broadband image.
 
     Parameters:
-        masterfile (str): Source catalog with SourceBack, Source_name,
-            RA, Dec, RegType, Major, Minor, and Theta columns, such as
-            that produced by GenAnnularBackground.py.
+        ann_reg_file (str): Annular-background catalog produced by
+            GenAnnularBackground.py.  Must contain SourceBack, Source_name,
+            RA, Dec, RegType, Major, Minor, and Theta columns.
         snap_dir (str): Directory containing snapshot FITS files
             (default: 'Snap').
         out_dir (str): Output directory for extracted spectra
             (default: 'Snap_spec').
         c_type (str): Combination type suffix used in snapshot filenames,
             e.g. 'ave' or 'med' (default: 'ave').
-        xtype (str): How to combine source fibers: 'ave' or 'med'
-            (default: 'ave').
+        xtype (str): How to combine source fibers: 'ave', 'med', or 'sum'
+            (default: 'sum').
         reg_dir (str): Directory in which region files are written by
             MakeLVMReg.do_complex.  Created automatically if it does not
             exist (default: 'FiberReg').
@@ -414,9 +423,20 @@ def do_all(masterfile, snap_dir='Snap', out_dir='Snap_spec', c_type='ave', xtype
     if img_dir:
         from lvm_ksl import LSnap
 
-    xtab = asc.read(masterfile)
+    xtab = asc.read(ann_reg_file)
     sources = np.unique(xtab['Source_name'])
     has_back = 'SourceBack' in xtab.colnames
+
+    if not has_back:
+        print('\n*** WARNING ***')
+        print('The file "%s" does not contain a SourceBack column.' % ann_reg_file)
+        print('This column is required for background subtraction and is normally')
+        print('produced by GenAnnularBackground.py.  Without it, no background')
+        print('will be subtracted from any spectrum.')
+        answer = input('Continue without background subtraction? [y/N]: ').strip().lower()
+        if answer != 'y':
+            print('Aborting.')
+            return
 
     os.makedirs(out_dir, exist_ok=True)
 
@@ -476,10 +496,10 @@ def steer(argv):
     back_reg=None
     back_reg_color=None
     root='Spec'
-    xtype='ave'
+    xtype='sum'
     filenames=[]
     xall=False
-    masterfile=''
+    ann_reg_file=''
     snap_dir='Snap'
     out_dir='Snap_spec'
     c_type='ave'
@@ -494,10 +514,10 @@ def steer(argv):
         elif argv[i]=='-root':
             i+=1
             root=argv[i]
+        elif argv[i][0:4]=='-ave':
+            xtype='ave'
         elif argv[i][0:4]=='-med':
             xtype='med'
-        elif argv[i][0:4]=='-sum':
-            xtype='sum'
         elif argv[i]=='-all':
             xall=True
         elif argv[i]=='-snap':
@@ -518,8 +538,8 @@ def steer(argv):
         elif argv[i][0]=='-':
             print('Error: Incorrect Command line: ',argv)
             return
-        elif xall and masterfile=='':
-            masterfile=argv[i]
+        elif xall and ann_reg_file=='':
+            ann_reg_file=argv[i]
         elif argv[i].count('.fits')>0:
             filenames.append(argv[i])
         elif source_reg==None and argv[i].count('reg')>0:
@@ -536,10 +556,10 @@ def steer(argv):
         i+=1
 
     if xall:
-        if masterfile=='':
-            print('Error: -all requires a masterfile argument')
+        if ann_reg_file=='':
+            print('Error: -all requires an ann_reg_file argument')
             return
-        do_all(masterfile, snap_dir=snap_dir, out_dir=out_dir, c_type=c_type, xtype=xtype, img_dir=img_dir, reg_dir=reg_dir)
+        do_all(ann_reg_file, snap_dir=snap_dir, out_dir=out_dir, c_type=c_type, xtype=xtype, img_dir=img_dir, reg_dir=reg_dir)
         return
 
     if len(filenames)==0:

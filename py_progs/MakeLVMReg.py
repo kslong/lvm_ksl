@@ -21,6 +21,12 @@ Command line usage (if any):
 
     usage: MakeLVMReg.py [-h] filename.fits whatever.reg.txt
 
+    or (batch mode, one region file per source)
+
+    usage: MakeLVMReg.py [-h] [-all] [-snap snap_dir] [-ctype ave|med]
+                         [-regdir reg_dir] [-buffer arcsec] [-imgdir img_dir]
+                         masterfile
+
 Description:
 
 At a base level, this creates a region file for one or more rss files that
@@ -39,9 +45,16 @@ positions based on the information in the masterfile.
 
 The routine then writes out this to a new region file.
 
+In batch mode (-all) the routine iterates over every unique Source_name in
+the masterfile, locates the corresponding snapshot FITS file in snap_dir,
+calls do_complex to assign fiber colors, and optionally calls
+LSnap.make_one_image to overlay the fiber assignments on broadband images
+found in img_dir.
+
 Primary routines:
 
-The main routine is do_complex.
+    do_complex  - assign fiber colors for one snapshot and one source set
+    do_all      - batch-process all sources in a masterfile
 
 Notes:
 
@@ -61,6 +74,7 @@ This routine uses reg2master.py (which is not currently part of lvm_ksl).
 History:
 
 241106 ksl Coding begun
+260301 ksl Added do_all for batch processing of source catalogs from snapshots
 
 '''
 
@@ -428,21 +442,98 @@ def do_one(filename,qtab,outroot='',buffer=17.5):
 
 
 
+def do_all(masterfile, snap_dir='Snap', c_type='ave', reg_dir='FiberReg', buffer=17.5, img_dir=''):
+    '''
+    Batch-process all sources in a masterfile, creating one region file per
+    source from the corresponding snapshot FITS file.
+
+    For every unique Source_name in masterfile the routine:
+
+    1. Locates the snapshot file snap_dir/<source_name>.<c_type>.fits
+       (falls back to the .gz variant if the plain file is absent).
+    2. Calls do_complex to assign fiber colors (red=source, green=background
+       annulus) using the region geometry defined in masterfile.
+    3. If img_dir is provided, calls LSnap.make_one_image for every FITS file
+       in img_dir whose name begins with the source name, overlaying the fiber
+       color assignments on each broadband image.  Output images go to zimage/.
+
+    Parameters:
+        masterfile (str): Source catalog with SourceBack, Source_name, RA, Dec,
+            RegType, Major, Minor, and Theta columns, such as that produced by
+            GenAnnularBackground.py.
+        snap_dir (str): Directory containing snapshot FITS files (default: 'Snap').
+        c_type (str): Combination-type suffix used in snapshot filenames,
+            e.g. 'ave' or 'med' (default: 'ave').
+        reg_dir (str): Directory in which region files are written.  Created
+            automatically if it does not exist (default: 'FiberReg').
+        buffer (float): Arcseconds to expand each region boundary before testing
+            fiber containment (default: 17.5, one LVM fiber radius).
+        img_dir (str): Directory containing per-source broadband image cutouts.
+            If set, LSnap.make_one_image is called for each matching file after
+            region-file creation.  Leave empty to skip (default: '').
+    '''
+    import glob
+
+    if img_dir:
+        from lvm_ksl import LSnap
+
+    xtab = ascii.read(masterfile)
+    sources = np.unique(xtab['Source_name'])
+
+    n = len(sources)
+    for i, source_name in enumerate(sources):
+        print('\n!! Processing %s (%d of %d)' % (source_name, i + 1, n))
+
+        filename = '%s/%s.%s.fits' % (snap_dir, source_name, c_type)
+        if not os.path.isfile(filename):
+            if os.path.isfile(filename + '.gz'):
+                filename = filename + '.gz'
+            else:
+                print('Skipping %s: snapshot file not found' % filename)
+                continue
+
+        source_tab = xtab[xtab['Source_name'] == source_name]
+        reg_file = do_complex(filename=filename, qtab=source_tab,
+                              outroot='source', buffer=buffer, reg_dir=reg_dir)
+        if reg_file is None:
+            print('Skipping %s: could not create region file' % source_name)
+            continue
+
+        if img_dir:
+            img_files = glob.glob('%s/%s*.fits*' % (img_dir, source_name))
+            if img_files:
+                for img_file in sorted(img_files):
+                    LSnap.make_one_image(img_file, reg_file, None, None)
+            else:
+                print('No broadband images found for %s in %s' % (source_name, img_dir))
+
+
 def steer(argv):
     '''
-    MakeReg.py [-h] [-root whatever]  file1 file2   ra dec size ra dec size  
+    MakeReg.py [-h] [-root whatever]  file1 file2   ra dec size ra dec size
     or
 
     MakeReg.py -h -root whatever -circle ra dec size -circle ra dec size  file1  file 2
 
-    or 
+    or
 
-    MakeReg.py  n103b.txt file 1 file 2 
+    MakeReg.py  n103b.txt file 1 file 2
+
+    or (batch mode)
+
+    MakeReg.py -all [-snap snap_dir] [-ctype ave|med] [-regdir reg_dir]
+               [-buffer arcsec] [-imgdir img_dir] masterfile
     '''
     filename=[]
     regfile=''
     masterfile=''
     outroot=''
+    xall=False
+    snap_dir='Snap'
+    c_type='ave'
+    reg_dir='FiberReg'
+    buffer=17.5
+    img_dir=''
     icolor=['red','green','blue','cyan','magenta','black','white']
 
     i=1
@@ -453,6 +544,23 @@ def steer(argv):
         elif argv[i]=='-root':
             i+=1
             outroot=argv[i]
+        elif argv[i]=='-all':
+            xall=True
+        elif argv[i]=='-snap':
+            i+=1
+            snap_dir=argv[i]
+        elif argv[i]=='-ctype':
+            i+=1
+            c_type=argv[i]
+        elif argv[i]=='-regdir':
+            i+=1
+            reg_dir=argv[i]
+        elif argv[i]=='-buffer':
+            i+=1
+            buffer=float(argv[i])
+        elif argv[i]=='-imgdir':
+            i+=1
+            img_dir=argv[i]
         elif argv[i][0]=='-':
             print('Error: cannot parse command line :',argv)
             return
@@ -464,8 +572,15 @@ def steer(argv):
             masterfile=argv[i]
         i+=1
 
-    # We want to work with a masterfile
+    if xall:
+        if masterfile=='':
+            print('Error: -all requires a masterfile argument')
+            return
+        do_all(masterfile, snap_dir=snap_dir, c_type=c_type, reg_dir=reg_dir,
+               buffer=buffer, img_dir=img_dir)
+        return
 
+    # We want to work with a masterfile
 
     if regfile!='' and masterfile=='':
         print('Making masterfile from a region file')
@@ -476,7 +591,7 @@ def steer(argv):
         print('There is confusion: No masterfile input or created, so quitting ', argv)
         return
 
-    try: 
+    try:
         xtab=ascii.read(masterfile)
     except:
         print('Could not read the masterfile :',masterfile)

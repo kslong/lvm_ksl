@@ -135,20 +135,14 @@ def fit_gaussian_to_spectrum(spectrum_table, line, init_wavelength, init_fwhm, w
     divide by 1e16.
 
     Parameters:
-    spectrum_table (astropy.table.Table): Table with 'WAVE' (Ang), 'FLUX'
-        (erg/s/cm**2/Ang * 1e16), and 'ERROR' columns
+    spectrum_table (astropy.table.Table): Table with 'WAVE' (Ang), 'FLUX' (erg/s/cm**2/Ang * 1e16), and 'ERROR' columns
     line (str): Name of the line being fit (used to construct output column names)
     init_wavelength (float): Initial guess for the center wavelength (Ang)
     init_fwhm (float): Initial guess for the FWHM (Ang)
     wavelength_min, wavelength_max (float): Wavelength range for fitting (Ang)
 
     Returns:
-    qtab (astropy.table.Table): Table with fit results and uncertainties.
-        flux_<line>  -- integrated line flux in erg/s/cm**2 * 1e16
-        eflux_<line> -- 1-sigma uncertainty on flux, same units
-        wave_<line>  -- fitted line center (Ang)
-        fwhm_<line>  -- fitted FWHM (Ang)
-        back_<line>  -- fitted background level (erg/s/cm**2/Ang * 1e16)
+    qtab (astropy.table.Table): Table with fit results: flux_<line> integrated flux (erg/s/cm**2 * 1e16); eflux_<line> 1-sigma uncertainty; wave_<line> center (Ang); fwhm_<line> FWHM (Ang); back_<line> background (erg/s/cm**2/Ang * 1e16).
     fit_table (astropy.table.Table): Table with original and fitted values
     """
     # Define model functions
@@ -268,21 +262,14 @@ def fit_double_gaussian_to_spectrum(spectrum_table, line, init_wavelength1, init
     erg/s/cm**2 * 1e16.  To convert to physical line flux divide by 1e16.
 
     Parameters:
-    spectrum_table (astropy.table.Table): Table with 'WAVE' (Ang), 'FLUX'
-        (erg/s/cm**2/Ang * 1e16), and 'ERROR' columns
+    spectrum_table (astropy.table.Table): Table with 'WAVE' (Ang), 'FLUX' (erg/s/cm**2/Ang * 1e16), and 'ERROR' columns
     line (str): Name of the line being fit (used to construct output column names)
-    init_wavelength1, init_wavelength2 (float): Initial guesses for the center
-        wavelengths of the two components (Ang)
+    init_wavelength1, init_wavelength2 (float): Initial guesses for the center wavelengths of the two components (Ang)
     init_fwhm (float): Initial guess for the shared FWHM (Ang)
     wavelength_min, wavelength_max (float): Wavelength range for fitting (Ang)
 
     Returns:
-    qtab (astropy.table.Table): Table with fit results and uncertainties.
-        flux_<line>_a, flux_<line>_b  -- integrated line fluxes in erg/s/cm**2 * 1e16
-        eflux_<line>_a, eflux_<line>_b -- 1-sigma uncertainties, same units
-        wave_<line>_a, wave_<line>_b   -- fitted line centers (Ang)
-        fwhm_<line>_a                  -- shared fitted FWHM (Ang)
-        back_<line>_ab                 -- fitted background level (erg/s/cm**2/Ang * 1e16)
+    qtab (astropy.table.Table): Table with fit results: flux_<line>_a/b integrated fluxes (erg/s/cm**2 * 1e16); eflux_<line>_a/b 1-sigma uncertainties; wave_<line>_a/b centers (Ang); fwhm_<line>_a shared FWHM (Ang); back_<line>_ab background (erg/s/cm**2/Ang * 1e16).
     fit_table (astropy.table.Table): Table with original and fitted values
     """
     # Define model function

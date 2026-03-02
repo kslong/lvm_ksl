@@ -234,19 +234,23 @@ See :doc:`api/GetRegSpec/index` for API documentation.
 
 .. _mc-step4:
 
-Step 4 — Inspect Spectra (``PlotSpec.py`` and ``SNRPlot.py``)
---------------------------------------------------------------
+Step 4 — Inspect Spectra (``PlotSpec.py`` / ``PlotSpec3.py`` and ``SNRPlot.py``)
+---------------------------------------------------------------------------------
 
-Two complementary tools are run after step 3 to visually verify the
-extracted spectra before committing to full Gaussian fitting.
+Three complementary tools are run after step 3 to visually verify the
+extracted spectra before committing to full Gaussian fitting.  Two
+alternative overview plot scripts are available; choose the one that
+best suits the display context.
 
-**PlotSpec.py** — full-wavelength panel view
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+**PlotSpec.py** — full-wavelength panel view (8 panels, portrait)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 ``PlotSpec.py`` divides the full LVM wavelength range (3600–9560 Å) into
-panels with common emission lines labelled.  When ``BACK_FLUX`` is present
-(as it always is in spectra produced by step 3), the background is overlaid
-in black so source and background levels can be compared in every panel.
+eight 750 Å panels stacked vertically in a portrait figure (8×12 inches).
+Common emission lines are labelled in each panel.  When ``BACK_FLUX`` is
+present (as it always is in spectra produced by step 3), the background is
+overlaid in black so source and background levels can be compared in every
+panel.  Axis labels give wavelength in Å and flux in erg s⁻¹ cm⁻² Å⁻¹.
 
 **Command**::
 
@@ -258,6 +262,23 @@ The default half-range is ``3e-15`` erg/s/cm²/Å; adjust with ``-delta`` if
 needed::
 
     PlotSpec.py -med -delta 1e-15 Snap_spec/*back*txt
+
+**Outputs**
+
+- ``Overview_Plot/<spectrum_name>.overview.png`` — one file per input spectrum
+
+**PlotSpec3.py** — full-wavelength panel view (3 panels, landscape)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+``PlotSpec3.py`` is a presentation-oriented alternative.  It uses three wide
+panels (3600–5600, 5600–7600, and 7600–9600 Å) stacked vertically in a
+landscape figure sized for a 16:9 slide (16×9 inches).  All scaling modes,
+the ``-mode sep_back`` option, and the emission-line labels are identical to
+``PlotSpec.py``.
+
+**Command**::
+
+    PlotSpec3.py -med Snap_spec/*back*txt
 
 **Outputs**
 
@@ -375,7 +396,10 @@ The preparation step and main workflow can be run in either order::
     GetRegSpec.py -all -imgdir xdata smc_snr_cotton24.ann_reg.txt
 
     # Step 4: inspect extracted spectra
-    PlotSpec.py -med Snap_spec/*back*txt
+    # Use PlotSpec.py for detailed desktop inspection (8 panels, portrait)
+    # or PlotSpec3.py for presentations (3 panels, landscape 16:9)
+    PlotSpec.py  -med Snap_spec/*back*txt
+    PlotSpec3.py -med Snap_spec/*back*txt
     SNRPlot.py -smc  Snap_spec/*back*txt
 
     # Step 5: fit emission lines in all three spectral variants
@@ -494,12 +518,18 @@ Created by ``GetRegSpec.py -all -imgdir xdata``.
 ``Overview_Plot/`` — full-wavelength overview plots (Step 4)
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-Created by ``PlotSpec.py``.
+Created by ``PlotSpec.py`` or ``PlotSpec3.py`` (both write to the same
+directory with the same filename pattern).
 
-- ``<spectrum_name>.overview.png`` — full-wavelength plot (3600–9560 Å)
-  divided into 750 Å panels, each autoscaled to the local median.
-  Common emission lines are labelled in red.  Where ``BACK_FLUX`` is
-  present it is overlaid in black.
+- ``<spectrum_name>.overview.png`` — full-wavelength overview plot with
+  common emission lines labelled in red.  Where ``BACK_FLUX`` is present
+  it is overlaid in black.  Axis labels give wavelength (Å) and flux
+  (erg s⁻¹ cm⁻² Å⁻¹).
+
+  - ``PlotSpec.py`` produces a portrait layout (8×12 inches) with eight
+    750 Å panels — suited for detailed inspection at the desktop.
+  - ``PlotSpec3.py`` produces a landscape layout (16×9 inches) with three
+    2000 Å panels — suited for presentations and slides.
 
 Check that ``FLUX`` shows positive peaks at H-alpha, [NII] 6548/6583,
 and [SII] 6717/6731, and that ``BACK_FLUX`` is smooth with no sharp line
@@ -546,6 +576,6 @@ See Also
 - :doc:`api/LSnap/index` — API documentation for ``LSnap.py``
 - :doc:`api/GetRegSpec/index` — API documentation for ``GetRegSpec.py``
 - :doc:`api/MakeLVMReg/index` — API documentation for ``MakeLVMReg.py``
-- :doc:`api/PlotSpec/index` — API documentation for ``PlotSpec.py``
+- :doc:`api/PlotSpec/index` — API documentation for ``PlotSpec.py`` and ``PlotSpec3.py``
 - :doc:`api/SNRPlot/index` — API documentation for ``SNRPlot.py``
 - :doc:`api/lvm_gaussfit/index` — API documentation for ``lvm_gaussfit.py``

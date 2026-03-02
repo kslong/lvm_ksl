@@ -5,17 +5,17 @@
 '''
                     Space Telescope Science Institute
 
-Synopsis:  
+Synopsis:
 
-Create a standard plot of a spectrum that has been
-extracted from the LVM data. The spectrum should
-have been sky subtracted.  
+Create a presentation-friendly plot of a spectrum extracted from the LVM
+data, laid out as three wide horizontal panels covering 3600-5600,
+5600-7600, and 7600-9600 AA.  The spectrum should have been sky subtracted.
 
 
 Command line usage (if any):
 
-    usage: PlotSpec.py [-h] [-frac 0.1] [-min ymin] [-max ymax] [-med] [-delta 1e-15]
-                       [-mode sep_back] file [files ...]
+    usage: PlotSpec3.py [-h] [-frac 0.1] [-min ymin] [-max ymax] [-med] [-delta 1e-15]
+                        [-mode sep_back] file [files ...]
 
     Plots are written to Overview_Plot/<basename>.overview.png.
 
@@ -38,23 +38,27 @@ Command line usage (if any):
     -med    centre each panel on the median FLUX in that wavelength range, with limits median +/- delta
     -delta  half-range for -med mode (default 3e-15)
 
-Description:  
+Description:
+
+    Variant of PlotSpec.py with three panels (each 2000 AA wide) stacked
+    vertically in a landscape figure sized for full-screen presentation
+    (16:9 aspect ratio).
 
 Primary routines:
 
-    doall
+    do_all
 
 Notes:
 
     The various panels are currently autoscaled.  The
-    maximum values plotted are controlled by the 
+    maximum values plotted are controlled by the
     frac parameter.
-    
+
 History:
 
-240607 ksl Coding begun
-260302 ksl Add supxlabel/supylabel axis labels (Wavelength, Flux)
-260302 ksl Reduce -med lower offset from 0.5*delta to 0.25*delta
+240607 ksl Coding begun (PlotSpec.py)
+260302 ksl PlotSpec3.py: 3 vertical panels in a 16:9 landscape figure
+260302 ksl Add axis labels; reduce -med lower offset to 0.25*delta
 
 '''
 
@@ -162,7 +166,7 @@ def do_lines():
     xmark('HI',3835.38)
     xmark('HI',3770.6)
     xmark('HI',3797.9)
-    xmark('[MgI]',4566.78) 
+    xmark('[MgI]',4566.78)
     xmark('[OII]',7320.24,0.6)
     return
 
@@ -170,20 +174,16 @@ def do_lines():
 
 def do_all(xtab,ptype='scale',ymin=0.0,ymax=1e-14,frac=0.1,med_delta=3e-15,title=''):
     '''
-    Create the figure
+    Create the figure: 3 vertical panels in a landscape figure sized for
+    full-screen presentation (16:9 aspect ratio).
     '''
     plt.close(2)
-    fig=plt.figure(2,(8,12))
+    fig=plt.figure(2,(16,9))
 
-    wmin=3600
-    wmax=9559
-    delta=750
-    nmax=int((wmax-wmin)/delta)+1
-    i=0
-    while i<nmax:
+    panels=[(3600,5600),(5600,7600),(7600,9600)]
+    nmax=len(panels)
+    for i,(wwmin,wwmax) in enumerate(panels):
         plt.subplot(nmax,1,i+1)
-        wwmin=wmin+i*delta
-        wwmax=wwmin+delta
         if ptype=='scale':
             do_one_region(xtab,wwmin,wwmax,frac)
         elif ptype=='fixed':
@@ -193,9 +193,7 @@ def do_all(xtab,ptype='scale',ymin=0.0,ymax=1e-14,frac=0.1,med_delta=3e-15,title
         else:
             print('Error: Indecipherable plot type: ',ptype)
             return
-
         do_lines()
-        i+=1
     fig.supxlabel('Wavelength (Å)',fontsize=13)
     fig.supylabel(r'Flux (erg s$^{-1}$ cm$^{-2}$ Å$^{-1}$)',fontsize=13)
     if title:

@@ -271,10 +271,8 @@ def get_fibers_in_region(fiber_tab, region_tab, buffer=17.5):
 
     Parameters:
         fiber_tab (astropy.table.Table): Table of fiber positions.
-        region_tab (astropy.table.Table): Table of region definitions; may
-            contain multiple rows to build a composite selection.
-        buffer (float): Arcseconds to add to each region boundary before
-            testing containment.  Default 17.5 (one LVM fiber radius).
+        region_tab (astropy.table.Table): Table of region definitions; may contain multiple rows to build a composite selection.
+        buffer (float): Arcseconds to add to each region boundary before testing containment.  Default 17.5 (one LVM fiber radius).
     '''
 
     fiber_tab['in_area']=False
@@ -343,11 +341,8 @@ def do_complex(filename,qtab,outroot='',buffer=17.5,reg_dir=''):
         filename (str): The name of an rss file.
         qtab (astropy.table.Table): An already opened masterfile.
         outroot (str): Optional root name for output files.
-        buffer (float): Arcseconds to expand each region boundary before
-            testing fiber containment.  Default 17.5 (one LVM fiber radius),
-            which captures every fiber with any overlap with the nominal region.
-        reg_dir (str): Directory in which to write the region file.
-            Created if it does not exist.  Default is '' (current directory).
+        buffer (float): Arcseconds to expand each region boundary before testing fiber containment.  Default 17.5 (one LVM fiber radius), which captures every fiber with any overlap with the nominal region.
+        reg_dir (str): Directory in which to write the region file.  Created if it does not exist.  Default is '' (current directory).
 
     Returns:
         str: The name of the region file that was written.
@@ -458,19 +453,12 @@ def do_all(masterfile, snap_dir='Snap', c_type='ave', reg_dir='FiberReg', buffer
        color assignments on each broadband image.  Output images go to zimage/.
 
     Parameters:
-        masterfile (str): Source catalog with SourceBack, Source_name, RA, Dec,
-            RegType, Major, Minor, and Theta columns, such as that produced by
-            GenAnnularBackground.py.
+        masterfile (str): Source catalog with SourceBack, Source_name, RA, Dec, RegType, Major, Minor, and Theta columns, such as that produced by GenAnnularBackground.py.
         snap_dir (str): Directory containing snapshot FITS files (default: 'Snap').
-        c_type (str): Combination-type suffix used in snapshot filenames,
-            e.g. 'ave' or 'med' (default: 'ave').
-        reg_dir (str): Directory in which region files are written.  Created
-            automatically if it does not exist (default: 'FiberReg').
-        buffer (float): Arcseconds to expand each region boundary before testing
-            fiber containment (default: 17.5, one LVM fiber radius).
-        img_dir (str): Directory containing per-source broadband image cutouts.
-            If set, LSnap.make_one_image is called for each matching file after
-            region-file creation.  Leave empty to skip (default: '').
+        c_type (str): Combination-type suffix used in snapshot filenames, e.g. 'ave' or 'med' (default: 'ave').
+        reg_dir (str): Directory in which region files are written.  Created automatically if it does not exist (default: 'FiberReg').
+        buffer (float): Arcseconds to expand each region boundary before testing fiber containment (default: 17.5, one LVM fiber radius).
+        img_dir (str): Directory containing per-source broadband image cutouts.  If set, LSnap.make_one_image is called for each matching file after region-file creation.  Leave empty to skip (default: '').
     '''
     import glob
 

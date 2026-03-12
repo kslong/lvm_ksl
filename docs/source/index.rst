@@ -24,6 +24,7 @@ are experimwenatls.  Those that have detailed documantion are the most reliable.
    :caption: Contents:
 
    installation
+   find_obs
    data_retrieval
    summarize
    sky_subtraction
@@ -31,4 +32,6 @@ are experimwenatls.  Those that have detailed documantion are the most reliable.
    visualization
    rss_combining
    snapshots
+   region_files
+   mc_snr_analysis
 

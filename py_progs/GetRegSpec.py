@@ -3,54 +3,103 @@
 '''
                     Space Telescope Science Institute
 
-Synopsis:  
+Synopsis:
 
-Get a spectrum from a fiber or fibers in an RSSfile given an 
-RA and DEC based on a region file that conntains the one 
-region per fiber.  
+Get a spectrum from a fiber or fibers in an RSS file given an
+RA and Dec based on a region file that contains one region per fiber.
 
 
 Command line usage::
 
-    GetRegSpec.py [-h] [-root whatever] [-median] [-sum] filename[s] source_reg [color] [back_reg] [back_color]
+    GetRegSpec.py [-h] [-root whatever] [-ave] [-med] filename[s] source_reg [color] [back_reg] [back_color]
 
-Options: -h prints this help; -median constructs the median instead of the
-average spectrum; -sum constructs the sum instead of the median or average;
--root whatever prepends a root to the standard file name.
+    GetRegSpec.py [-h] [-all] [-snap snap_dir] [-out out_dir] [-ave] [-med] [-ctype ave|med] ann_reg_file
 
-Arguments: filename[s] is one or more RSS spectra files; source_reg is the
-name of a region file (must have extension .reg); color defines the color
-of fibers to be extracted; back_reg is an optional background region file;
-back_color is an optional background color. The arguments source_reg, color,
+Options:
+
+-h
+    Print this help.
+
+-root whatever
+    Prepend a root string to the output filename.
+
+-ave
+    Construct the average (per-fiber) source spectrum instead of the sum.
+
+-med
+    Construct the median (per-fiber) source spectrum instead of the sum.
+
+-all
+    Batch mode: process all sources listed in ann_reg_file. Calls
+    MakeLVMReg.do_complex to assign fiber colors for each source,
+    then extracts source (red) and background (green) spectra.
+    Default combination type is sum.
+
+-snap snap_dir
+    Directory containing snapshot FITS files (default: Snap).
+    Used only with -all.
+
+-out out_dir
+    Output directory for extracted spectra (default: Snap_spec).
+    Used only with -all.
+
+-ctype ave|med
+    Combination type used when naming snapshot files, i.e. the
+    extension before .fits (default: ave). Used only with -all.
+
+-regdir reg_dir
+    Directory in which fiber region files are written by MakeLVMReg
+    (default: FiberReg).  When reading region files, the current
+    directory is checked first and FiberReg is used as a fallback.
+    Used only with -all.
+
+-imgdir img_dir
+    Directory containing per-source broadband image cutouts (e.g.
+    MCELS H-alpha and [SII] FITS files).  If provided, LSnap is called
+    after each spectrum extraction to overlay the fiber color assignments
+    on every FITS file whose name begins with the source name.  Output
+    images are written to zimage/.  Used only with -all.
+
+Arguments (single-file mode): filename[s] is one or more RSS spectra
+files; source_reg is the name of a region file (must have extension
+.reg); color defines the color of fibers to extract; back_reg is an
+optional background region file; back_color is the corresponding
+background color.  The positional arguments source_reg, color,
 back_reg, and back_color must appear in order.
-    
+
+Arguments (batch mode): ann_reg_file is an annular-background catalog
+produced by GenAnnularBackground.py.  It must contain SourceBack,
+Source_name, RA, Dec, RegType, Major, Minor, and Theta columns.
+Background subtraction requires the SourceBack column; if it is absent
+the user will be prompted before proceeding.
 
 Description:
 
-The routine looks for a file where the RA and Dec values have been assigned
-to fibers (by MakeLVMReg.py) and finds the fiber or fibers that are closest
-to this position and extracts the spectral information for this.
+The routine reads a region file produced by MakeLVMReg.py in which
+every science fiber has been assigned a color, and extracts the
+sum (default), average, or median spectrum of fibers with the requested
+color.  If a background region is provided the median background spectrum
+is subtracted.
 
-If multiple fibers are selected the resulting spectrum the routine generally
-returns the average flux in the fibers, rather than the sum. The routine also
-returns an average or median of various other quantities.
-
-The errors are the errors for one fiber, not something that has been reduced
-by the number of fibers.
+By default the sum spectrum is returned: the per-fiber average is
+computed and then multiplied by the total number of fibers in the region
+(including bad fibers, which are assumed to equal the mean of the good
+ones).  Use -ave or -med to return a per-fiber spectrum instead.
 
 Primary routines:
 
-The steer function, unlike most of ksl routines, manages the entire process
-at present. The do_one function is the routine that one would most likely
-call from another script.
+    do_one   - extract spectrum for a single RSS file
+    do_all   - batch-process all sources in an annular-background catalog
 
 Notes:
 
-The routine also produces a region file that shows what fibers were used.
+The routine also writes a region file showing which fibers were used.
 
 History:
 
 231212 ksl Coding begun
+260223 ksl Added do_all for batch processing of source catalogs
+260223 ksl Added LSnap broadband image overlay support to do_all
 
 '''
 
@@ -70,12 +119,19 @@ import matplotlib.pyplot as plt
 def read_reg(xfile,color=None):
     '''
     This reads a region file that contains
-    all a region for each of the fibers.  
+    all a region for each of the fibers.
     It either selects those fibers of a certain
     color or if color is None, it assumes that
     one wants the fibers which have the fewest
     fibers of a given color.
+
+    If xfile is not found in the current directory the routine
+    looks for it in the FiberReg subdirectory before giving up.
     '''
+    if not os.path.isfile(xfile):
+        fallback=os.path.join('FiberReg',os.path.basename(xfile))
+        if os.path.isfile(fallback):
+            xfile=fallback
     try:
         f=open(xfile)
         lines=f.readlines()
@@ -134,6 +190,10 @@ def get_spec(filename,xfib,xtype='ave'):
     '''
     Retrieve the spectra from the first
     nfib fibers in the xfib table
+
+    Returns (xspec, n_good) where n_good is the number of fibers that
+    passed the fibstatus filter and were actually included in the average.
+    This count is needed by do_one to correctly scale the sum spectrum.
     '''
 
     x=fits.open(filename)
@@ -207,7 +267,7 @@ def get_spec(filename,xfib,xtype='ave'):
     xspec['WAVE'].format='.1f'
     xspec['FLUX'].format='.3e'
     xspec['ERROR'].format='.3e'
-    return xspec
+    return xspec, len(xxfib)
 
 
 def do_one(filename,source_reg,source_reg_color,back_reg=None, back_reg_color=None, xtype='ave',root='Spec'):
@@ -243,16 +303,16 @@ def do_one(filename,source_reg,source_reg_color,back_reg=None, back_reg_color=No
         return
 
     if xtype=='sum':
-        xspec=get_spec(filename=filename,xfib=source_fibers,xtype='ave')
+        xspec, n_source_good=get_spec(filename=filename,xfib=source_fibers,xtype='ave')
     else:
-        xspec=get_spec(filename=filename,xfib=source_fibers,xtype=xtype)
+        xspec, _=get_spec(filename=filename,xfib=source_fibers,xtype=xtype)
 
     # print('Taking spectra from: ',list(source_fibers['fiberid']))
     if back_reg!=None:
         bfibers=read_reg(back_reg,back_reg_color)
         print('Getting Background from %d fibers with color: %s ' % (len(bfibers),back_reg_color))
         # print('Taking background from: ',list(bfibers['fiberid']))
-        bspec=get_spec(filename=filename,xfib=bfibers,xtype='med')
+        bspec, _=get_spec(filename=filename,xfib=bfibers,xtype='med')
         xspec['SOURCE_FLUX']=xspec['FLUX']
         xspec['SOURCE_ERROR']=xspec['ERROR']
         xspec['FLUX']-=bspec['FLUX']
@@ -261,15 +321,18 @@ def do_one(filename,source_reg,source_reg_color,back_reg=None, back_reg_color=No
         xspec['BACK_ERROR']=bspec['ERROR']
 
     if xtype=='sum':
-        xspec['FLUX']*=len(source_fibers)
-        xspec['ERROR']*=len(source_fibers)
-        xspec['SKY']*=len(source_fibers)
-        xspec['SKY_ERROR']*=len(source_fibers)
+        n_total=len(source_fibers)
+        print('Scaling sum spectrum by %d total fibers in region (%d good, %d bad assumed equal to mean)' % (n_total, n_source_good, n_total-n_source_good))
+        xspec['FLUX']*=n_total
+        xspec['ERROR']*=n_total
+        if 'SKY' in xspec.colnames:
+            xspec['SKY']*=n_total
+            xspec['SKY_ERROR']*=n_total
         if back_reg!=None:
-            xspec['BACK_FLUX']*=len(source_fibers)
-            xspec['BACK_ERROR']*=len(source_fibers)
-            xspec['SOURCE_FLUX']*=len(source_fibers)
-            xspec['SOURCE_ERROR']*=len(source_fibers)
+            xspec['BACK_FLUX']*=n_total
+            xspec['BACK_ERROR']*=n_total
+            xspec['SOURCE_FLUX']*=n_total
+            xspec['SOURCE_ERROR']*=n_total
 
     # Add code do make a directory for storing the results if the root name contains a directory
 
@@ -311,6 +374,108 @@ def do_one(filename,source_reg,source_reg_color,back_reg=None, back_reg_color=No
 
 
 
+def do_all(ann_reg_file, snap_dir='Snap', out_dir='Snap_spec', c_type='ave', xtype='sum', img_dir='', reg_dir='FiberReg'):
+    '''
+    Process all sources in an annular-background catalog, creating a
+    background-subtracted spectrum for each one.
+
+    The input file should be produced by GenAnnularBackground.py and must
+    contain a SourceBack column (values 'Source' / 'Back') for background
+    subtraction to occur.  If the column is absent the user is warned and
+    must confirm before processing continues without background subtraction.
+
+    For every unique Source_name in ann_reg_file the routine:
+
+    1. Locates the snapshot file snap_dir/<source_name>.<c_type>.fits
+    2. Calls MakeLVMReg.do_complex to assign fiber colors (red=source,
+       green=background annulus) using the region geometry in ann_reg_file.
+    3. Calls do_one to extract the average source spectrum (red fibers)
+       and subtract the median background (green fibers).
+    4. If img_dir is provided, calls LSnap.make_one_image for every FITS
+       file in img_dir whose name begins with the source name, overlaying
+       the fiber color assignments on each broadband image.
+
+    Parameters:
+        ann_reg_file (str): Annular-background catalog produced by
+            GenAnnularBackground.py.  Must contain SourceBack, Source_name,
+            RA, Dec, RegType, Major, Minor, and Theta columns.
+        snap_dir (str): Directory containing snapshot FITS files
+            (default: 'Snap').
+        out_dir (str): Output directory for extracted spectra
+            (default: 'Snap_spec').
+        c_type (str): Combination type suffix used in snapshot filenames,
+            e.g. 'ave' or 'med' (default: 'ave').
+        xtype (str): How to combine source fibers: 'ave', 'med', or 'sum'
+            (default: 'sum').
+        reg_dir (str): Directory in which region files are written by
+            MakeLVMReg.do_complex.  Created automatically if it does not
+            exist (default: 'FiberReg').
+        img_dir (str): Directory containing per-source broadband image
+            cutouts (e.g. MCELS H-alpha and [SII] FITS files).  If set,
+            LSnap.make_one_image is called for each matching file after
+            spectrum extraction.  Output images are written to zimage/.
+            (default: '', meaning LSnap is not called).
+    '''
+    import glob
+    from lvm_ksl import MakeLVMReg
+    from astropy.io import ascii as asc
+
+    if img_dir:
+        from lvm_ksl import LSnap
+
+    xtab = asc.read(ann_reg_file)
+    sources = np.unique(xtab['Source_name'])
+    has_back = 'SourceBack' in xtab.colnames
+
+    if not has_back:
+        print('\n*** WARNING ***')
+        print('The file "%s" does not contain a SourceBack column.' % ann_reg_file)
+        print('This column is required for background subtraction and is normally')
+        print('produced by GenAnnularBackground.py.  Without it, no background')
+        print('will be subtracted from any spectrum.')
+        answer = input('Continue without background subtraction? [y/N]: ').strip().lower()
+        if answer != 'y':
+            print('Aborting.')
+            return
+
+    os.makedirs(out_dir, exist_ok=True)
+
+    n = len(sources)
+    for i, source_name in enumerate(sources):
+        print('\n!! Processing %s (%d of %d)' % (source_name, i + 1, n))
+
+        filename = '%s/%s.%s.fits' % (snap_dir, source_name, c_type)
+        if not os.path.isfile(filename):
+            if os.path.isfile(filename + '.gz'):
+                filename = filename + '.gz'
+            else:
+                print('Skipping %s: snapshot file not found' % filename)
+                continue
+
+        source_tab = xtab[xtab['Source_name'] == source_name]
+        reg_file = MakeLVMReg.do_complex(filename=filename, qtab=source_tab,
+                                         outroot='source', buffer=17.5, reg_dir=reg_dir)
+        if reg_file is None:
+            print('Skipping %s: could not create region file' % source_name)
+            continue
+
+        back_reg   = reg_file if has_back else None
+        back_color = 'green'  if has_back else None
+
+        do_one(filename=filename,
+               source_reg=reg_file, source_reg_color='red',
+               back_reg=back_reg, back_reg_color=back_color,
+               xtype=xtype, root='%s/Spec' % out_dir)
+
+        if img_dir:
+            img_files = glob.glob('%s/%s*.fits*' % (img_dir, source_name))
+            if img_files:
+                for img_file in sorted(img_files):
+                    LSnap.make_one_image(img_file, reg_file, None, None)
+            else:
+                print('No broadband images found for %s in %s' % (source_name, img_dir))
+
+
 def steer(argv):
     '''
     This routine parses the command line
@@ -322,7 +487,8 @@ def steer(argv):
     acitvites apart so the routine can be called
     from a Jupyter script, but that is not
     the way things are at present
-    usage: GetRegSpec.py  [-h] [-root whatever] -median -sum filename source_reg color [-back back_reg back_color]
+    usage: GetRegSpec.py [-h] [-root whatever] [-med] [-sum] filename[s] source_reg [color] [back_reg] [back_color]
+    usage: GetRegSpec.py [-h] [-all] [-snap snap_dir] [-out out_dir] [-med] [-ctype ave|med] masterfile
     '''
 
     source_reg=None
@@ -330,43 +496,74 @@ def steer(argv):
     back_reg=None
     back_reg_color=None
     root='Spec'
-    xtype='ave'
-    back=False
+    xtype='sum'
     filenames=[]
-
+    xall=False
+    ann_reg_file=''
+    snap_dir='Snap'
+    out_dir='Snap_spec'
+    c_type='ave'
+    reg_dir='FiberReg'
+    img_dir=''
 
     i=1
     while i<len(argv):
         if argv[i]=='-h':
             print(__doc__)
-            return 
+            return
         elif argv[i]=='-root':
             i+=1
             root=argv[i]
+        elif argv[i][0:4]=='-ave':
+            xtype='ave'
         elif argv[i][0:4]=='-med':
             xtype='med'
-        elif argv[i][0:4]=='-sum':
-            xtype='sum'
+        elif argv[i]=='-all':
+            xall=True
+        elif argv[i]=='-snap':
+            i+=1
+            snap_dir=argv[i]
+        elif argv[i]=='-out':
+            i+=1
+            out_dir=argv[i]
+        elif argv[i]=='-ctype':
+            i+=1
+            c_type=argv[i]
+        elif argv[i]=='-regdir':
+            i+=1
+            reg_dir=argv[i]
+        elif argv[i]=='-imgdir':
+            i+=1
+            img_dir=argv[i]
         elif argv[i][0]=='-':
             print('Error: Incorrect Command line: ',argv)
             return
+        elif xall and ann_reg_file=='':
+            ann_reg_file=argv[i]
         elif argv[i].count('.fits')>0:
             filenames.append(argv[i])
         elif source_reg==None and argv[i].count('reg')>0:
             source_reg=argv[i]
         elif back_reg==None and source_reg_color==None and argv[i].count('reg')==0:
             source_reg_color=argv[i]
-        elif back_reg==None and argv[i].count('reg')>0 :
+        elif back_reg==None and argv[i].count('reg')>0:
             back_reg=argv[i]
-        elif back_reg !=None and back_reg_color==None:
+        elif back_reg!=None and back_reg_color==None:
             back_reg_color=argv[i]
         else:
-            print('Error: Incorrect Command line: (exta args) ',argv)
+            print('Error: Incorrect Command line: (extra args) ',argv)
             return
         i+=1
 
+    if xall:
+        if ann_reg_file=='':
+            print('Error: -all requires an ann_reg_file argument')
+            return
+        do_all(ann_reg_file, snap_dir=snap_dir, out_dir=out_dir, c_type=c_type, xtype=xtype, img_dir=img_dir, reg_dir=reg_dir)
+        return
+
     if len(filenames)==0:
-        print('No files to proces: ',argv)
+        print('No files to process: ',argv)
         return
 
     for filename in filenames:

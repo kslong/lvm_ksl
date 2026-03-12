@@ -21,6 +21,12 @@ Command line usage (if any):
 
     usage: MakeLVMReg.py [-h] filename.fits whatever.reg.txt
 
+    or (batch mode, one region file per source)
+
+    usage: MakeLVMReg.py [-h] [-all] [-snap snap_dir] [-ctype ave|med]
+                         [-regdir reg_dir] [-buffer arcsec] [-imgdir img_dir]
+                         masterfile
+
 Description:
 
 At a base level, this creates a region file for one or more rss files that
@@ -39,9 +45,16 @@ positions based on the information in the masterfile.
 
 The routine then writes out this to a new region file.
 
+In batch mode (-all) the routine iterates over every unique Source_name in
+the masterfile, locates the corresponding snapshot FITS file in snap_dir,
+calls do_complex to assign fiber colors, and optionally calls
+LSnap.make_one_image to overlay the fiber assignments on broadband images
+found in img_dir.
+
 Primary routines:
 
-The main routine is do_complex.
+    do_complex  - assign fiber colors for one snapshot and one source set
+    do_all      - batch-process all sources in a masterfile
 
 Notes:
 
@@ -61,6 +74,7 @@ This routine uses reg2master.py (which is not currently part of lvm_ksl).
 History:
 
 241106 ksl Coding begun
+260301 ksl Added do_all for batch processing of source catalogs from snapshots
 
 '''
 
@@ -238,65 +252,84 @@ def get_good_fibers(filename,color='yellow',target_type='science'):
     exposure=x[0].header['EXPOSURE']
     return xtab,exposure
 
-def get_fibers_in_region(fiber_tab,region_tab,size_min=17.5):
+def get_fibers_in_region(fiber_tab, region_tab, buffer=17.5):
     '''
-    Add a column to fiber_tab to indicate which fibers are in the
-    in the reg_tab.  reg_tab can contain multiple rows
+    Add a column to fiber_tab to indicate which fibers overlap the regions
+    in region_tab.
+
+    Each region boundary is expanded by `buffer` arcseconds before testing
+    whether fiber centers fall inside it.  With LVM fiber geometry (35 arcsec
+    center-to-center spacing, 17.5 arcsec radius), the default buffer of 17.5
+    arcsec captures every fiber with any overlap with the nominal region: a
+    fiber center exactly at the expanded boundary has its edge just touching
+    the original boundary.
+
+    For annular (background) regions both the outer and inner radii are
+    expanded by buffer.  This ensures that the expanded source and expanded
+    background share a common boundary with no overlap and no gap, as long as
+    the background inner radius equals the source outer radius.
+
+    Parameters:
+        fiber_tab (astropy.table.Table): Table of fiber positions.
+        region_tab (astropy.table.Table): Table of region definitions; may contain multiple rows to build a composite selection.
+        buffer (float): Arcseconds to add to each region boundary before testing containment.  Default 17.5 (one LVM fiber radius).
     '''
 
-    xtab=fiber_tab.copy()
     fiber_tab['in_area']=False
 
     for one_row in region_tab:
 
-        if one_row['Major']<size_min:
-            print('Setting Major to size_min')
-            one_row['Major']=size_min
-        if one_row['RegType'!='circle'] and one_row['Minor']<size_min:
-            print('Setting Minor to size_min')
-            one_row['Minor']=size_min
-        print(one_row)
+        # Use a fresh copy for every region row so that check_positions_*
+        # (which modifies its input table in place) never contaminates results
+        # from a previous call.
+        tmp=fiber_tab.copy()
 
         if one_row['RegType']=='box':
-            ftab=check_positions_in_rectangle(xtab, center_ra=one_row['RA'], center_dec=one_row['Dec'], width=one_row['Major'], height=one_row['Minor'], theta=one_row['Theta'])
+            # Major/Minor are full widths; expand each side by buffer
+            width  = one_row['Major'] + 2 * buffer
+            height = one_row['Minor'] + 2 * buffer
+            check_positions_in_rectangle(tmp, center_ra=one_row['RA'], center_dec=one_row['Dec'], width=width, height=height, theta=one_row['Theta'])
+            new_in_area=np.array(tmp['in_area'])
+
         elif one_row['RegType']=='ellipse':
-            ftab=check_positions_in_ellipse(xtab, center_ra=one_row['RA'], center_dec=one_row['Dec'], semi_major=one_row['Major'], semi_minor=one_row['Minor'], theta=one_row['Theta'])
+            # Major/Minor are semi-axes
+            semi_major = one_row['Major'] + buffer
+            semi_minor = one_row['Minor'] + buffer
+            check_positions_in_ellipse(tmp, center_ra=one_row['RA'], center_dec=one_row['Dec'], semi_major=semi_major, semi_minor=semi_minor, theta=one_row['Theta'])
+            new_in_area=np.array(tmp['in_area'])
+
         elif one_row['RegType']=='circle':
-            ftab=check_positions_in_ellipse(xtab, center_ra=one_row['RA'], center_dec=one_row['Dec'], semi_major=one_row['Major'], semi_minor=one_row['Major'], theta=0.0)
+            # Major is the radius
+            radius = one_row['Major'] + buffer
+            check_positions_in_ellipse(tmp, center_ra=one_row['RA'], center_dec=one_row['Dec'], semi_major=radius, semi_minor=radius, theta=0.0)
+            new_in_area=np.array(tmp['in_area'])
+
         elif one_row['RegType']=='annulus':
-            # print('XXX - working on annular region')
-            # Appparently annulus is circular, and in this case it's only the outher radius that needs to be greater than the minimu siae
-            # the copy statement below is necessary because without this, qtab and ftab are pointed to the same exact table.
-            ftab=check_positions_in_ellipse(xtab, center_ra=one_row['RA'], center_dec=one_row['Dec'], semi_major=one_row['Major'], semi_minor=one_row['Major'], theta=0.0)
-
-            # print('outer: ',len(ftab[ftab['in_area']==True]))
-            # ftab.write('foo1.txt',format='ascii.fixed_width_two_line',overwrite=True)
-
-            qtab=ftab.copy()
-            # qtab has all of the fibers in the outer circle marked as in_area
-            ftab=check_positions_in_ellipse(xtab, center_ra=one_row['RA'], center_dec=one_row['Dec'], semi_major=one_row['Minor'], semi_minor=one_row['Minor'], theta=0.0)
-            # ftab has all of the fibers in the inner circle marked as in_area
-
-            # print('inner: ',len(ftab[ftab['in_area']==True]))
-            # ftab.write('foo2.txt',format='ascii.fixed_width_two_line',overwrite=True)
-
-            ftab['in_area']=np.select([ftab['in_area']==True],[False],default=qtab['in_area'])
-
-            # print('final: ',len(ftab[ftab['in_area']==True]))
-            # ftab.write('foo3.txt',format='ascii.fixed_width_two_line',overwrite=True)
-
-            # finished
+            # Major is outer radius, Minor is inner radius.  Expand both by
+            # buffer so the background inner boundary aligns with the expanded
+            # source outer boundary, guaranteeing no overlap between source
+            # and background fiber selections.
+            # Use separate copies for outer and inner to avoid in-place
+            # overwriting between the two check_positions_in_ellipse calls.
+            outer = one_row['Major'] + buffer
+            inner = one_row['Minor'] + buffer
+            tmp_inner=fiber_tab.copy()
+            check_positions_in_ellipse(tmp,       center_ra=one_row['RA'], center_dec=one_row['Dec'], semi_major=outer, semi_minor=outer, theta=0.0)
+            check_positions_in_ellipse(tmp_inner, center_ra=one_row['RA'], center_dec=one_row['Dec'], semi_major=inner, semi_minor=inner, theta=0.0)
+            new_in_area=np.array(tmp['in_area']) & ~np.array(tmp_inner['in_area'])
 
         else:
-            print('Error: Uknown region type :', one_row['RegType'])
+            print('Error: Unknown region type :', one_row['RegType'])
             raise ValueError
-        fiber_tab['in_area']=fiber_tab['in_area'] | ftab['in_area']
+
+        fiber_tab['in_area']=fiber_tab['in_area'] | new_in_area
+
     return fiber_tab
 
 
 
 
-def do_complex(filename,qtab,outroot='',size_min=17.5):
+def do_complex(filename,qtab,outroot='',buffer=17.5,reg_dir=''):
     '''
     Process one rss file producing a region file for each source in
     the masterfile.  There can be multiple lines in the masterfile
@@ -308,7 +341,8 @@ def do_complex(filename,qtab,outroot='',size_min=17.5):
         filename (str): The name of an rss file.
         qtab (astropy.table.Table): An already opened masterfile.
         outroot (str): Optional root name for output files.
-        size_min (float): Minimum size for any region parameter, designed so that one will find at least one fiber for each region. Default is 17.5.
+        buffer (float): Arcseconds to expand each region boundary before testing fiber containment.  Default 17.5 (one LVM fiber radius), which captures every fiber with any overlap with the nominal region.
+        reg_dir (str): Directory in which to write the region file.  Created if it does not exist.  Default is '' (current directory).
 
     Returns:
         str: The name of the region file that was written.
@@ -333,25 +367,29 @@ def do_complex(filename,qtab,outroot='',size_min=17.5):
     if outroot!='':
         root='%s_%s' % (root,outroot)
 
+    if reg_dir:
+        os.makedirs(reg_dir,exist_ok=True)
+
     sources=np.unique(qtab['Source_name'])
     #  print('XXX sources:',sources)
     for one_source in sources:
-        outfile='%s.%s.reg' % (root,one_source)
+        basename='%s.%s.reg' % (root,one_source)
+        outfile=os.path.join(reg_dir,basename) if reg_dir else basename
         one_object_tab=qtab[qtab['Source_name']==one_source]
         if 'SourceBack' in one_object_tab.colnames:
             source_tab=one_object_tab[one_object_tab['SourceBack']=='Source']
             back_tab=one_object_tab[one_object_tab['SourceBack']=='Back']
             ftab['color']='yellow'
             if len(back_tab)>0:
-                xback_tab=get_fibers_in_region(xtab,back_tab,size_min=17.5)
+                xback_tab=get_fibers_in_region(xtab,back_tab,buffer=buffer)
                 ftab['color'][xback_tab['in_area']==True]='green'
-                # print(np.unique(ftab['color'],return_counts=True))
+                print('After back assignment:', np.unique(ftab['color'],return_counts=True))
             if len(source_tab)>0:
-                xsource_tab=get_fibers_in_region(xtab,source_tab,size_min=17.5)
+                xsource_tab=get_fibers_in_region(xtab,source_tab,buffer=buffer)
                 ftab['color'][xsource_tab['in_area']==True]='red'
-                # print(np.unique(ftab['color'],return_counts=True))
+                print('After source assignment:', np.unique(ftab['color'],return_counts=True))
         else:
-           xsource_tab=get_fibers_in_region(xtab,one_object_tab,size_min=17.5)
+           xsource_tab=get_fibers_in_region(xtab,one_object_tab,buffer=buffer)
            ftab['color'][xsource_tab['in_area']==True]='red'
 
         write_reg(outfile,ftab,color='yellow')
@@ -363,16 +401,17 @@ def do_complex(filename,qtab,outroot='',size_min=17.5):
 
 
     
-def do_one(filename,qtab,outroot='',size_min=17.5):
+def do_one(filename,qtab,outroot='',buffer=17.5):
     '''
     This routine creates a potential complex region file for extracting spectra. The fibers
     to extract ar current hardwired to be red, while those to be ignored are in colored yellow
 
-    The routine reads an rss file, and initally returns a list of 
+    The routine reads an rss file, and initially returns a list of
     all of the good science fibers.  It then produces a region file
     for each row in qtab, where the name is given by the source name
-    in qtab, and outroot.  So that at least one fiber will be slected if
-    the object is in the field a minium size for the region is set.
+    in qtab, and outroot.  Each region boundary is expanded by buffer
+    arcseconds before testing containment, so that edge fibers with any
+    overlap are captured.
     '''
 
     print('OK Knox')
@@ -388,7 +427,7 @@ def do_one(filename,qtab,outroot='',size_min=17.5):
     for i in range(len(qtab)):
         one_row=qtab[i:i+1]
 
-        ftab=get_fibers_in_region(xtab,one_row,size_min=17.5)
+        ftab=get_fibers_in_region(xtab,one_row,buffer=buffer)
         outfile='%s.%s.reg' % (root,one_row['Source_name'][0])
         print('Writing outfile: ',outfile)
         ftab['color']='yellow'
@@ -398,21 +437,91 @@ def do_one(filename,qtab,outroot='',size_min=17.5):
 
 
 
+def do_all(masterfile, snap_dir='Snap', c_type='ave', reg_dir='FiberReg', buffer=17.5, img_dir=''):
+    '''
+    Batch-process all sources in a masterfile, creating one region file per
+    source from the corresponding snapshot FITS file.
+
+    For every unique Source_name in masterfile the routine:
+
+    1. Locates the snapshot file snap_dir/<source_name>.<c_type>.fits
+       (falls back to the .gz variant if the plain file is absent).
+    2. Calls do_complex to assign fiber colors (red=source, green=background
+       annulus) using the region geometry defined in masterfile.
+    3. If img_dir is provided, calls LSnap.make_one_image for every FITS file
+       in img_dir whose name begins with the source name, overlaying the fiber
+       color assignments on each broadband image.  Output images go to zimage/.
+
+    Parameters:
+        masterfile (str): Source catalog with SourceBack, Source_name, RA, Dec, RegType, Major, Minor, and Theta columns, such as that produced by GenAnnularBackground.py.
+        snap_dir (str): Directory containing snapshot FITS files (default: 'Snap').
+        c_type (str): Combination-type suffix used in snapshot filenames, e.g. 'ave' or 'med' (default: 'ave').
+        reg_dir (str): Directory in which region files are written.  Created automatically if it does not exist (default: 'FiberReg').
+        buffer (float): Arcseconds to expand each region boundary before testing fiber containment (default: 17.5, one LVM fiber radius).
+        img_dir (str): Directory containing per-source broadband image cutouts.  If set, LSnap.make_one_image is called for each matching file after region-file creation.  Leave empty to skip (default: '').
+    '''
+    import glob
+
+    if img_dir:
+        from lvm_ksl import LSnap
+
+    xtab = ascii.read(masterfile)
+    sources = np.unique(xtab['Source_name'])
+
+    n = len(sources)
+    for i, source_name in enumerate(sources):
+        print('\n!! Processing %s (%d of %d)' % (source_name, i + 1, n))
+
+        filename = '%s/%s.%s.fits' % (snap_dir, source_name, c_type)
+        if not os.path.isfile(filename):
+            if os.path.isfile(filename + '.gz'):
+                filename = filename + '.gz'
+            else:
+                print('Skipping %s: snapshot file not found' % filename)
+                continue
+
+        source_tab = xtab[xtab['Source_name'] == source_name]
+        reg_file = do_complex(filename=filename, qtab=source_tab,
+                              outroot='source', buffer=buffer, reg_dir=reg_dir)
+        if reg_file is None:
+            print('Skipping %s: could not create region file' % source_name)
+            continue
+
+        if img_dir:
+            img_files = glob.glob('%s/%s*.fits*' % (img_dir, source_name))
+            if img_files:
+                for img_file in sorted(img_files):
+                    LSnap.make_one_image(img_file, reg_file, None, None)
+            else:
+                print('No broadband images found for %s in %s' % (source_name, img_dir))
+
+
 def steer(argv):
     '''
-    MakeReg.py [-h] [-root whatever]  file1 file2   ra dec size ra dec size  
+    MakeReg.py [-h] [-root whatever]  file1 file2   ra dec size ra dec size
     or
 
     MakeReg.py -h -root whatever -circle ra dec size -circle ra dec size  file1  file 2
 
-    or 
+    or
 
-    MakeReg.py  n103b.txt file 1 file 2 
+    MakeReg.py  n103b.txt file 1 file 2
+
+    or (batch mode)
+
+    MakeReg.py -all [-snap snap_dir] [-ctype ave|med] [-regdir reg_dir]
+               [-buffer arcsec] [-imgdir img_dir] masterfile
     '''
     filename=[]
     regfile=''
     masterfile=''
     outroot=''
+    xall=False
+    snap_dir='Snap'
+    c_type='ave'
+    reg_dir='FiberReg'
+    buffer=17.5
+    img_dir=''
     icolor=['red','green','blue','cyan','magenta','black','white']
 
     i=1
@@ -423,6 +532,23 @@ def steer(argv):
         elif argv[i]=='-root':
             i+=1
             outroot=argv[i]
+        elif argv[i]=='-all':
+            xall=True
+        elif argv[i]=='-snap':
+            i+=1
+            snap_dir=argv[i]
+        elif argv[i]=='-ctype':
+            i+=1
+            c_type=argv[i]
+        elif argv[i]=='-regdir':
+            i+=1
+            reg_dir=argv[i]
+        elif argv[i]=='-buffer':
+            i+=1
+            buffer=float(argv[i])
+        elif argv[i]=='-imgdir':
+            i+=1
+            img_dir=argv[i]
         elif argv[i][0]=='-':
             print('Error: cannot parse command line :',argv)
             return
@@ -434,8 +560,15 @@ def steer(argv):
             masterfile=argv[i]
         i+=1
 
-    # We want to work with a masterfile
+    if xall:
+        if masterfile=='':
+            print('Error: -all requires a masterfile argument')
+            return
+        do_all(masterfile, snap_dir=snap_dir, c_type=c_type, reg_dir=reg_dir,
+               buffer=buffer, img_dir=img_dir)
+        return
 
+    # We want to work with a masterfile
 
     if regfile!='' and masterfile=='':
         print('Making masterfile from a region file')
@@ -446,7 +579,7 @@ def steer(argv):
         print('There is confusion: No masterfile input or created, so quitting ', argv)
         return
 
-    try: 
+    try:
         xtab=ascii.read(masterfile)
     except:
         print('Could not read the masterfile :',masterfile)

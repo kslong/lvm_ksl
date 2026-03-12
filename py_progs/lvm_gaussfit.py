@@ -4,7 +4,7 @@
 '''
                     Space Telescope Science Institute
 
-Synopsis:  
+Synopsis:
 
 Extract fluxes etc from a standard set of emission lines from
 the scince fibers of a sky-subtracted LVM exposure
@@ -14,19 +14,19 @@ Command line usage (if any):
 
     usage: lvm_gaussfit.py --h] [-lmc] [-smc] [-v vel] [-stype SOURCE][-out root] filename ...
 
-    where 
+    where
 
     -h prient this tdocumeantiaon and fits
     -lmc or -smc applies a velocity offset for fitting
-    -vel whatever applies a velocity offset that the user specifies  
+    -vel whatever applies a velocity offset that the user specifies
     -stype SOURCE or BACK - used only for spectra that has been created as text files
     -out root sets the rootname for the output file
     filename is the a name of an SFrame compatiable file or one or more txt files
 
 
-Description:  
+Description:
 
-    The code can be used to perform gaussian to prominente lines from either a 
+    The code can be used to perform gaussian to prominente lines from either a
     rss spectrum file (including but not limited to a standard SFrame file) or
     alternative to an spectrum that has been extracted in the a table containing
     at least a column for WAVE, FLUX, ERROR.
@@ -34,21 +34,35 @@ Description:
     For an extracted spectrum of this type, which may have additional columns, at
     present one containing the spectrum before local subtraction and another containing
     the back ground spectrum which was subtracted, one can redirect the fitting with
-    the stype option.  
+    the stype option.
 
     Specifically, if one chooses SOURCE one will be fitting the un-background subtracted data
-    whereas if one uses BACK one will be fitting the Background spectrum that was used.  
+    whereas if one uses BACK one will be fitting the Background spectrum that was used.
     In either of these cases the output file will include the name SOURCE or BACK.  If
     neither option is chosen the FLUX and ERROR columns will be used for the spectrum;
     in this case if SOURCE_FLUX and BACK_FLUX exist, one will be fitting the background
     subtracted spectrum.
+
+Units:
+
+    The LVM DRP stores flux density in units of erg/s/cm**2/Ang.  Before fitting,
+    all spectra are multiplied by 1e16 to bring values into a numerically convenient
+    range.  The Gaussian model is parameterized by the integrated line flux (i.e. the
+    analytic integral of the Gaussian over wavelength), so the fitted flux columns in
+    the output table have units of:
+
+        flux_col  [erg/s/cm**2]  =  output_value * 1e-16
+
+    Wavelengths (center, FWHM) are in Angstroms.  The background parameter has units
+    of erg/s/cm**2/Ang * 1e16 (i.e. the same scaled flux-density units as the input
+    spectrum).
 
 Primary routines:
 
     doit
 
 Notes:
-                                       
+
 History:
 
 240604 ksl Coding begun
@@ -112,16 +126,23 @@ def patch_stderr_fraction(result, min_frac=0.01, verbose=False):
 def fit_gaussian_to_spectrum(spectrum_table, line, init_wavelength, init_fwhm, wavelength_min, wavelength_max, verbose=False):
     """
     Fit a Gaussian with a constant background to a spectral line using lmfit.
-    
+
+    The Gaussian is parameterized by its integrated flux so that the fitted
+    'flux' parameter equals the analytic integral of the Gaussian over wavelength.
+    If the input FLUX column is in units of erg/s/cm**2/Ang * 1e16 (the standard
+    scaling applied by do_all and do_individual), then the returned flux values
+    are in units of erg/s/cm**2 * 1e16, i.e. to convert to physical line flux
+    divide by 1e16.
+
     Parameters:
-    spectrum_table (astropy.table.Table): Table with 'WAVE', 'FLUX', and 'ERROR' columns
-    line (str): Name of the line being fit (for output column names)
-    init_wavelength (float): Initial guess for the center wavelength
-    init_fwhm (float): Initial guess for the FWHM
-    wavelength_min, wavelength_max (float): Wavelength range for fitting
-    
+    spectrum_table (astropy.table.Table): Table with 'WAVE' (Ang), 'FLUX' (erg/s/cm**2/Ang * 1e16), and 'ERROR' columns
+    line (str): Name of the line being fit (used to construct output column names)
+    init_wavelength (float): Initial guess for the center wavelength (Ang)
+    init_fwhm (float): Initial guess for the FWHM (Ang)
+    wavelength_min, wavelength_max (float): Wavelength range for fitting (Ang)
+
     Returns:
-    qtab (astropy.table.Table): Table with fit results and uncertainties
+    qtab (astropy.table.Table): Table with fit results: flux_<line> integrated flux (erg/s/cm**2 * 1e16); eflux_<line> 1-sigma uncertainty; wave_<line> center (Ang); fwhm_<line> FWHM (Ang); back_<line> background (erg/s/cm**2/Ang * 1e16).
     fit_table (astropy.table.Table): Table with original and fitted values
     """
     # Define model functions
@@ -234,16 +255,21 @@ def fit_gaussian_to_spectrum(spectrum_table, line, init_wavelength, init_fwhm, w
 def fit_double_gaussian_to_spectrum(spectrum_table, line, init_wavelength1, init_wavelength2, init_fwhm, wavelength_min, wavelength_max):
     """
     Fit two Gaussians with a shared FWHM and a constant background using lmfit.
-    
+
+    Each Gaussian is parameterized by its integrated flux (the analytic integral
+    over wavelength).  If the input FLUX column is in units of
+    erg/s/cm**2/Ang * 1e16, then the returned flux values are in units of
+    erg/s/cm**2 * 1e16.  To convert to physical line flux divide by 1e16.
+
     Parameters:
-    spectrum_table (astropy.table.Table): Table with 'WAVE', 'FLUX', and 'ERROR' columns
-    line (str): Name of the line being fit (for output column names)
-    init_wavelength1, init_wavelength2 (float): Initial guesses for the center wavelengths
-    init_fwhm (float): Initial guess for the shared FWHM
-    wavelength_min, wavelength_max (float): Wavelength range for fitting
-    
+    spectrum_table (astropy.table.Table): Table with 'WAVE' (Ang), 'FLUX' (erg/s/cm**2/Ang * 1e16), and 'ERROR' columns
+    line (str): Name of the line being fit (used to construct output column names)
+    init_wavelength1, init_wavelength2 (float): Initial guesses for the center wavelengths of the two components (Ang)
+    init_fwhm (float): Initial guess for the shared FWHM (Ang)
+    wavelength_min, wavelength_max (float): Wavelength range for fitting (Ang)
+
     Returns:
-    qtab (astropy.table.Table): Table with fit results and uncertainties
+    qtab (astropy.table.Table): Table with fit results: flux_<line>_a/b integrated fluxes (erg/s/cm**2 * 1e16); eflux_<line>_a/b 1-sigma uncertainties; wave_<line>_a/b centers (Ang); fwhm_<line>_a shared FWHM (Ang); back_<line>_ab background (erg/s/cm**2/Ang * 1e16).
     fit_table (astropy.table.Table): Table with original and fitted values
     """
     # Define model function
@@ -404,6 +430,12 @@ def clean(xdir='Gauss_dir',wild='*.txt'):
 def do_one(spectrum_table,vel=0.,xplot=False,outroot=''):
     '''
     Completely process a single spectrum
+
+    Fits Gaussians to all standard emission lines.  The input FLUX column is
+    expected to be in units of erg/s/cm**2/Ang * 1e16 (i.e. already scaled by
+    do_all or do_individual before this function is called).  Output flux columns
+    are the integrated line fluxes in erg/s/cm**2 * 1e16; to convert to physical
+    units divide by 1e16.
     '''
 
     # First make sure all of the files in directory containing the fits are removed
@@ -610,6 +642,12 @@ def do_individual(filenames,vel,stype,outname,xplot=True):
 
     This routine does read the spectra, and so one
     can modify the what is read in at this point.
+
+    If the median FLUX value is less than 1 the spectrum is assumed to be in
+    native DRP units (erg/s/cm**2/Ang) and is multiplied by 1e16 before
+    fitting.  Output flux columns are therefore in units of erg/s/cm**2 * 1e16
+    regardless of whether the scaling was applied; to recover physical line
+    fluxes divide by 1e16.
     '''
     xresults=[]
     xbad=[]
@@ -745,8 +783,13 @@ def check_for_nan(flux,max_frac=0.5):
 
 def do_all(filename='data/lvmSFrame-00009088.fits',vel=0.0,outname='',xplot=False):
     '''
-    Do all of the spectra in a rss fits file.  This multiplies everything
-    by 1e16 and corrects the errors as well
+    Do all of the spectra in a rss fits file.
+
+    Reads flux density from the FLUX extension (native DRP units: erg/s/cm**2/Ang)
+    and multiplies by 1e16 before fitting so that values are numerically
+    convenient.  Errors are derived from IVAR and scaled by the same factor.
+    The output flux columns therefore have units of erg/s/cm**2 * 1e16; to
+    recover physical line fluxes divide by 1e16.
     '''
     try:
         x=fits.open(filename)

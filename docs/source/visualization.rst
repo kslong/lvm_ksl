@@ -19,7 +19,8 @@ Available tools:
 - ``kslmap.py`` - Create images with predefined or custom filters
 - ``quick_map.py`` - Quick image creation with flexible band options
 - ``line_map.py`` - Create emission line maps
-- ``rss2image.py`` - Convert RSS to image cubes
+- ``rss2image.py`` - Convert RSS files to FITS image files
+- ``rss_explore.py`` - Interactive image and spectrum explorer
 - ``MakeVideo.py`` - Create videos from image sequences
 
 
@@ -192,14 +193,104 @@ rmax
     GetSpec.py lvmSFrame-00012345.fits 81.5 -66.0 30 -back 60 90
 
 
+Interactive Exploration
+-----------------------
+
+rss_explore.py
+^^^^^^^^^^^^^^
+
+Interactive RSS image and spectrum explorer.  Displays a spatial flux
+image from an RSS FITS file with two adjustable sliders (center
+wavelength and passband width) and a click-to-spectrum panel below.
+Can be used from a Jupyter notebook or run directly from the command line.
+
+**Command-line usage**::
+
+    rss_explore.py filename [--center WAVELENGTH] [--width WIDTH] [--ext EXT]
+
+**Options:**
+
+--center WAVELENGTH
+    Starting center wavelength in Angstroms (default: 6563, H-alpha).
+
+--width WIDTH
+    Starting passband width in Angstroms (default: 20).
+
+--ext EXT
+    FITS extension to display (default: FLUX).
+
+**Command-line examples**::
+
+    # Open at H-alpha
+    rss_explore.py lvmSFrame-00007373.fits
+
+    # Open at [O III] with a 15 A window
+    rss_explore.py lvmSFrame-00007373.fits --center 5007 --width 15
+
+    # Display the IVAR extension
+    rss_explore.py lvmSFrame-00007373.fits --ext IVAR
+
+**Jupyter notebook usage**::
+
+    %matplotlib widget          # must be the first line, before imports
+
+    from rss_explore import RSSExplorer
+
+    exp = RSSExplorer('lvmSFrame-00007373.fits')
+    exp.show()                       # start at H-alpha
+    exp.show(center=5007, width=15)  # start at [O III]
+
+Multiple calls to ``show()`` can be active simultaneously in different
+cells; each cell maintains its own independent sliders, image, and
+spectrum panel.
+
+**Interactions:**
+
++------------------------------+-------------------------------------------+
+| Action                       | Effect                                    |
++==============================+===========================================+
+| Move Center or Width slider  | Redraws the spatial flux image for the    |
+|                              | new wavelength passband                   |
++------------------------------+-------------------------------------------+
+| Click on the image           | Shows the spectrum of the nearest fibre   |
+|                              | in the lower panel; marks the fibre with  |
+|                              | a red cross; displays fibre number,       |
+|                              | RA and Dec in the panel title             |
++------------------------------+-------------------------------------------+
+| Drag a box on the spectrum   | Zooms into the selected wavelength and    |
+|                              | flux region.  Switching fibres while      |
+|                              | zoomed keeps the same axes so fibres can  |
+|                              | be compared on the same scale             |
++------------------------------+-------------------------------------------+
+| Z button / Reset zoom button | Restores the full spectrum view           |
++------------------------------+-------------------------------------------+
+
+**Requirements:**
+
+The notebook version requires ``ipympl`` for the interactive canvas::
+
+    pip install ipywidgets ipympl
+
+**Notes:**
+
+The RA/Dec tick labels on the image are approximate: RA values are
+evaluated at the middle row of the image and Dec values at the middle
+column.  The error is negligible over a typical LVM field (~0.5 deg).
+
+On first load the tool precomputes pixel masks for every fibre
+(a few seconds).  All subsequent slider and click interactions are
+fast (< 1 s).
+
+
 Additional Tools
 ----------------
 
 rss2image.py
 ^^^^^^^^^^^^
 
-Converts RSS files to image cubes (3D data cubes with two spatial
-dimensions and one wavelength dimension).
+Converts RSS files to FITS image files by summing flux over a
+specified wavelength range and projecting fibre positions onto a
+regular pixel grid.
 
 MakeVideo.py
 ^^^^^^^^^^^^
@@ -282,3 +373,4 @@ See Also
 - :doc:`api/kslmap/index` - API documentation
 - :doc:`api/quick_map/index` - API documentation
 - :doc:`api/GetSpec/index` - API documentation
+- :doc:`api/rss_explore/index` - API documentation for rss_explore

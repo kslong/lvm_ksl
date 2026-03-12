@@ -9,13 +9,14 @@ at different stages of processing. These scripts are useful for:
 - Comparing sky levels and sky subtraction residuals over time
 - Identifying trends or problems in the data
 
-Four summarization scripts are provided, each operating on different
+Five summarization scripts are provided, each operating on different
 data products:
 
 - ``SummarizeData.py`` - Catalog raw/unprocessed data files
 - ``SummarizeCframe.py`` - Summarize CFrame spectra (before sky subtraction)
 - ``SummarizeSframe.py`` - Summarize SFrame spectra (after sky subtraction)
 - ``SummarizeRings.py`` - Summarize SFrame spectra by fiber ring position
+- ``SummarizeSpec.py`` - Summarize CFrame or SFrame spectra by spectrograph
 
 
 SummarizeData.py - Cataloging Raw Data
@@ -234,6 +235,96 @@ A FITS file with one row per exposure, containing:
 - Diagnosing fiber-dependent calibration issues
 
 
+SummarizeSpec.py - Per-Spectrograph Spectral Summary
+-----------------------------------------------------
+
+This script processes CFrame files (the default) or SFrame files and
+computes the percentile spectrum separately for the science fibers
+belonging to each of the three LVM spectrographs.  Only fibers with
+``telescope == 'Sci'`` and ``fibstatus == 0`` are used, and the
+spectrograph is identified from the ``spectrographid`` column of the
+SLITMAP extension.
+
+An exposure is included in the output only if all three spectrographs
+have valid science fibers.  Exposures missing one or more spectrographs
+are skipped and recorded in a companion ASCII table.
+
+**Command line usage**::
+
+    SummarizeSpec.py [-sf] [-ver drp_ver] [-percent 50] [-emin 900] [-out name]
+                     exp_start exp_stop delta
+
+**Options:**
+
+-h
+    Print help and exit.
+
+-sf
+    Read SFrame (sky-subtracted) files instead of the default CFrame
+    (flux-calibrated, before sky subtraction) files.
+
+-ver drp_ver
+    DRP version to use (default: 1.2.0).
+
+-percent N
+    Percentile to compute across fibers (default: 50 = median).
+
+-emin N
+    Minimum exposure time in seconds to include (default: 900).
+
+-out name
+    Output filename root.  If omitted, a name is generated automatically
+    from the file type, DRP version, and exposure range.
+
+**Arguments:**
+
+exp_start
+    Starting exposure number.
+
+exp_stop
+    Ending exposure number.
+
+delta
+    Process every Nth exposure (use 1 for all).
+
+**Output files:**
+
+A FITS file with the following extensions:
+
+=========  =============  =====================================================
+Extension  Type           Contents
+=========  =============  =====================================================
+PRIMARY    ImageHDU       No data; header records PERCENT, SP1/SP2/SP3, Title
+WAVE       ImageHDU       1-D wavelength array
+FLUX1      ImageHDU       2-D array (n_exposures × n_wavelengths), spectrograph 1
+FLUX2      ImageHDU       2-D array (n_exposures × n_wavelengths), spectrograph 2
+FLUX3      ImageHDU       2-D array (n_exposures × n_wavelengths), spectrograph 3
+drp_all    BinTableHDU    drpall metadata for the accepted exposures only
+=========  =============  =====================================================
+
+A fixed-width ASCII table ``<out>.skipped.txt`` is also always written,
+listing every rejected exposure with columns ``expnum``, ``mjd``,
+``tileid``, ``SP1``, ``SP2``, ``SP3`` (``True`` = present, ``False`` =
+absent).  This file is written even if no exposures were skipped, providing
+a record that the completeness check was performed.
+
+**Notes:**
+
+The drpall ``location`` column records SFrame paths.  For CFrame files the
+script replaces ``'SFrame'`` with ``'CFrame'`` in the path automatically.
+The output filename includes the file type (e.g.
+``XSpec_CFrame_1.2.0_10000_20000_10_50.fits``) so that CFrame and SFrame
+runs do not overwrite each other.
+
+**Use cases:**
+
+- Detecting spectrograph-to-spectrograph offsets in flux calibration
+- Identifying whether sky subtraction residuals are confined to one
+  spectrograph
+- Comparing CFrame and SFrame runs to isolate sky subtraction artefacts
+  by spectrograph
+
+
 Typical Workflow
 ----------------
 
@@ -259,6 +350,14 @@ A typical workflow for evaluating data quality might be:
 
        SummarizeRings.py -out rings_summary 10000 20000 10
 
+5. **Check for spectrograph-to-spectrograph variations**::
+
+       SummarizeSpec.py -out spec_summary 10000 20000 10
+
+   Add ``-sf`` to compare the same exposures after sky subtraction::
+
+       SummarizeSpec.py -sf -out spec_summary_sf 10000 20000 10
+
 
 See Also
 --------
@@ -267,3 +366,4 @@ See Also
 - :doc:`api/SummarizeCframe/index` - API documentation
 - :doc:`api/SummarizeSframe/index` - API documentation
 - :doc:`api/SummarizeRings/index` - API documentation
+- :doc:`api/SummarizeSpec/index` - API documentation

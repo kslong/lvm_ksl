@@ -7,8 +7,9 @@ the Magellanic Clouds.  The procedure verifies that snapshot combination,
 background region assignment, spectral extraction, and broadband image
 context all work as expected.
 
-The main workflow has five steps:
+The main workflow has six steps:
 
+0. :ref:`mc-step0` — cross-match the source catalog against the drpall file to produce the observed file required by all subsequent steps
 1. :ref:`mc-step1` — combine dithered exposures into per-source RSS snapshots
 2. :ref:`mc-step2` — pair each source with an annular background region
 3. :ref:`mc-step3` — extract background-subtracted spectra and overlay fiber maps
@@ -55,8 +56,63 @@ Two files drive the main workflow.
     location      Relative path to the SFrame FITS file
     ============  =========================================================
 
-    This file is typically produced by cross-matching the source catalog
-    against the LVM DRP-All file.
+    This file is produced by ``find_obs.py`` (step 0), which
+    cross-matches the source catalog against the LVM drpall FITS file.
+    See :ref:`mc-step0` for details.
+
+
+.. _mc-step0:
+
+Step 0 — Find the Data (``find_obs.py``)
+-----------------------------------------
+
+**This step must be completed before any other step in the workflow.**
+``find_obs.py`` cross-matches the pointing positions recorded in the LVM
+drpall FITS file against the source catalog and produces the observed
+file that is the required input to steps 1–5.  Without it there is no
+record of which SFrame files to load, so none of the downstream scripts
+can run.
+
+**Command**::
+
+    find_obs.py -root smc_snr_observed -max 900 drpall-1.2.0.fits smc_snr_cotton24.txt
+
+The ``-max 900`` option sets the match radius to 900 arcseconds (15
+arcminutes), which is approximately the radius of the LVM science IFU.
+Adjust this if your sources are large enough that a wider radius is
+appropriate, or smaller if you want only well-centred pointings.
+
+**Outputs**
+
+- ``smc_snr_observed.matched.txt`` — **the observed file required by
+  all subsequent steps.**  One row per observation-source pair,
+  containing all source-catalog columns plus the drpall metadata
+  (``expnum``, ``mjd``, ``exptime``, ``tileid``, ``location``) and
+  the angular separation between the source and the pointing centre.
+  Pass this file to ``rss_snap.py`` in step 1.
+
+- ``smc_snr_observed.sum.txt`` — one row per source with ``Nobs``
+  (number of matching exposures), ``TotExp`` (total integration time
+  in seconds), and ``MedSep`` (median separation in arcseconds).
+  Inspect this file first to check which sources have sufficient
+  coverage before proceeding.
+
+**Verification**
+
+- Open ``smc_snr_observed.sum.txt`` and confirm that the sources you
+  expect to have been observed show ``Nobs > 0`` and a ``TotExp``
+  consistent with the number of visits to each field.
+- Sources with ``Nobs = 0`` have not been observed yet and will not
+  appear in subsequent steps.
+- Check that ``MedSep`` values are well within the IFU radius (< 900
+  arcseconds) and that no sources have unexpectedly large separations
+  that might indicate a coordinate mismatch between the catalog and
+  the drpall file.
+- If the output files already exist (from a previous run), choose a
+  different ``-root`` name; the script refuses to overwrite existing
+  files.
+
+See :doc:`find_obs` for full documentation.
 
 
 .. _mc-prep:
@@ -382,12 +438,18 @@ Complete Worked Example
 
 The preparation step and main workflow can be run in either order::
 
+    # Step 0: find all LVM exposures that cover each source
+    find_obs.py -root smc_snr_observed -max 900 drpall-1.2.0.fits smc_snr_cotton24.txt
+
+    # Inspect coverage before proceeding
+    more smc_snr_observed.sum.txt
+
     # Preparation (independent): create per-source broadband image cutouts
     LSnap.py -size 10 -type ha  mcels_ha.fits  smc_snr_cotton24.txt
     LSnap.py -size 10 -type sii mcels_sii.fits smc_snr_cotton24.txt
 
     # Step 1: create snapshots, fit lines, make diagnostic plots
-    rss_snap.py -all smc_snr_observed.txt
+    rss_snap.py -all smc_snr_observed.matched.txt
 
     # Step 2: generate source + background annulus table
     GenAnnularBackground.py smc_snr_cotton24.txt
@@ -571,6 +633,7 @@ thermal/shock-ionised gas), and that ``Gauss_<name>.txt`` shows elevated
 See Also
 --------
 
+- :doc:`find_obs` — detailed documentation for ``find_obs.py``
 - :doc:`snapshots` — detailed documentation for ``rss_snap.py``
 - :doc:`region_files` — detailed documentation for ``GenAnnularBackground.py``
 - :doc:`api/LSnap/index` — API documentation for ``LSnap.py``

@@ -24,6 +24,7 @@ are experimwenatls.  Those that have detailed documantion are the most reliable.
    :caption: Contents:
 
    installation
+   find_obs
    data_retrieval
    summarize
    sky_subtraction

@@ -118,19 +118,12 @@ Module Contents
    avoid clashes before the two tables are horizontally stacked.
 
    Parameters:
-       source_file (str): Path to the ASCII source catalog.  Must
-           contain columns ``RA`` (degrees), ``Dec`` (degrees), and
-           ``Source_name``.
-       obs (astropy.table.Table): Observation table from
-           ``load_observations``.
+       source_file (str): Path to the ASCII source catalog with RA, Dec, and Source_name columns.
+       obs (astropy.table.Table): Observation table from ``load_observations``.
        max_sep_arcsec (float): Cross-match radius in arcseconds.
 
    Returns:
-       astropy.table.Table: Matched table with one row per
-       observation-source pair.  Includes all columns from both
-       the source catalog and the observation table, plus a
-       ``separation`` column in arcseconds.  Returns an empty
-       Table if no matches are found.
+       astropy.table.Table: Matched table with one row per observation-source pair, including all columns from both the source catalog and the observation table plus a ``separation`` column in arcseconds.  Returns an empty Table if no matches are found.
 
 
 .. py:function:: load_observations(drpall_file)
@@ -179,9 +172,7 @@ Module Contents
    the source and the matched pointing centres.
 
    Parameters:
-       matches (astropy.table.Table): Matched pair table returned by
-           ``find_matches``.  Must contain columns ``Source_name``,
-           ``exptime``, and ``separation``.
+       matches (astropy.table.Table): Matched pair table returned by ``find_matches`` with columns ``Source_name``, ``exptime``, and ``separation``.
 
    Returns:
        astropy.table.Table: Summary table with columns ``Source_name``,

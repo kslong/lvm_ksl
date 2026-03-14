@@ -398,8 +398,11 @@ def make_spec_specs(xtab, data_dir, outfile='', percentile=50, file_type='CFrame
     skipped_tab = Table([skipped_expnum, skipped_mjd, skipped_tileid,
                          skipped_sp1, skipped_sp2, skipped_sp3],
                         names=['expnum', 'mjd', 'tileid', 'SP1', 'SP2', 'SP3'])
-    skipped_tab.write(skipped_file, format='ascii.fixed_width_two_line', overwrite=True)
-    print('Skipped exposure table written to %s (%d exposures)' % (skipped_file, len(skipped_tab)))
+    if len(skipped_tab) > 0:
+        skipped_tab.write(skipped_file, format='ascii.fixed_width_two_line', overwrite=True)
+        print('Skipped exposure table written to %s (%d exposures)' % (skipped_file, len(skipped_tab)))
+    else:
+        print('No exposures were skipped.')
 
     if wav is None or len(xflux1) == 0:
         print('Warning: No valid data extracted from any files.')

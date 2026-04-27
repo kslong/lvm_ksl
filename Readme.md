@@ -89,7 +89,7 @@ integration time has accumulated (`find_obs.py`).
 
 **Data retrieval and reduction** — retrieve reduced data from the Utah
 archive or run the LVM DRP locally, and locate processed files on disk
-(`GetFromUtah.py`, `Reduce.py`, `LocateData.py`, `LocateReduced.py`).
+(`GetFromUtah.py`, `Reduce.py`, `LocateData.py`).
 
 **Summarizing data** — create compact spectral summaries across many
 exposures for quality evaluation, broken down by ring position or by

@@ -29,7 +29,6 @@ This page contains auto-generated API reference documentation [#f1]_.
    /api/kslmap/index
    /api/line_map/index
    /api/LocateData/index
-   /api/LocateReduced/index
    /api/LSnap/index
    /api/lvm_double/index
    /api/lvm_flux/index

@@ -11,9 +11,9 @@ Overview
 
 The typical workflow for obtaining reduced LVM data is:
 
-1. **Retrieve data from Utah** using ``GetFromUtah.py`` or ``LocateReduced.py``
+1. **Retrieve data from Utah** using ``GetFromUtah.py``
 2. **Run the DRP locally** using ``Reduce.py`` (if processing raw data)
-3. **Locate processed files** using ``LocateData.py`` or ``LocateReduced.py``
+3. **Locate processed files** using ``LocateData.py``
 
 These tools simplify working with the complex LVM data directory structure
 and allow batch processing of multiple exposures.
@@ -64,42 +64,6 @@ expstop
 
     # Retrieve exposures 4155-4160 from MJD 60188
     GetFromUtah.py -drp 1.2.0 60188 4155 4160
-
-LocateReduced.py
-^^^^^^^^^^^^^^^^
-
-Locates reduced data files using the drpall FITS file, which contains
-metadata for all DRP-processed exposures.
-
-**Usage**::
-
-    LocateReduced.py [-h] [-cp] [-dir whatever] [-file_type CFrame] exp_min exp_max
-
-**Options:**
-
--h
-    Print help and exit.
-
--cp
-    Copy files to a local directory.
-
--dir path
-    Alternative directory for copied files.
-
--file_type
-    File type to locate (default: SFrame).
-
-**Arguments:**
-
-exp_min, exp_max
-    Range of exposure numbers to locate.
-
-**Notes:**
-
-This routine reads the drpall file to find file locations within the
-reduced data directory structure. It works locally and does not retrieve
-data from Utah.
-
 
 Running the DRP Locally
 -----------------------
@@ -213,11 +177,7 @@ Retrieving Existing Reduced Data
 
 If the data has already been processed by the DRP at Utah::
 
-    # Option 1: Direct retrieval
     GetFromUtah.py -cp -drp 1.2.0 60188 4155 4160
-
-    # Option 2: Locate using drpall, then copy
-    LocateReduced.py -cp 4155 4160
 
 Reprocessing Data Locally
 ^^^^^^^^^^^^^^^^^^^^^^^^^
@@ -257,4 +217,3 @@ See Also
 - :doc:`api/GetFromUtah/index` - API documentation
 - :doc:`api/Reduce/index` - API documentation
 - :doc:`api/LocateData/index` - API documentation
-- :doc:`api/LocateReduced/index` - API documentation

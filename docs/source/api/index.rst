@@ -19,6 +19,7 @@ This page contains auto-generated API reference documentation [#f1]_.
    /api/fib2radec/index
    /api/find_obs/index
    /api/FitsInfo/index
+   /api/fourier_offset/index
    /api/GenAnnularBackground/index
    /api/GetDAP/index
    /api/GetFromUtah/index

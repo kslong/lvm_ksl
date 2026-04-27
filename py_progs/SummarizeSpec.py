@@ -321,7 +321,7 @@ def make_spec_specs(xtab, data_dir, outfile='', percentile=50, file_type='CFrame
     Parameters:
         xtab (astropy.table.Table): drpall table of selected exposures.
         data_dir (str): Top-level data directory prepended to the location
-            column of xtab to form full file paths.
+        column of xtab to form full file paths.
         outfile (str): Output filename root (default 'test_spec.fits').
         percentile (int): Percentile to compute across fibers (default 50).
         file_type (str): 'CFrame' (default) or 'SFrame'.

@@ -236,18 +236,14 @@ def clean_slitmap(slit_tab, telescope='Sci'):
         if one == 'fibstatus':
             slit_tab = slit_tab[slit_tab['fibstatus'] == 0]
     nstop = len(slit_tab)
-    print('clean_slitmap: %d --> %d so %d lost' % (nstart, nstop, nstart - nstop))
     return slit_tab
 
 
 def get_band_flux(xwave, xflux, wmin=4000, wmax=4500):
     id_min = np.searchsorted(xwave, wmin, side='right')
     id_max = np.searchsorted(xwave, wmax, side='right')
-    print(id_min, id_max)
     xflux = xflux[:, id_min:id_max]
-    print(xflux.shape)
     band = np.nanmedian(xflux, axis=1)
-    print(band.shape)
     return band
 
 
@@ -287,7 +283,6 @@ def plot_offsets(dw, quality, xwave, xflux, xdrp, wmin=3900, wmax=4000, outroot=
     plt.xlabel(r'$\delta\lambda$ ($\AA$)')
     plt.ylabel('N')
     plt.title('Wavelength Offsets')
-    print(x5, x95)
     plt.text(0.05, 0.95, '5 - 95 %% offsets: %.3f %.3f' % (x5, x95),
              transform=plt.gca().transAxes)
 
@@ -376,7 +371,9 @@ def steer(argv):
     med_vals, med_sp1_vals, med_sp2_vals, med_sp3_vals = [], [], [], []
     ring_cols = {name: [] for name in col_names}
 
-    for one in files:
+    ntot = len(files)
+    for i, one in enumerate(files, 1):
+        print('Processing %s (%d/%d)' % (one, i, ntot))
         expnum, x5, x95, dw_med, dw_sp1, dw_sp2, dw_sp3, ring_vals = doit(one, wmin, wmax)
         exposures.append(expnum)
         x5_vals.append(x5)

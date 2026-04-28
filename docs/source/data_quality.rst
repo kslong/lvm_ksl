@@ -43,34 +43,54 @@ filename
 Each fiber spectrum is cross-correlated with the median of all 1754
 science fibers in the wavelength window using FFTs.  Sub-pixel precision
 is obtained by parabolic interpolation of the cross-correlation peak.
-All offsets are therefore measured relative to the global median template.
+All offsets are measured relative to the global median template.  A
+scale-invariant quality value in [0, 1] is also returned for each fiber;
+values below ~0.5 indicate unreliable measurements (featureless window,
+bad pixels, or low S/N).
 
 **Output:**
 
 *Diagnostic figures* — one PNG per input file, saved to ``Fig_Qual/``.
+The supertitle shows the exposure number and wavelength window.
 Each figure has four panels:
 
-1. Flux percentiles (5th, 50th, 95th) vs wavelength
-2. Histogram of per-fiber wavelength offsets
-3. Spectra at the 5th- and 95th-percentile offsets
-4. Spatial map of offsets (RA/Dec), coloured by :math:`\delta\lambda`
+1. Flux percentiles (5th, 50th, 95th) vs wavelength, y-scale set from
+   the region ``[wmin, wmax]`` only.
+2. Histogram of per-fiber wavelength offsets (range ±0.2 Å), annotated
+   with the 5th and 95th percentile values.
+3. Spatial map (RA/Dec) of the per-fiber maximum flux in ``[wmin, wmax]``,
+   coloured by :math:`F_{\rm max}` with vmin/vmax at the 5th/95th
+   percentile of all fiber values.  RA increases to the left.
+4. Spatial map (RA/Dec) of the per-fiber wavelength offset, coloured by
+   :math:`\delta\lambda`.  RA increases to the left.
 
-*Summary table* — ``Fourier_offsets_<wmin>_<wmax>.txt``, one row per
-exposure, with the following columns:
+*Summary table* — ``Fourier_<wmin>_<wmax>.<YYMMDD>.txt``, one row per
+exposure.  If the file already exists, rows for exposures already present
+are replaced with the newly computed values; rows for other exposures are
+preserved.  The table is sorted by exposure number before writing.
+
+Columns:
 
 - ``Exposure`` — exposure number from the primary FITS header
+- ``mjd`` — observation time converted to MJD (float)
 - ``dw_5pct``, ``dw_95pct`` — 5th and 95th percentile offsets (Å)
 - ``dw_med`` — median offset across all fibers (Å)
 - ``dw_med_sp1``, ``dw_med_sp2``, ``dw_med_sp3`` — median offset per
   spectrograph
+- ``med_quality`` — median cross-correlation quality across all fibers
 - ``dw_r01_04_sp1/2/3`` — median offset for rings 1–4 combined, per
   spectrograph (rings 1–4 are combined because they contain too few
   fibers to measure reliably on their own)
 - ``dw_r05_sp1/2/3`` through ``dw_r25_sp1/2/3`` — median offset per
   ring (5–25) per spectrograph
 
-The table therefore has 73 columns in total: 7 summary columns plus
-66 ring/spectrograph columns (22 ring groups × 3 spectrographs).
+The table has 75 columns in total: 9 summary columns plus 66
+ring/spectrograph columns (22 ring groups × 3 spectrographs).
+
+After each exposure is processed, the 95th-percentile offset and the
+median quality are printed to the terminal::
+
+    95th pct offset: 0.0312 AA   median quality: 0.847
 
 **Example**::
 
@@ -79,6 +99,63 @@ The table therefore has 73 columns in total: 7 summary columns plus
 
     # Analyse multiple files with a custom wavelength window
     fourier_offset.py -wmin 6540 -wmax 6590 lvmSFrame-*.fits
+
+
+fourier_offset_check.py — Synthetic-Line Injection Test
+--------------------------------------------------------
+
+Adds a synthetic Gaussian emission line to the FLUX extension of an
+lvmCFrame file and writes the result to a new file.  Intended for
+verifying that ``fourier_offset.py`` recovers known per-spectrograph
+wavelength offsets.
+
+**Command line usage**::
+
+    fourier_offset_check.py [-h] [-wave 4200] [-flux 1e-11]
+                            [-off1 0.0] [-off2 0.1] [-off3 -0.1] filename
+
+**Options:**
+
+-h
+    Print help and exit.
+
+-wave WAVE
+    Central wavelength of the synthetic line in Angstroms (default: 4200).
+
+-flux FLUX
+    Integrated line flux in erg/s/cm² (default: 1e-11).
+
+-off1 OFF, -off2 OFF, -off3 OFF
+    Wavelength offset in Angstroms applied to all fibers in spectrographs
+    1, 2, and 3 respectively (defaults: 0.0, +0.1, −0.1).
+
+**Arguments:**
+
+filename
+    Path to the lvmCFrame FITS file to modify.
+
+**Method:**
+
+The FWHM at the requested wavelength is read from the LSF extension for
+each fiber and converted to a Gaussian sigma.  The peak amplitude is
+derived from the integrated flux as :math:`A = F / (\sigma \sqrt{2\pi})`.
+The line centre is shifted by the per-spectrograph offset before the
+Gaussian is evaluated and added to the FLUX array.  Fibers whose LSF
+FWHM is zero are skipped.
+
+**Output:**
+
+A new FITS file named ``test_<basename>.fits`` in the current directory.
+A one-line summary is printed to the terminal showing the output filename,
+line wavelength, flux, and per-spectrograph offsets.
+
+**Example**::
+
+    # Inject a line at 4200 Å with default offsets (0, +0.1, -0.1 AA)
+    fourier_offset_check.py lvmCFrame-00004171.fits
+
+    # Custom line and offsets
+    fourier_offset_check.py -wave 5007 -flux 1e-12 -off2 0.2 lvmCFrame-*.fits
 
 
 CheckData.py — Inspect Downloaded Files
@@ -216,6 +293,7 @@ See Also
 --------
 
 - :doc:`api/fourier_offset/index` - API documentation
+- :doc:`api/fourier_offset_check/index` - API documentation
 - :doc:`api/CheckData/index` - API documentation
 - :doc:`api/CheckReduced/index` - API documentation
 - :doc:`api/eval_sky/index` - API documentation

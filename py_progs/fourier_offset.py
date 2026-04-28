@@ -44,8 +44,11 @@ History:
 
 import sys
 import warnings
+import datetime
+import re
 from astropy.io import ascii, fits
 from astropy.table import Table, join
+from astropy.time import Time
 import numpy as np
 import matplotlib.pyplot as plt
 from mpl_toolkits.axes_grid1 import make_axes_locatable
@@ -192,6 +195,57 @@ def estimate_wavelength_offsets(
     return dw, quality
 
 
+# ── time conversion (copied from GetSolar.py) ────────────────────────────────
+
+def _detect_time_format(time_input):
+    if isinstance(time_input, datetime.datetime):
+        return 'datetime'
+    time_str = str(time_input) if isinstance(time_input, (int, float)) else time_input
+    if re.search(r'\d{4}-\d{2}-\d{2}', time_str) or re.search(r'\d{4}/\d{2}/\d{2}', time_str):
+        return 'iso'
+    try:
+        value = float(time_str)
+        return 'jd' if value > 2400000 else 'mjd'
+    except ValueError:
+        if re.search(r'\d+[/:\-]\d+', time_str):
+            return 'iso'
+    return 'iso'
+
+def _convert_to_time_object(time_input, input_format):
+    try:
+        if input_format == 'datetime':
+            return Time(time_input, scale='utc')
+        elif input_format == 'iso':
+            return Time(time_input, format='isot', scale='utc')
+        elif input_format == 'mjd':
+            return Time(float(time_input), format='mjd', scale='utc')
+        elif input_format == 'jd':
+            return Time(float(time_input), format='jd', scale='utc')
+    except Exception as e:
+        raise ValueError('Failed to convert %r as %s format: %s' % (time_input, input_format, e))
+
+def _convert_to_output_format(time_obj, output_format):
+    try:
+        if output_format == 'datetime':
+            return time_obj.to_datetime()
+        elif output_format == 'iso':
+            return time_obj.iso
+        elif output_format == 'mjd':
+            return time_obj.mjd
+        elif output_format == 'jd':
+            return time_obj.jd
+        else:
+            raise ValueError('Unsupported output format: %s' % output_format)
+    except Exception as e:
+        raise ValueError('Failed to convert to %s format: %s' % (output_format, e))
+
+def convert_time(time_input, output_format='datetime'):
+    '''Convert between time formats (ISO string, MJD, JD, datetime).'''
+    input_format = _detect_time_format(time_input)
+    t = _convert_to_time_object(time_input, input_format)
+    return _convert_to_output_format(t, output_format)
+
+
 # ── main routines ──────────────────────────────────────────────────────────────
 
 # Rings 1-4 combined (too few fibers individually); rings 5-25 separate
@@ -252,7 +306,7 @@ def plot_offsets(dw, quality, xwave, xflux, xdrp, wmin=3900, wmax=4000, outroot=
     Plot the wavelength-offset diagnostic figure for a single exposure.
 
     Panels: (1) flux percentiles vs wavelength, (2) offset histogram,
-    (3) spectra at the 5th/95th-percentile offset, (4) spatial offset map.
+    (3) spatial map of 90th-percentile flux in [wmin, wmax], (4) spatial offset map.
     Figure is saved to Fig_Qual/.
     '''
     x5  = np.percentile(dw, 5)
@@ -262,17 +316,20 @@ def plot_offsets(dw, quality, xwave, xflux, xdrp, wmin=3900, wmax=4000, outroot=
     plt.clf()
 
     plt.subplot(1, 4, 1)
+    win_mask = (xwave >= wmin) & (xwave <= wmax)
     with warnings.catch_warnings():
         warnings.simplefilter('ignore', RuntimeWarning)
         p5  = np.nanpercentile(xflux, 5,  axis=0)
         p50 = np.nanmedian(xflux,         axis=0)
         p95 = np.nanpercentile(xflux, 95, axis=0)
+        ymin = np.nanmin(p5[win_mask])
+        ymax = np.nanmax(p95[win_mask])
     plt.semilogy(xwave, p5,  label='5%')
     plt.semilogy(xwave, p50, label='50%')
     plt.semilogy(xwave, p95, label='95%')
     plt.legend()
     plt.xlim(wmin, wmax)
-    ymin, ymax = plt.ylim()
+    plt.ylim(ymin, ymax)
     plt.xlabel(r'$\lambda$ ($\AA$)')
     plt.ylabel('Flux')
     plt.title('Spectra by Brightness')
@@ -286,18 +343,22 @@ def plot_offsets(dw, quality, xwave, xflux, xdrp, wmin=3900, wmax=4000, outroot=
     plt.text(0.05, 0.95, '5 - 95 %% offsets: %.3f %.3f' % (x5, x95),
              transform=plt.gca().transAxes)
 
-    n5  = np.abs(dw - x5).argmin()
-    n95 = np.abs(dw - x95).argmin()
-
-    plt.subplot(1, 4, 3)
-    plt.semilogy(xwave, xflux[n5],  label='Subtract: %.3f' % -x5)
-    plt.semilogy(xwave, xflux[n95], label='       Add: %.3f' % x95)
-    plt.xlim(wmin, wmax)
-    plt.ylim(ymin, ymax)
-    plt.legend()
-    plt.xlabel(r'$\lambda$ ($\AA$)')
-    plt.ylabel('Flux')
-    plt.title('Spectra with offsets')
+    # Panel 3 — spatial map of per-fiber maximum flux in the wavelength window
+    with warnings.catch_warnings():
+        warnings.simplefilter('ignore', RuntimeWarning)
+        fmax_flux = np.nanmax(xflux[:, win_mask], axis=1)
+    fmax_lo = np.nanpercentile(fmax_flux, 5)
+    fmax_hi = np.nanpercentile(fmax_flux, 95)
+    ax3 = plt.subplot(1, 4, 3)
+    sc3 = ax3.scatter(xdrp['ra'], xdrp['dec'], c=fmax_flux, cmap='viridis',
+                      vmin=fmax_lo, vmax=fmax_hi)
+    divider3 = make_axes_locatable(ax3)
+    cax3 = divider3.append_axes('right', size='5%', pad=0.05)
+    plt.colorbar(sc3, cax=cax3, label=r'$F_{\rm max}$')
+    ax3.set_xlabel('RA')
+    ax3.set_ylabel('Dec')
+    ax3.invert_xaxis()
+    ax3.set_title(r'$F_{\rm max}$')
 
     ax4 = plt.subplot(1, 4, 4)
     sc = ax4.scatter(xdrp['ra'], xdrp['dec'], c=dw, cmap='viridis', vmin=x5, vmax=x95)
@@ -306,7 +367,10 @@ def plot_offsets(dw, quality, xwave, xflux, xdrp, wmin=3900, wmax=4000, outroot=
     plt.colorbar(sc, cax=cax, label=r'$\delta\lambda$ ($\AA$)')
     ax4.set_xlabel('RA')
     ax4.set_ylabel('Dec')
-    plt.suptitle('Exposure %d  –  Fourier Wavelength Offsets  (%d spectra)' % (expnum, len(xflux)))
+    ax4.invert_xaxis()
+    ax4.set_title('Wavelength Offset')
+    plt.suptitle('Exposure %d  –  Fourier Wavelength Offsets  %d$-$%d $\AA$  (%d spectra)'
+                 % (expnum, wmin, wmax, len(xflux)))
     plt.tight_layout()
     if outroot == '':
         outroot = 'fourier_offset'
@@ -327,6 +391,8 @@ def doit(filename, wmin=3900, wmax=4000):
     '''
     x = fits.open(filename)
     expnum  = x[0].header.get('EXPOSURE', -1)
+    obstime = x[0].header.get('OBSTIME', '')
+    mjd     = convert_time(obstime, 'mjd') if obstime else np.nan
     outroot = os.path.basename(filename).replace('.fits', '')
     slit_tab = Table(x['SLITMAP'].data)
     slit_tab = clean_slitmap(slit_tab)
@@ -336,17 +402,19 @@ def doit(filename, wmin=3900, wmax=4000):
     dw, quality = estimate_wavelength_offsets(wave, flux, wmin, wmax)
     x5, x95 = plot_offsets(dw, quality, xwave=wave, xflux=flux, xdrp=slit_tab,
                            wmin=wmin, wmax=wmax, outroot=outroot, expnum=expnum)
-    dw_med  = np.median(dw)
-    spec_id = np.array(slit_tab['spectrographid'])
-    dw_med_sp = [np.median(dw[spec_id == sp]) for sp in (1, 2, 3)]
-    ring_vals = ring_sp_medians(dw, slit_tab)
-    return expnum, x5, x95, dw_med, dw_med_sp[0], dw_med_sp[1], dw_med_sp[2], ring_vals
+    dw_med     = np.median(dw)
+    med_quality = np.median(quality)
+    spec_id    = np.array(slit_tab['spectrographid'])
+    dw_med_sp  = [np.median(dw[spec_id == sp]) for sp in (1, 2, 3)]
+    ring_vals  = ring_sp_medians(dw, slit_tab)
+    return expnum, mjd, x5, x95, dw_med, dw_med_sp[0], dw_med_sp[1], dw_med_sp[2], med_quality, ring_vals
 
 
 def steer(argv):
     wmin  = 3900
     wmax  = 4000
     files = []
+    run_date = datetime.date.today().strftime('%y%m%d')
 
     i = 1
     while i < len(argv):
@@ -367,34 +435,46 @@ def steer(argv):
         i += 1
 
     col_names = ring_col_names()
-    exposures, x5_vals, x95_vals = [], [], []
+    exposures, mjd_vals, x5_vals, x95_vals = [], [], [], []
     med_vals, med_sp1_vals, med_sp2_vals, med_sp3_vals = [], [], [], []
+    med_quality_vals = []
     ring_cols = {name: [] for name in col_names}
 
     ntot = len(files)
     for i, one in enumerate(files, 1):
         print('Processing %s (%d/%d)' % (one, i, ntot))
-        expnum, x5, x95, dw_med, dw_sp1, dw_sp2, dw_sp3, ring_vals = doit(one, wmin, wmax)
+        expnum, mjd, x5, x95, dw_med, dw_sp1, dw_sp2, dw_sp3, med_quality, ring_vals = doit(one, wmin, wmax)
+        print('  95th pct offset: %.4f AA   median quality: %.3f' % (x95, med_quality))
         exposures.append(expnum)
+        mjd_vals.append(mjd)
         x5_vals.append(x5)
         x95_vals.append(x95)
         med_vals.append(dw_med)
         med_sp1_vals.append(dw_sp1)
         med_sp2_vals.append(dw_sp2)
         med_sp3_vals.append(dw_sp3)
+        med_quality_vals.append(med_quality)
         for name, val in zip(col_names, ring_vals):
             ring_cols[name].append(val)
 
     if exposures:
-        summary = Table([exposures, x5_vals, x95_vals,
-                         med_vals, med_sp1_vals, med_sp2_vals, med_sp3_vals],
-                        names=['Exposure', 'dw_5pct', 'dw_95pct',
-                               'dw_med', 'dw_med_sp1', 'dw_med_sp2', 'dw_med_sp3'])
+        summary = Table([exposures, mjd_vals, x5_vals, x95_vals,
+                         med_vals, med_sp1_vals, med_sp2_vals, med_sp3_vals,
+                         med_quality_vals],
+                        names=['Exposure', 'mjd', 'dw_5pct', 'dw_95pct',
+                               'dw_med', 'dw_med_sp1', 'dw_med_sp2', 'dw_med_sp3',
+                               'med_quality'])
         for name in col_names:
             summary[name] = ring_cols[name]
         for col in summary.colnames[1:]:
             summary[col].format = '%.4f'
-        outname = 'Fourier_offsets_%d_%d.txt' % (wmin, wmax)
+        outname = 'Fourier_%d_%d.%s.txt' % (wmin, wmax, run_date)
+        if os.path.isfile(outname):
+            existing = Table.read(outname, format='ascii.fixed_width_two_line')
+            existing = existing[~np.isin(existing['Exposure'], summary['Exposure'])]
+            from astropy.table import vstack
+            summary = vstack([existing, summary])
+            summary.sort('Exposure')
         summary.write(outname, format='ascii.fixed_width_two_line', overwrite=True)
         print('Wrote %s' % outname)
 

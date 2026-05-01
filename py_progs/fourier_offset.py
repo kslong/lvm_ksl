@@ -9,25 +9,60 @@ Synopsis:
 Analyze wavelength offsets in LVM CFrame/SFrame files by fiber,
 using FFT cross-correlation of absorption features.
 
-Command line usage (if any):
+Command line usage (if any)::
 
-    usage: fourier_offset.py [-h] [-wmin 3900] [-wmax 4000] filename [filename ...]
+    fourier_offset.py [-h] [-wmin 3900] [-wmax 4000] [-file xfile]
+                      [-expmin N] [-expmax N] [-every N] [-plot]
+                      filename [filename ...]
 
-    where filename is one or more lvmCFrame or lvmSFrame FITS files.
-    -wmin and -wmax set the wavelength window used for the cross-correlation
-    (default 3900-4000 AA).
+    -file xfile      reads the files to process from a Table containing a
+                     column named filename or Filename.
+    filename         one or more lvmCFrame or lvmSFrame FITS files.
+    -wmin, -wmax     wavelength window for the cross-correlation
+                     (default 3900-4000 AA).
+    -expmin, -expmax inclusive bounds on the exposure number parsed from
+                     the filename; exposures outside this range are skipped.
+    -every N         process only every Nth exposure after range filtering
+                     (default 1 = all exposures).
+    -plot            force diagnostic plots even when more than 100 exposures
+                     are in the list.  Plots are always made for <= 100 files.
 
 Description:
 
     Reads the FLUX and WAVE extensions of each file, selects science fibers
     from the SLITMAP, then cross-correlates each spectrum against a median
     reference within [wmin, wmax] to estimate per-fiber wavelength offsets.
-    Results are saved as a PNG showing the offset distribution and a spatial
-    map of the offsets.
+
+    Results for all processed exposures are collected into a FITS table named
+    Fourier_<wmin>_<wmax>.<YYMMDD>.fits.  If that file already exists the new
+    rows are merged in (duplicate exposures replaced) and the table is
+    re-sorted by exposure number.
+
+    Each row of the output table contains::
+
+        Exposure             exposure number
+        mjd                  modified Julian date of the observation
+        dw_5pct              5th-percentile wavelength offset, all fibers (AA)
+        dw_95pct             95th-percentile wavelength offset (AA)
+        dw_med               median wavelength offset, all fibers (AA)
+        dw_med_sp1/2/3       median wavelength offset per spectrograph (AA)
+        dw_mad               scaled MAD of wavelength offsets, all fibers (AA)
+        dw_mad_sp1/2/3       scaled MAD per spectrograph (AA)
+        med_quality          median cross-correlation quality [0,1]
+        flux_max_med         median of per-fiber peak flux in [wmin,wmax]
+        flux_max_med_sp1/2/3 median peak flux per spectrograph
+        flux_max_mad         scaled MAD of per-fiber peak flux, all fibers
+        flux_max_mad_sp1/2/3 scaled MAD of peak flux per spectrograph
+        dw_r01_04_sp1/2/3 .. dw_r25_sp1/2/3
+                             median offset per ring group per spectrograph
+
+    Diagnostic PNG plots (one per exposure) are written to Fig_Qual/.
 
 Primary routines:
 
-    doit
+    doit        analyze a single file, return a dict of summary statistics
+    do_all      loop over a list of files and write the summary FITS table
+    filter_files  filter a file list by exposure number range and stride
 
 Notes:
 
@@ -36,9 +71,13 @@ Notes:
     below ~0.5 indicate unreliable measurements (featureless window,
     bad pixels, low S/N).
 
+    The scaled MAD (1.4826 * median(abs(x - median(x)))) equals the standard
+    deviation for Gaussian data but is robust against outliers.
+
 History:
 
 260417 ksl Coding begun; wavelength_offset.py incorporated into this file
+260501 ksl doit now returns a dict; do_all added; output switched to FITS; flux_max and dw MAD columns added; exposure range/stride filtering added
 
 '''
 
@@ -175,8 +214,9 @@ def estimate_wavelength_offsets(
     y1 = xcorr_s[idx, pk]
     y2 = xcorr_s[idx, pk_hi]
 
-    denom   = 2.0 * (2.0 * y1 - y0 - y2)
-    sub_pix = np.where(valid & (np.abs(denom) > 1e-30), (y2 - y0) / denom, 0.0)
+    denom      = 2.0 * (2.0 * y1 - y0 - y2)
+    safe_denom = np.where(np.abs(denom) > 1e-30, denom, 1.0)
+    sub_pix    = np.where(valid & (np.abs(denom) > 1e-30), (y2 - y0) / safe_denom, 0.0)
     sub_pix = np.clip(sub_pix, -0.5, 0.5)
 
     shift_pix = lags[pk] + sub_pix
@@ -294,6 +334,23 @@ def clean_slitmap(slit_tab, telescope='Sci'):
 
 
 def get_band_flux(xwave, xflux, wmin=4000, wmax=4500):
+    '''
+    Return the per-fiber median flux in the wavelength band [wmin, wmax].
+
+    Parameters
+    ----------
+    xwave : (N_wave,) array
+        Wavelength array.
+    xflux : (N_fibers, N_wave) array
+        Flux array.
+    wmin, wmax : float
+        Wavelength band limits in the same units as xwave.
+
+    Returns
+    -------
+    band : (N_fibers,) ndarray
+        Median flux of each fiber within the band.
+    '''
     id_min = np.searchsorted(xwave, wmin, side='right')
     id_max = np.searchsorted(xwave, wmax, side='right')
     xflux = xflux[:, id_min:id_max]
@@ -369,7 +426,7 @@ def plot_offsets(dw, quality, xwave, xflux, xdrp, wmin=3900, wmax=4000, outroot=
     ax4.set_ylabel('Dec')
     ax4.invert_xaxis()
     ax4.set_title('Wavelength Offset')
-    plt.suptitle('Exposure %d  –  Fourier Wavelength Offsets  %d$-$%d $\AA$  (%d spectra)'
+    plt.suptitle(r'Exposure %d  –  Fourier Wavelength Offsets  %d$-$%d $\AA$  (%d spectra)'
                  % (expnum, wmin, wmax, len(xflux)))
     plt.tight_layout()
     if outroot == '':
@@ -381,13 +438,32 @@ def plot_offsets(dw, quality, xwave, xflux, xdrp, wmin=3900, wmax=4000, outroot=
     return x5, x95
 
 
-def doit(filename, wmin=3900, wmax=4000):
+def doit(filename, wmin=3900, wmax=4000, do_plot=True):
     '''
     Analyze wavelength offsets in a single CFrame/SFrame file.
 
-    Reads the file, computes per-fiber wavelength offsets via FFT
-    cross-correlation, produces the diagnostic plot, and returns the
-    exposure number, offset arrays, and summary percentiles.
+    Reads the FLUX, WAVE, and SLITMAP extensions, selects science fibers,
+    computes per-fiber wavelength offsets via FFT cross-correlation in
+    [wmin, wmax], and optionally saves a diagnostic PNG to Fig_Qual/.
+
+    Returns a dict with the following keys (suitable for direct use as
+    a row in an astropy Table)::
+
+        Exposure             int   exposure number from the primary header
+        mjd                  float modified Julian date
+        dw_5pct              float 5th-percentile offset across all fibers (AA)
+        dw_95pct             float 95th-percentile offset (AA)
+        dw_med               float median offset, all fibers (AA)
+        dw_med_sp1/2/3       float median offset per spectrograph (AA)
+        dw_mad               float scaled MAD of offsets, all fibers (AA)
+        dw_mad_sp1/2/3       float scaled MAD per spectrograph (AA)
+        med_quality          float median cross-correlation quality [0,1]
+        flux_max_med         float median of per-fiber max flux in [wmin,wmax]
+        flux_max_med_sp1/2/3 float median peak flux per spectrograph
+        flux_max_mad         float scaled MAD of per-fiber max flux
+        flux_max_mad_sp1/2/3 float scaled MAD of peak flux per spectrograph
+        dw_r*_sp*            float median offset per ring group/spectrograph
+                             (see ring_col_names() for the full column list)
     '''
     x = fits.open(filename)
     expnum  = x[0].header.get('EXPOSURE', -1)
@@ -400,21 +476,120 @@ def doit(filename, wmin=3900, wmax=4000):
     flux = x['FLUX'].data[slit_tab['Row']]
     slit_tab['B'] = get_band_flux(wave, flux)
     dw, quality = estimate_wavelength_offsets(wave, flux, wmin, wmax)
-    x5, x95 = plot_offsets(dw, quality, xwave=wave, xflux=flux, xdrp=slit_tab,
+    x5  = np.percentile(dw, 5)
+    x95 = np.percentile(dw, 95)
+    if do_plot==True:
+        plot_offsets(dw, quality, xwave=wave, xflux=flux, xdrp=slit_tab,
                            wmin=wmin, wmax=wmax, outroot=outroot, expnum=expnum)
-    dw_med     = np.median(dw)
+    dw_med      = np.median(dw)
     med_quality = np.median(quality)
-    spec_id    = np.array(slit_tab['spectrographid'])
-    dw_med_sp  = [np.median(dw[spec_id == sp]) for sp in (1, 2, 3)]
-    ring_vals  = ring_sp_medians(dw, slit_tab)
-    return expnum, mjd, x5, x95, dw_med, dw_med_sp[0], dw_med_sp[1], dw_med_sp[2], med_quality, ring_vals
+    spec_id     = np.array(slit_tab['spectrographid'])
+    dw_med_sp   = [np.median(dw[spec_id == sp]) for sp in (1, 2, 3)]
+    ring_vals   = ring_sp_medians(dw, slit_tab)
+    win_mask = (wave >= wmin) & (wave <= wmax)
+    with warnings.catch_warnings():
+        warnings.simplefilter('ignore', RuntimeWarning)
+        fmax_flux = np.nanmax(flux[:, win_mask], axis=1)
+    mad = lambda x: 1.4826 * np.median(np.abs(x - np.median(x)))
+    flux_max_med    = np.median(fmax_flux)
+    flux_max_med_sp = [np.median(fmax_flux[spec_id == sp]) for sp in (1, 2, 3)]
+    dw_mad_sp       = [mad(dw[spec_id == sp]) for sp in (1, 2, 3)]
+    flux_max_mad_sp = [mad(fmax_flux[spec_id == sp]) for sp in (1, 2, 3)]
+    row = {
+        'Exposure':           expnum,
+        'mjd':                mjd,
+        'dw_5pct':            x5,
+        'dw_95pct':           x95,
+        'dw_med':             dw_med,
+        'dw_med_sp1':         dw_med_sp[0],
+        'dw_med_sp2':         dw_med_sp[1],
+        'dw_med_sp3':         dw_med_sp[2],
+        'dw_mad':             mad(dw),
+        'dw_mad_sp1':         dw_mad_sp[0],
+        'dw_mad_sp2':         dw_mad_sp[1],
+        'dw_mad_sp3':         dw_mad_sp[2],
+        'med_quality':        med_quality,
+        'flux_max_med':       flux_max_med,
+        'flux_max_med_sp1':   flux_max_med_sp[0],
+        'flux_max_med_sp2':   flux_max_med_sp[1],
+        'flux_max_med_sp3':   flux_max_med_sp[2],
+        'flux_max_mad':       mad(fmax_flux),
+        'flux_max_mad_sp1':   flux_max_mad_sp[0],
+        'flux_max_mad_sp2':   flux_max_mad_sp[1],
+        'flux_max_mad_sp3':   flux_max_mad_sp[2],
+    }
+    row.update(zip(ring_col_names(), ring_vals))
+    return row
+
+
+def do_all(files, wmin=3900, wmax=4000, do_plot=False):
+    '''
+    Process a list of CFrame/SFrame files, collect per-exposure wavelength-offset
+    statistics, and write (or update) the summary ASCII table.
+
+    Calls doit() for each file, accumulates results, then writes
+    Fourier_<wmin>_<wmax>.<date>.fits.  If that file already exists the new rows
+    are merged in (duplicate exposures replaced) and the table is re-sorted by
+    exposure number.
+    '''
+    run_date = datetime.date.today().strftime('%y%m%d')
+    rows = []
+
+    ntot = len(files)
+    for i, one in enumerate(files, 1):
+        print('Processing %s (%d/%d)' % (one, i, ntot))
+        row = doit(one, wmin, wmax, do_plot)
+        print('  95th pct offset: %.4f AA   median quality: %.3f' % (row['dw_95pct'], row['med_quality']))
+        rows.append(row)
+
+    if not rows:
+        return
+
+    summary = Table(rows)
+
+    outname = 'Fourier_%d_%d.%s.fits' % (wmin, wmax, run_date)
+    if os.path.isfile(outname):
+        from astropy.table import vstack
+        existing = Table.read(outname)
+        existing = existing[~np.isin(existing['Exposure'], summary['Exposure'])]
+        summary = vstack([existing, summary])
+        summary.sort('Exposure')
+    summary.write(outname, overwrite=True)
+    print('Wrote %s' % outname)
+
+
+def expnum_from_filename(filename):
+    '''Extract the exposure number embedded in an lvmCFrame/SFrame filename, or -1.'''
+    m = re.search(r'(\d+)\.fits', os.path.basename(filename))
+    return int(m.group(1)) if m else -1
+
+
+def filter_files(files, expmin=-1, expmax=-1, every=1):
+    '''
+    Filter a list of FITS filenames by exposure number range and stride.
+
+    expmin/expmax are inclusive bounds on the exposure number parsed from
+    the filename; -1 means no limit.  every=N keeps every Nth file after
+    range filtering (1 = keep all).
+    '''
+    if expmin > 0:
+        files = [f for f in files if expnum_from_filename(f) >= expmin]
+    if expmax > 0:
+        files = [f for f in files if expnum_from_filename(f) <= expmax]
+    if every > 1:
+        files = files[::every]
+    return files
 
 
 def steer(argv):
-    wmin  = 3900
-    wmax  = 4000
-    files = []
-    run_date = datetime.date.today().strftime('%y%m%d')
+    wmin       = 3900
+    wmax       = 4000
+    files      = []
+    input_list = ''
+    do_plot    = False
+    expmin     = -1
+    expmax     = -1
+    every      = 1
 
     i = 1
     while i < len(argv):
@@ -427,6 +602,20 @@ def steer(argv):
         elif argv[i] == '-wmax':
             i += 1
             wmax = eval(argv[i])
+        elif argv[i] == '-file':
+            i += 1
+            input_list = argv[i]
+        elif argv[i] == '-plot':
+            do_plot = True
+        elif argv[i] == '-expmin':
+            i += 1
+            expmin = int(argv[i])
+        elif argv[i] == '-expmax':
+            i += 1
+            expmax = int(argv[i])
+        elif argv[i] == '-every':
+            i += 1
+            every = int(argv[i])
         elif argv[i][0] == '-':
             print('Error: Could not interpret command: ', argv[i])
             return
@@ -434,49 +623,27 @@ def steer(argv):
             files.append(argv[i])
         i += 1
 
-    col_names = ring_col_names()
-    exposures, mjd_vals, x5_vals, x95_vals = [], [], [], []
-    med_vals, med_sp1_vals, med_sp2_vals, med_sp3_vals = [], [], [], []
-    med_quality_vals = []
-    ring_cols = {name: [] for name in col_names}
+    if input_list != '':
+        try:
+            xtab = Table.read(input_list)
+        except Exception:
+            print('Could not read : %s' % input_list)
+            return
+        if 'filename' in xtab.colnames:
+            xfiles = list(xtab['filename'])
+        elif 'Filename' in xtab.colnames:
+            xfiles = list(xtab['Filename'])
+        else:
+            print('Read %s but could not find a column named filename or Filename' % input_list)
+            return
+        files = files + xfiles
 
-    ntot = len(files)
-    for i, one in enumerate(files, 1):
-        print('Processing %s (%d/%d)' % (one, i, ntot))
-        expnum, mjd, x5, x95, dw_med, dw_sp1, dw_sp2, dw_sp3, med_quality, ring_vals = doit(one, wmin, wmax)
-        print('  95th pct offset: %.4f AA   median quality: %.3f' % (x95, med_quality))
-        exposures.append(expnum)
-        mjd_vals.append(mjd)
-        x5_vals.append(x5)
-        x95_vals.append(x95)
-        med_vals.append(dw_med)
-        med_sp1_vals.append(dw_sp1)
-        med_sp2_vals.append(dw_sp2)
-        med_sp3_vals.append(dw_sp3)
-        med_quality_vals.append(med_quality)
-        for name, val in zip(col_names, ring_vals):
-            ring_cols[name].append(val)
+    files = filter_files(files, expmin, expmax, every)
 
-    if exposures:
-        summary = Table([exposures, mjd_vals, x5_vals, x95_vals,
-                         med_vals, med_sp1_vals, med_sp2_vals, med_sp3_vals,
-                         med_quality_vals],
-                        names=['Exposure', 'mjd', 'dw_5pct', 'dw_95pct',
-                               'dw_med', 'dw_med_sp1', 'dw_med_sp2', 'dw_med_sp3',
-                               'med_quality'])
-        for name in col_names:
-            summary[name] = ring_cols[name]
-        for col in summary.colnames[1:]:
-            summary[col].format = '%.4f'
-        outname = 'Fourier_%d_%d.%s.txt' % (wmin, wmax, run_date)
-        if os.path.isfile(outname):
-            existing = Table.read(outname, format='ascii.fixed_width_two_line')
-            existing = existing[~np.isin(existing['Exposure'], summary['Exposure'])]
-            from astropy.table import vstack
-            summary = vstack([existing, summary])
-            summary.sort('Exposure')
-        summary.write(outname, format='ascii.fixed_width_two_line', overwrite=True)
-        print('Wrote %s' % outname)
+    if len(files) < 100:
+        do_plot = True
+
+    do_all(files, wmin, wmax, do_plot)
 
 
 # Next lines permit one to run the routine from the command line

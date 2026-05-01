@@ -11,23 +11,20 @@ using FFT cross-correlation of absorption features.
 
 Command line usage (if any)::
 
-    fourier_offset.py [-h] [-wmin 3900] [-wmax 4000] [-file xfile]
-                      [-expmin N] [-expmax N] [-every N] [-ver drp_ver] [-plot]
-                      filename [filename ...]
+    fourier_offset.py [-h] [-wmin 3900] [-wmax 4000] [-ver drp_ver]
+                      [-emin 900] [-file xfile] [-plot]
+                      [exp_start exp_stop [delta]] [filename ...]
 
-    -file xfile      reads the files to process from a Table containing a
-                     column named filename or Filename.
-    filename         one or more lvmCFrame or lvmSFrame FITS files.
-    -wmin, -wmax     wavelength window for the cross-correlation
-                     (default 3900-4000 AA).
-    -expmin, -expmax inclusive bounds on the exposure number parsed from
-                     the filename; exposures outside this range are skipped.
-    -every N         process only every Nth exposure after range filtering
-                     (default 1 = all exposures).
-    -ver drp_ver     DRP version used to locate files via drpall
-                     (default 1.2.1).
-    -plot            force diagnostic plots even when more than 100 exposures
-                     are in the list.  Plots are always made for <= 100 files.
+    exp_start exp_stop  first and last exposure numbers to process (inclusive).
+                        Uses drpall to locate files; requires -ver if not 1.2.1.
+    delta               process every Nth exposure (default 1 = all).
+    -file xfile         read files from a Table with a column filename or Filename.
+    filename            one or more lvmCFrame or lvmSFrame FITS files.
+    -wmin, -wmax        wavelength window for cross-correlation (default 3900-4000 AA).
+    -ver drp_ver        DRP version for drpall lookup (default 1.2.1).
+    -emin N             minimum exposure time in seconds (default 900).
+    -plot               force diagnostic plots for > 100 exposures
+                        (always on for <= 100 files).
 
 Description:
 
@@ -649,10 +646,11 @@ def steer(argv):
     files      = []
     input_list = ''
     do_plot    = False
-    expmin     = -1
-    expmax     = -1
-    every      = 1
     drp_ver    = '1.2.1'
+    exp_min    = 900
+    exp_start  = -1
+    exp_stop   = -1
+    delta      = 1
 
     i = 1
     while i < len(argv):
@@ -670,25 +668,43 @@ def steer(argv):
             input_list = argv[i]
         elif argv[i] == '-plot':
             do_plot = True
-        elif argv[i] == '-expmin':
-            i += 1
-            expmin = int(argv[i])
-        elif argv[i] == '-expmax':
-            i += 1
-            expmax = int(argv[i])
-        elif argv[i] == '-every':
-            i += 1
-            every = int(argv[i])
         elif argv[i] == '-ver':
             i += 1
             drp_ver = argv[i]
+        elif argv[i] == '-emin':
+            i += 1
+            exp_min = int(argv[i])
         elif argv[i][0] == '-':
             print('Error: Could not interpret command: ', argv[i])
             return
         elif argv[i].count('.fits'):
             files.append(argv[i])
+        elif exp_start < 0:
+            exp_start = int(argv[i])
+        elif exp_stop < 0:
+            exp_stop = int(argv[i])
+        else:
+            delta = int(argv[i])
         i += 1
 
+    # Build file list from drpall when exp_start/exp_stop are given
+    if exp_start >= 0 and exp_stop >= 0:
+        try:
+            from SummarizeCframe import find_top, read_drpall, select
+        except ImportError:
+            print('Error: could not import SummarizeCframe')
+            return
+        topdir  = find_top()
+        drp_tab = read_drpall(drp_ver)
+        if len(drp_tab) == 0:
+            return
+        ztab = select(drp_tab, exp_start, exp_stop, delta, exp_min)
+        print('Selected %d exposures from drpall' % len(ztab))
+        for row in ztab:
+            loc  = str(row['location']).replace('SFrame', 'CFrame')
+            files.append(os.path.join(topdir, loc))
+
+    # Add files from -file table
     if input_list != '':
         try:
             xtab = Table.read(input_list)
@@ -704,7 +720,9 @@ def steer(argv):
             return
         files = files + xfiles
 
-    files = filter_files(files, expmin, expmax, every)
+    if not files:
+        print('Nothing to do: provide exp_start exp_stop [delta], -file xfile, or filename(s).')
+        return
 
     if len(files) < 100:
         do_plot = True

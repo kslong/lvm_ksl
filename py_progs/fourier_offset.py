@@ -12,7 +12,7 @@ using FFT cross-correlation of absorption features.
 Command line usage (if any)::
 
     fourier_offset.py [-h] [-wmin 3900] [-wmax 4000] [-file xfile]
-                      [-expmin N] [-expmax N] [-every N] [-plot]
+                      [-expmin N] [-expmax N] [-every N] [-ver drp_ver] [-plot]
                       filename [filename ...]
 
     -file xfile      reads the files to process from a Table containing a
@@ -24,6 +24,8 @@ Command line usage (if any)::
                      the filename; exposures outside this range are skipped.
     -every N         process only every Nth exposure after range filtering
                      (default 1 = all exposures).
+    -ver drp_ver     DRP version used to locate files via drpall
+                     (default 1.2.1).
     -plot            force diagnostic plots even when more than 100 exposures
                      are in the list.  Plots are always made for <= 100 files.
 
@@ -290,40 +292,51 @@ def convert_time(time_input, output_format='datetime'):
 
 # ── file location ──────────────────────────────────────────────────────────────
 
-XTOP     = '/uufs/chpc.utah.edu/common/home/sdss51/'
-XRAINBOW = '/Users/long/Projects/lvm_data/sas'
-XMUSKIE  = '/home/long/Projects/lvm_data/sas'
-
-def find_top():
-    '''Return the machine-specific top-level LVM data directory, or empty string.'''
-    for loc, topdir in [('Utah', XTOP), ('Rainbow', XRAINBOW), ('Muskie', XMUSKIE)]:
-        if os.path.isdir(topdir):
-            print('Located on: %s' % loc)
-            return topdir
-    print('Error: cannot determine data location from known paths.')
-    return ''
-
-
-def resolve_filename(filename):
+def build_drp_lookup(drp_ver='1.2.1'):
     '''
-    Return the full path to a CFrame/SFrame file, or None if not found.
+    Build a dict mapping exposure number to full CFrame file path.
 
-    Applies two fixes in order:
-      1. Replaces SFrame with CFrame in the path.
-      2. If the file does not exist as given, prepends find_top() and tries again.
-         This handles filenames that contain only the location-relative portion
-         of the path (as stored in the drpall table).
+    Reads drpall via SummarizeCframe.read_drpall(), prepends the
+    machine-specific top directory from SummarizeCframe.find_top(),
+    and substitutes SFrame with CFrame in all locations.
+    Returns an empty dict if drpall cannot be read.
+    '''
+    try:
+        from SummarizeCframe import find_top, read_drpall
+    except ImportError:
+        print('Warning: could not import SummarizeCframe; file lookup unavailable.')
+        return {}
+    topdir = find_top()
+    if not topdir:
+        return {}
+    drp_tab = read_drpall(drp_ver)
+    if not drp_tab or len(drp_tab) == 0:
+        return {}
+    lookup = {}
+    for row in drp_tab:
+        loc = str(row['location']).replace('SFrame', 'CFrame')
+        lookup[int(row['expnum'])] = os.path.join(topdir, loc)
+    return lookup
+
+
+def resolve_filename(filename, lookup=None):
+    '''
+    Return the full path to a CFrame file, or None if not found.
+
+    First substitutes SFrame with CFrame.  If the file exists at that
+    path it is returned immediately.  Otherwise the exposure number is
+    extracted from the filename and used to look up the full path in
+    *lookup* (a dict built by build_drp_lookup()).
     '''
     filename = filename.replace('SFrame', 'CFrame')
     if os.path.isfile(filename):
         return filename
-    topdir = find_top()
-    if topdir:
-        full = os.path.join(topdir, filename)
-        print('  resolve: trying %s' % full)
-        if os.path.isfile(full):
-            return full
-    print('  resolve: not found for %s' % filename)
+    if lookup:
+        expnum = expnum_from_filename(filename)
+        if expnum > 0 and expnum in lookup:
+            full = lookup[expnum]
+            if os.path.isfile(full):
+                return full
     return None
 
 
@@ -563,22 +576,26 @@ def doit(filename, wmin=3900, wmax=4000, do_plot=True):
     return row
 
 
-def do_all(files, wmin=3900, wmax=4000, do_plot=False):
+def do_all(files, wmin=3900, wmax=4000, do_plot=False, drp_ver='1.2.1'):
     '''
     Process a list of CFrame/SFrame files, collect per-exposure wavelength-offset
-    statistics, and write (or update) the summary ASCII table.
+    statistics, and write (or update) the summary FITS table.
 
     Calls doit() for each file, accumulates results, then writes
     Fourier_<wmin>_<wmax>.<date>.fits.  If that file already exists the new rows
     are merged in (duplicate exposures replaced) and the table is re-sorted by
     exposure number.
+
+    Files that cannot be found directly are resolved by exposure number via
+    the drpall table (drp_ver selects which DRP version to search).
     '''
     run_date = datetime.date.today().strftime('%y%m%d')
+    lookup   = build_drp_lookup(drp_ver)
     rows = []
 
     ntot = len(files)
     for i, one in enumerate(files, 1):
-        full = resolve_filename(one)
+        full = resolve_filename(one, lookup)
         if full is None:
             print('Skipping %s (%d/%d): file not found' % (one, i, ntot))
             continue
@@ -635,6 +652,7 @@ def steer(argv):
     expmin     = -1
     expmax     = -1
     every      = 1
+    drp_ver    = '1.2.1'
 
     i = 1
     while i < len(argv):
@@ -661,6 +679,9 @@ def steer(argv):
         elif argv[i] == '-every':
             i += 1
             every = int(argv[i])
+        elif argv[i] == '-ver':
+            i += 1
+            drp_ver = argv[i]
         elif argv[i][0] == '-':
             print('Error: Could not interpret command: ', argv[i])
             return
@@ -688,7 +709,7 @@ def steer(argv):
     if len(files) < 100:
         do_plot = True
 
-    do_all(files, wmin, wmax, do_plot)
+    do_all(files, wmin, wmax, do_plot, drp_ver)
 
 
 # Next lines permit one to run the routine from the command line

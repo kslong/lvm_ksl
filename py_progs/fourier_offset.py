@@ -60,9 +60,11 @@ Description:
 
 Primary routines:
 
-    doit        analyze a single file, return a dict of summary statistics
-    do_all      loop over a list of files and write the summary FITS table
-    filter_files  filter a file list by exposure number range and stride
+    doit            analyze a single file, return a dict of summary statistics
+    do_all          loop over a list of files and write the summary FITS table
+    filter_files    filter a file list by exposure number range and stride
+    find_top        return the machine-specific top-level data directory
+    resolve_filename  resolve a bare location path to a full CFrame path
 
 Notes:
 
@@ -284,6 +286,43 @@ def convert_time(time_input, output_format='datetime'):
     input_format = _detect_time_format(time_input)
     t = _convert_to_time_object(time_input, input_format)
     return _convert_to_output_format(t, output_format)
+
+
+# ── file location ──────────────────────────────────────────────────────────────
+
+XTOP     = '/uufs/chpc.utah.edu/common/home/sdss51/'
+XRAINBOW = '/Users/long/Projects/lvm_data/sas'
+XMUSKIE  = '/home/long/Projects/lvm_data/sas'
+
+def find_top():
+    '''Return the machine-specific top-level LVM data directory, or empty string.'''
+    for loc, topdir in [('Utah', XTOP), ('Rainbow', XRAINBOW), ('Muskie', XMUSKIE)]:
+        if os.path.isdir(topdir):
+            print('Located on: %s' % loc)
+            return topdir
+    print('Error: cannot determine data location from known paths.')
+    return ''
+
+
+def resolve_filename(filename):
+    '''
+    Return the full path to a CFrame/SFrame file, or None if not found.
+
+    Applies two fixes in order:
+      1. Replaces SFrame with CFrame in the path.
+      2. If the file does not exist as given, prepends find_top() and tries again.
+         This handles filenames that contain only the location-relative portion
+         of the path (as stored in the drpall table).
+    '''
+    filename = filename.replace('SFrame', 'CFrame')
+    if os.path.isfile(filename):
+        return filename
+    topdir = find_top()
+    if topdir:
+        full = os.path.join(topdir, filename)
+        if os.path.isfile(full):
+            return full
+    return None
 
 
 # ── main routines ──────────────────────────────────────────────────────────────
@@ -537,8 +576,12 @@ def do_all(files, wmin=3900, wmax=4000, do_plot=False):
 
     ntot = len(files)
     for i, one in enumerate(files, 1):
-        print('Processing %s (%d/%d)' % (one, i, ntot))
-        row = doit(one, wmin, wmax, do_plot)
+        full = resolve_filename(one)
+        if full is None:
+            print('Skipping %s (%d/%d): file not found' % (one, i, ntot))
+            continue
+        print('Processing %s (%d/%d)' % (full, i, ntot))
+        row = doit(full, wmin, wmax, do_plot)
         print('  95th pct offset: %.4f AA   median quality: %.3f' % (row['dw_95pct'], row['med_quality']))
         rows.append(row)
 

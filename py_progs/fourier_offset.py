@@ -320,8 +320,10 @@ def resolve_filename(filename):
     topdir = find_top()
     if topdir:
         full = os.path.join(topdir, filename)
+        print('  resolve: trying %s' % full)
         if os.path.isfile(full):
             return full
+    print('  resolve: not found for %s' % filename)
     return None
 
 

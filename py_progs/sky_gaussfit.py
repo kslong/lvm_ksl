@@ -4,31 +4,74 @@
 '''
                     Space Telescope Science Institute
 
-Synopsis:  
+Synopsis:
 
-Extract fluxes etc from a standard set of emission lines from
-the scince fibers of a sky-subtracted LVM exposure
-
-
-Command line usage (if any):
-
-    usage: lvm_bootstrap.py [-lmc] [-smc] [-out root] filename
-
-    where 
-
-    -lmc or -smc applies a velocity offset for fitting
-    -out root sets the rootname for the output file
-    filename is the aname of an SFrame compatiable file
+Fit Gaussians to a fixed set of nebular emission lines and airglow lines
+in the science fibers of a sky-subtracted LVM SFrame exposure, producing
+one output row per fiber.
 
 
-Description:  
+Command line usage:
+
+    sky_gaussfit.py [-lmc] [-smc] [-v vel] [-out root] filename [filename ...]
+
+    where
+
+    -lmc         Apply the LMC radial velocity (~262 km/s) when fitting nebular lines
+    -smc         Apply the SMC radial velocity (~146 km/s) when fitting nebular lines
+    -v vel       Apply an arbitrary radial velocity (km/s) when fitting nebular lines
+    -out root    Set the root name for the output file (default: derived from input filename)
+    filename     One or more SFrame FITS files or ASCII spectrum files (WAVE, FLUX columns)
+
+
+Description:
+
+For each good science fiber (telescope == 'Sci', fibstatus == 0) the script fits
+single Gaussians to the following lines:
+
+    Nebular lines (wavelengths shifted by the supplied velocity):
+        [OI]  6300  (oi_a, oi_b)
+        Ha    6563  (ha)
+        [SII] 6716  (sii_a)
+        [SII] 6731  (sii_b)
+
+    Airglow lines (fitted at fixed, unshifted wavelengths):
+        sky6533   6533.04 A
+        sky6553   6553.0  A
+        sky6577   6577.2  A
+        sky6912   6912.6  A
+        sky6923   6923.2  A
+        sky6939   6939.5  A
+
+For each line the fit returns the flux, centroid wavelength, FWHM, background
+level, and RMSE.  Fibers with too many NaN pixels are skipped.
 
 Primary routines:
 
-    doit
+    do_one    - fit all lines for a single spectrum table
+    do_all    - iterate over all science fibers in an SFrame FITS file
+    do_individual - iterate over a list of ASCII spectrum files
+
+
+Output:
+
+When the input is an SFrame FITS file, the output is an ASCII fixed-width table
+with one row per successfully fit fiber.  Columns cover the fit parameters
+(flux, wave, fwhm, back, rmse) for each line together with fiberid, ra, and dec.
+The output filename defaults to the input filename with .fits replaced by .txt,
+or <root>.txt if -out is supplied.
+
+When the input is one or more ASCII spectrum files, the output is written to
+Gauss_<root>.txt (multiple files) or Gauss_<stem>.txt (single file), where
+<stem> is the input filename without path or extension.
+
 
 Notes:
-                                       
+
+The airglow lines are present in sky-subtracted SFrame data regardless of the
+target velocity.  Their measured fluxes reflect whatever signal remains at those
+wavelengths after sky subtraction.
+
 History:
 
 240604 ksl Coding begun

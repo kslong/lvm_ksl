@@ -82,7 +82,7 @@ of how the raw spectra (including sky) vary over time.
     Minimum exposure time in seconds to include (default: 900).
 
 -ver drp_ver
-    DRP version to use (default: 1.1.1).
+    DRP version to use (default: 1.2.0).
 
 **Arguments:**
 
@@ -97,12 +97,23 @@ delta
 
 **Output:**
 
-A FITS file with one row per exposure, containing:
+A FITS file with the following extensions:
 
-- Median science fiber spectrum
-- SKY_EAST telescope spectrum
-- SKY_WEST telescope spectrum
-- Exposure metadata (MJD, coordinates, etc.)
+=========  =============  =====================================================
+Extension  Type           Contents
+=========  =============  =====================================================
+PRIMARY    ImageHDU       No data; header records Title
+WAVE       ImageHDU       1-D wavelength array
+FLUX       ImageHDU       2-D array (n_exposures × n_wavelengths), median science fiber flux
+SKY_EAST   ImageHDU       2-D array, SKY_EAST telescope spectrum
+SKY_WEST   ImageHDU       2-D array, SKY_WEST telescope spectrum
+LSF        ImageHDU       2-D array, line spread function
+drp_all    BinTableHDU    drpall metadata for the included exposures
+=========  =============  =====================================================
+
+The default output filename follows the pattern
+``XCframe_<ver>_<exp_start>_<exp_stop>_<delta>_<percent>.fits``,
+e.g. ``XCframe_1.2.0_10000_20000_10_50.fits``.
 
 **Use cases:**
 
@@ -152,12 +163,23 @@ delta
 
 **Output:**
 
-A FITS file with one row per exposure, containing:
+A FITS file with the following extensions:
 
-- Percentile sky-subtracted flux spectrum
-- Sky spectrum
-- Inverse variance spectrum
-- Exposure metadata
+=========  =============  =====================================================
+Extension  Type           Contents
+=========  =============  =====================================================
+PRIMARY    ImageHDU       No data; header records Title
+WAVE       ImageHDU       1-D wavelength array
+FLUX       ImageHDU       2-D array (n_exposures × n_wavelengths), percentile sky-subtracted flux
+SKY        ImageHDU       2-D array, sky spectrum
+IVAR       ImageHDU       2-D array, inverse variance
+LSF        ImageHDU       2-D array, line spread function
+drp_all    BinTableHDU    drpall metadata for the included exposures
+=========  =============  =====================================================
+
+The default output filename follows the pattern
+``XSFrame_<ver>_<exp_start>_<exp_stop>_<delta>_<percent>.fits``,
+e.g. ``XSFrame_1.2.0_10000_20000_10_50.fits``.
 
 **Use cases:**
 
@@ -219,13 +241,23 @@ delta
 
 **Output:**
 
-A FITS file with one row per exposure, containing:
+A FITS file with the following extensions:
 
-- Percentile spectrum for inner ring fibers
-- Percentile spectrum for middle ring fibers
-- Percentile spectrum for outer ring fibers
-- Median sky spectrum
-- Exposure metadata
+===========  =============  =====================================================
+Extension    Type           Contents
+===========  =============  =====================================================
+PRIMARY      ImageHDU       No data; header records PERCENT, INNER, MIDDLE, OUTER
+WAVE         ImageHDU       1-D wavelength array
+FLUX_INNER   ImageHDU       2-D array (n_exposures × n_wavelengths), percentile flux for inner ring fibers
+FLUX_MIDDLE  ImageHDU       2-D array, percentile flux for middle ring fibers
+FLUX_OUTER   ImageHDU       2-D array, percentile flux for outer ring fibers
+SKY          ImageHDU       2-D array, median sky spectrum
+drp_all      BinTableHDU    drpall metadata for the included exposures
+===========  =============  =====================================================
+
+The default output filename follows the pattern
+``XRings_<ver>_<exp_start>_<exp_stop>_<delta>_<percent>.fits``,
+e.g. ``XRings_1.2.0_10000_20000_10_50.fits``.
 
 **Use cases:**
 
@@ -302,19 +334,23 @@ FLUX3      ImageHDU       2-D array (n_exposures × n_wavelengths), spectrograph
 drp_all    BinTableHDU    drpall metadata for the accepted exposures only
 =========  =============  =====================================================
 
-A fixed-width ASCII table ``<out>.skipped.txt`` is also always written,
-listing every rejected exposure with columns ``expnum``, ``mjd``,
+A fixed-width ASCII table ``<out>.skipped.txt`` is also written when any
+exposures are rejected, listing each one with columns ``expnum``, ``mjd``,
 ``tileid``, ``SP1``, ``SP2``, ``SP3`` (``True`` = present, ``False`` =
-absent).  This file is written even if no exposures were skipped, providing
-a record that the completeness check was performed.
+absent).
 
 **Notes:**
 
 The drpall ``location`` column records SFrame paths.  For CFrame files the
 script replaces ``'SFrame'`` with ``'CFrame'`` in the path automatically.
-The output filename includes the file type (e.g.
-``XSpec_CFrame_1.2.0_10000_20000_10_50.fits``) so that CFrame and SFrame
-runs do not overwrite each other.
+
+The default output filename follows the pattern
+``XSpec_<type>_<ver>_<exp_start>_<exp_stop>_<delta>_<percent>.fits``,
+where ``<type>`` is ``CFrame`` or ``SFrame``, e.g.
+``XSpec_CFrame_1.2.0_10000_20000_10_50.fits``.  The skipped-exposure file
+takes the same root with a ``.skipped.txt`` suffix, e.g.
+``XSpec_CFrame_1.2.0_10000_20000_10_50.skipped.txt``.  Using the file type
+in the name means CFrame and SFrame runs do not overwrite each other.
 
 **Use cases:**
 

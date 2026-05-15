@@ -6,81 +6,115 @@
 
 Synopsis:
 
-Fit Gaussians to a fixed set of airglow lines in each row of a
-SummarizeCframe output file, producing one output row per exposure.
+Fit Gaussians to a fixed set of airglow lines in each exposure of
+LVM CFrame data, producing one output row per exposure.  Input may
+be individual lvmCFrame files, a drpall-derived file list, an exposure
+range resolved via drpall, or a pre-built SummarizeCframe FITS file.
 
 
 Command line usage:
 
-    gauss_offset.py [-ext FLUX] [-out root] filename [filename ...]
+    gauss_offset.py [-ext FLUX] [-out root] [-ver drp_ver] [-file xfile]
+                    [exp_start [exp_stop [delta]]]
+                    filename [filename ...]
 
     where
 
     -ext extname  Extension to fit: FLUX (default), SKY_EAST, or SKY_WEST
-    -out root     Root name for the output file.  If omitted the output is
-                  named <input_stem>_gauss.<ext>.fits, e.g.
-                  XCframe_1.2.0_10000_20000_10_50_gauss.FLUX.fits
-    filename      One or more SummarizeCframe FITS files
+    -out root     Root name for the output file.  If omitted the output
+                  filename is derived from the inputs (see Output section).
+    -ver drp_ver  DRP version for drpall lookup (default 1.2.1).
+    -file xfile   Read lvmCFrame filenames from a table with a column named
+                  filename or Filename.  SFrame paths are converted to CFrame
+                  automatically.  These are added to any CFrame files from
+                  exp_start/exp_stop.
+    exp_start     First exposure number.  Combined with exp_stop, queries
+                  drpall to build a list of CFrame files to process.
+    exp_stop      Last exposure number (inclusive).
+    delta         Use every Nth exposure in [exp_start, exp_stop] (default 1).
+    filename      One or more SummarizeCframe FITS files (XCframe_*.fits).
 
 
 Description:
 
-Each row of the chosen flux extension in a SummarizeCframe file contains the
-spectrum for one exposure (median science-fiber flux for FLUX, sky-telescope
-spectra for SKY_EAST and SKY_WEST).  This script fits single Gaussians to the
-following airglow lines in every row:
+This script fits single Gaussians to the following airglow lines:
 
     sky5577   5577.34 A
-    sky6300   6300.3  A
-    sky6363   6363.8  A
-    sky6533   6533.04 A
-    sky6553   6553.0  A
-    sky6577   6577.2  A
-    sky6912   6912.6  A
-    sky6923   6923.2  A
-    sky6939   6939.5  A
+    sky6300   6300.31 A
+    sky6363   6363.78 A
+    sky7358   7358.68 A
+    sky7392   7392.21 A
+    sky7914   7913.72 A
+    sky8344   8344.61 A
+    sky8399   8399.18 A
+    sky8827   8827.11 A
+    sky8988   8988.38 A
+    sky9552   9552.55 A
+    sky9719   9719.84 A
 
 For each line the fit returns the flux, centroid wavelength, FWHM, background
 level, and RMSE.
 
+Two input modes are supported:
+
+  CFrame mode (-file, exp_start/exp_stop, or lvmCFrame filenames):
+    For each CFrame file the median spectrum is computed across all good
+    science fibers (telescope == 'Sci', fibstatus == 0) using the MASK
+    extension.  Gaussians are then fit to that median spectrum.  One output
+    row is produced per exposure.  SFrame paths in the input table are
+    converted to CFrame paths automatically.
+
+  SummarizeCframe mode (XCframe_*.fits filenames on the command line):
+    Each row of the chosen extension (FLUX, SKY_EAST, or SKY_WEST) in a
+    SummarizeCframe file is a pre-computed median exposure spectrum.
+    Gaussians are fit to each row directly.
+
 Primary routines:
 
-    do_one  - fit all airglow lines for a single spectrum table
-    do_all  - iterate over all rows in a SummarizeCframe FITS file
+    do_one        - fit all airglow lines for a single spectrum table
+    doit          - fit one CFrame file (median science-fiber spectrum)
+    do_all_files  - iterate over a list of CFrame files
+    do_all        - iterate over rows in a SummarizeCframe FITS file
 
 
 Output:
 
 A FITS binary table with one row per exposure.  Columns cover the fit
-parameters (flux, wave, fwhm, back, rmse) for each line together with expnum
-and mjd drawn from the drp_all extension.
+parameters (flux, wave, fwhm, back, rmse) for each line together with
+expnum and mjd.
 
-The automatic output filename is <input_stem>_gauss.<ext>.fits, where <ext>
-is the extension that was fit (e.g. FLUX, SKY_EAST, SKY_WEST).  This ensures
-the output file is never confused with the input and that FLUX, SKY_EAST, and
-SKY_WEST runs on the same input file do not overwrite each other.
+CFrame mode: output is named Gauss_<ext>.<YYMMDD>.fits by default.
 
-If -out root is supplied the output is written to root.fits (adding .fits if
-not already present).
+SummarizeCframe mode: output is named <input_stem>_gauss.<ext>.fits by
+default.
+
+If -out root is supplied the output is written to root.fits (adding .fits
+if not already present).
 
 
 Notes:
 
-Because the input spectra are from CFrame (before sky subtraction), the
-airglow lines are bright and well-suited to measuring centroid wavelengths
-and fluxes as a function of exposure, which can reveal wavelength-calibration
-drifts or changes in sky brightness over a night or survey.
+Wavelengths are from the ESO UVES sky spectrum atlas.
+
+Because CFrame spectra are before sky subtraction, the airglow lines are
+bright and well-suited to measuring centroid wavelengths and fluxes as a
+function of exposure, revealing wavelength-calibration drifts or changes
+in sky brightness over a night or survey.
 
 History:
 
 240604 ksl Coding begun (as sky_gaussfit.py)
 260504 ksl Adapted for SummarizeCframe input; restricted to airglow lines only
 260504 ksl FITS output; selectable extension (-ext)
+260515 ksl Add -file, -ver, exp_start/exp_stop, and CFrame direct-file mode
 
 '''
 
 import sys
 import os
+import re
+import datetime
+import numpy as np
 from astropy.table import Table, vstack, hstack
 from astropy.io import fits
 from astropy.time import Time
@@ -106,6 +140,53 @@ AIRGLOW_LINES = [
 ]
 
 
+def build_drp_lookup(drp_ver='1.2.1'):
+    '''
+    Build a dict mapping exposure number to full CFrame file path.
+
+    Reads drpall via SummarizeCframe.read_drpall(), prepends the
+    machine-specific top directory, and converts SFrame to CFrame paths.
+    Returns an empty dict if drpall cannot be read.
+    '''
+    try:
+        from SummarizeCframe import find_top, read_drpall
+    except ImportError:
+        print('Warning: could not import SummarizeCframe; drpall lookup unavailable.')
+        return {}
+    topdir = find_top()
+    if not topdir:
+        return {}
+    drp_tab = read_drpall(drp_ver)
+    if drp_tab is None or len(drp_tab) == 0:
+        return {}
+    lookup = {}
+    for row in drp_tab:
+        loc = str(row['location']).replace('SFrame', 'CFrame')
+        lookup[int(row['expnum'])] = os.path.join(topdir, loc)
+    return lookup
+
+
+def resolve_filename(filename, lookup=None):
+    '''
+    Return the full path to a CFrame file, or None if not found.
+
+    Converts any SFrame path to CFrame first.  If the file exists at that
+    path it is returned immediately.  Otherwise the exposure number is
+    extracted from the filename and used to look up the full path in lookup
+    (a dict built by build_drp_lookup()).
+    '''
+    filename = filename.replace('SFrame', 'CFrame')
+    if os.path.isfile(filename):
+        return filename
+    if lookup:
+        m = re.search(r'(\d+)\.fits', os.path.basename(filename))
+        if m:
+            expnum = int(m.group(1))
+            if expnum in lookup and os.path.isfile(lookup[expnum]):
+                return lookup[expnum]
+    return None
+
+
 def do_one(spectrum_table):
     '''
     Fit all airglow lines for a single spectrum supplied as an astropy Table
@@ -129,6 +210,103 @@ def do_one(spectrum_table):
         return []
 
     return hstack(records)
+
+
+def doit(filename, ext='FLUX'):
+    '''
+    Fit airglow lines for a single CFrame file.
+
+    Computes the median spectrum across all good science fibers
+    (telescope == 'Sci', fibstatus == 0) using the MASK extension,
+    then fits Gaussians to each airglow line.
+
+    Returns a single-row astropy Table, or None if the file cannot be
+    processed.
+    '''
+    try:
+        x = fits.open(filename)
+    except Exception:
+        print('Error: Could not open %s' % filename)
+        return None
+
+    expnum  = x[0].header.get('EXPOSURE', -1)
+    obstime = x[0].header.get('OBSTIME', '')
+    mjd     = Time(obstime, format='isot', scale='utc').mjd if obstime else np.nan
+
+    wave    = x['WAVE'].data
+    slitmap = Table(x['SLITMAP'].data)
+    sci     = slitmap[(slitmap['telescope'] == 'Sci') & (slitmap['fibstatus'] == 0)]
+    rows    = sci['fiberid'] - 1   # fiberid is 1-based
+
+    try:
+        flux_2d = x[ext].data[rows]
+    except KeyError:
+        print('Error: extension %s not found in %s' % (ext, filename))
+        return None
+
+    mask_2d  = x['MASK'].data[rows]
+    flux_ma  = np.ma.masked_array(flux_2d, mask_2d.astype(bool))
+    med_flux = np.ma.median(flux_ma, axis=0).data
+
+    if check_for_nan(med_flux):
+        print('Too many NaNs in %s, skipping' % filename)
+        return None
+
+    one_spec = Table([wave, med_flux], names=['WAVE', 'FLUX'])
+    rtab = do_one(one_spec)
+    if not len(rtab):
+        return None
+
+    rtab['expnum'] = expnum
+    rtab['mjd']    = mjd
+    return rtab
+
+
+def do_all_files(files, ext='FLUX', outname='', drp_ver='1.2.1'):
+    '''
+    Fit airglow lines for a list of CFrame files.
+
+    Parameters
+    ----------
+    files : list of str
+        Paths to lvmCFrame FITS files.  SFrame paths are converted
+        automatically; drpall is used as a fallback if a path does not
+        exist at its literal location.
+    ext : str
+        Extension to fit (FLUX, SKY_EAST, or SKY_WEST).
+    outname : str
+        Output filename root.  If empty, Gauss_<ext>.<YYMMDD>.fits is used.
+    drp_ver : str
+        DRP version used for the fallback drpall path lookup.
+    '''
+    lookup  = build_drp_lookup(drp_ver)
+    records = []
+
+    for one in files:
+        full = resolve_filename(one, lookup)
+        if full is None:
+            print('Skipping %s: file not found' % one)
+            continue
+        print('Processing %s' % full)
+        rtab = doit(full, ext)
+        if rtab is not None and len(rtab) > 0:
+            records.append(rtab)
+
+    if not records:
+        print('No spectra successfully fit.')
+        return
+
+    results = vstack(records)
+
+    if outname == '':
+        today   = datetime.date.today().strftime('%y%m%d')
+        outname = 'Gauss_%s.%s.fits' % (ext, today)
+    elif not outname.endswith('.fits'):
+        outname = outname + '.fits'
+
+    results.write(outname, format='fits', overwrite=True)
+    print('Wrote results to %s' % outname)
+    return results
 
 
 def do_all(filename, ext='FLUX', outname=''):
@@ -161,7 +339,7 @@ def do_all(filename, ext='FLUX', outname=''):
         print('Error: extension %s not found in %s' % (ext, filename))
         return
 
-    drp = Table(x['drp_all'].data)
+    drp   = Table(x['drp_all'].data)
     n_exp = flux.shape[0]
 
     records = []
@@ -186,11 +364,10 @@ def do_all(filename, ext='FLUX', outname=''):
     results = vstack(records)
 
     if outname == '':
-        stem = os.path.basename(filename).replace('.fits', '')
+        stem    = os.path.basename(filename).replace('.fits', '')
         outname = '%s_gauss.%s.fits' % (stem, ext)
-    else:
-        if not outname.endswith('.fits'):
-            outname = outname + '.fits'
+    elif not outname.endswith('.fits'):
+        outname = outname + '.fits'
 
     results.write(outname, format='fits', overwrite=True)
     print('Wrote results to %s' % outname)
@@ -198,9 +375,15 @@ def do_all(filename, ext='FLUX', outname=''):
 
 
 def steer(argv):
-    outname = ''
-    ext = 'FLUX'
-    fitsfiles = []
+    outname    = ''
+    ext        = 'FLUX'
+    drp_ver    = '1.2.1'
+    input_list = ''
+    cfiles     = []   # individual CFrame files (from -file or exp range)
+    xfiles     = []   # SummarizeCframe files (direct .fits args)
+    exp_start  = -1
+    exp_stop   = -1
+    delta      = 1
 
     i = 1
     while i < len(argv):
@@ -213,17 +396,73 @@ def steer(argv):
         elif argv[i][0:4] == '-out':
             i += 1
             outname = argv[i]
+        elif argv[i] == '-ver':
+            i += 1
+            drp_ver = argv[i]
+        elif argv[i] == '-file':
+            i += 1
+            input_list = argv[i]
         elif argv[i][0] == '-':
             print('Unknown option: %s' % argv[i])
             return
         elif argv[i].endswith('.fits'):
-            fitsfiles.append(argv[i])
+            xfiles.append(argv[i])
         else:
-            print('Unrecognised argument: %s' % argv[i])
-            return
+            try:
+                val = int(argv[i])
+            except ValueError:
+                print('Unrecognised argument: %s' % argv[i])
+                return
+            if exp_start < 0:
+                exp_start = val
+            elif exp_stop < 0:
+                exp_stop = val
+            else:
+                delta = val
         i += 1
 
-    for one_file in fitsfiles:
+    # Build CFrame file list from drpall when exp_start/exp_stop are given
+    if exp_start >= 0 and exp_stop >= 0:
+        try:
+            from SummarizeCframe import find_top, read_drpall, select
+        except ImportError:
+            print('Error: could not import SummarizeCframe')
+            return
+        topdir  = find_top()
+        drp_tab = read_drpall(drp_ver)
+        if drp_tab is None or len(drp_tab) == 0:
+            print('Error: could not read drpall for version %s' % drp_ver)
+            return
+        ztab = select(drp_tab, exp_start, exp_stop, delta)
+        print('Selected %d exposures from drpall' % len(ztab))
+        for row in ztab:
+            loc = str(row['location']).replace('SFrame', 'CFrame')
+            cfiles.append(os.path.join(topdir, loc))
+
+    # Add files from -file table
+    if input_list != '':
+        try:
+            xtab = Table.read(input_list)
+        except Exception:
+            print('Could not read: %s' % input_list)
+            return
+        if 'filename' in xtab.colnames:
+            cfiles += list(xtab['filename'])
+        elif 'Filename' in xtab.colnames:
+            cfiles += list(xtab['Filename'])
+        else:
+            print('Read %s but could not find a column named filename or Filename'
+                  % input_list)
+            return
+
+    if not cfiles and not xfiles:
+        print('Nothing to do: provide filename(s), -file xfile, or exp_start exp_stop.')
+        return
+
+    if cfiles:
+        do_all_files(cfiles, ext, outname, drp_ver)
+
+    for one_file in xfiles:
         do_all(one_file, ext, outname)
 
 

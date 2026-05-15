@@ -395,6 +395,116 @@ A typical workflow for evaluating data quality might be:
        SummarizeSpec.py -sf -out spec_summary_sf 10000 20000 10
 
 
+gauss_offset.py — Airglow Line Fitting
+---------------------------------------
+
+Fits single Gaussians to a fixed set of airglow lines in each exposure row
+of a SummarizeCframe FITS file, producing one output row per exposure.
+This is useful for tracking wavelength-calibration drifts or changes in sky
+brightness over a night or survey.
+
+**Command line usage**::
+
+    gauss_offset.py [-ext FLUX] [-out root] [-ver drp_ver] [-file xfile]
+                    [exp_start [exp_stop [delta]]]
+                    filename [filename ...]
+
+**Options:**
+
+-ext FLUX|SKY_EAST|SKY_WEST
+    Extension to fit (default: FLUX).
+
+-out root
+    Root name for the output file.  If omitted, the output filename is
+    derived automatically (see Output below).
+
+-ver drp_ver
+    DRP version for drpall lookup when resolving file paths (default 1.2.1).
+
+-file xfile
+    Read lvmCFrame filenames from a table that has a column named
+    ``filename`` or ``Filename``.  SFrame paths are converted to CFrame
+    automatically.  These are combined with any files from
+    ``exp_start``/``exp_stop``.
+
+**Arguments:**
+
+exp_start
+    First exposure number.  Combined with ``exp_stop``, queries drpall
+    to build the list of CFrame files to process.
+
+exp_stop
+    Last exposure number (inclusive).
+
+delta
+    Use every Nth exposure in [exp_start, exp_stop] (default 1 = all).
+
+filename
+    One or more SummarizeCframe FITS files (``XCframe_*.fits``).
+
+**Two input modes:**
+
+*CFrame mode* (``-file`` or ``exp_start``/``exp_stop``): each CFrame file
+is opened individually, the median spectrum is computed across all good
+science fibers (``telescope == 'Sci'``, ``fibstatus == 0``) using the
+MASK extension, and Gaussians are fit to that median.  SFrame paths are
+converted to CFrame automatically; drpall is used as a fallback if the
+literal path does not exist.
+
+*SummarizeCframe mode* (direct ``filename`` arguments): each row of the
+chosen extension in an ``XCframe_*.fits`` file is treated as a
+pre-computed median spectrum and fit directly.
+
+**Airglow lines fitted:**
+
+=========  ===========
+Line name  Wavelength
+=========  ===========
+sky5577    5577.34 A
+sky6300    6300.31 A
+sky6363    6363.78 A
+sky7358    7358.68 A
+sky7392    7392.21 A
+sky7914    7913.72 A
+sky8344    8344.61 A
+sky8399    8399.18 A
+sky8827    8827.11 A
+sky8988    8988.38 A
+sky9552    9552.55 A
+sky9719    9719.84 A
+=========  ===========
+
+Wavelengths are from the ESO UVES sky spectrum atlas.
+
+**Output:**
+
+A FITS binary table with one row per exposure.  Columns cover the fit
+parameters (flux, wave, fwhm, back, rmse) for each line, plus ``expnum``
+and ``mjd``.
+
+- CFrame mode: ``Gauss_<ext>.<YYMMDD>.fits`` by default.
+- SummarizeCframe mode: ``<input_stem>_gauss.<ext>.fits`` by default.
+
+Supplying ``-out root`` overrides both defaults.
+
+**Examples**::
+
+    # CFrame mode: read file list from a drpall-derived table
+    gauss_offset.py -file drpall_dr20.fits
+
+    # CFrame mode: use drpall to select exposures 11000–12000, every 5th
+    gauss_offset.py -ver 1.2.0 11000 12000 5
+
+    # CFrame mode: fit the east sky telescope
+    gauss_offset.py -ext SKY_EAST -file drpall_dr20.fits
+
+    # SummarizeCframe mode: fit a pre-built summary file
+    gauss_offset.py XCframe_1.2.0_10000_20000_10_50.fits
+
+    # SummarizeCframe mode: fit sky east extension
+    gauss_offset.py -ext SKY_EAST XCframe_1.2.0_10000_20000_10_50.fits
+
+
 See Also
 --------
 

@@ -6,10 +6,12 @@
 
 Synopsis:
 
-Fit Gaussians to a fixed set of airglow lines in each exposure of
-LVM CFrame data, producing one output row per exposure.  Input may
-be individual lvmCFrame files, a drpall-derived file list, an exposure
-range resolved via drpall, or a pre-built SummarizeCframe FITS file.
+Fit Gaussians to a fixed set of airglow lines in each LVM exposure,
+producing one output row per exposure.  Two input modes are supported:
+individual lvmCFrame files (supplied directly, via a file list, or
+located via drpall), or a pre-built SummarizeCframe FITS file.  Both
+modes fit the same quantity — the median spectrum across all good science
+fibers — and produce equivalent results for the same exposures.
 
 
 Command line usage:
@@ -33,11 +35,14 @@ Command line usage:
     exp_stop      Last exposure number (inclusive).
     delta         Use every Nth exposure in [exp_start, exp_stop] (default 1).
     filename      One or more SummarizeCframe FITS files (XCframe_*.fits).
+                  Direct filename arguments select SummarizeCframe mode
+                  (see Description).
 
 
 Description:
 
-This script fits single Gaussians to the following airglow lines:
+In both modes the script fits single Gaussians to the following airglow
+lines and returns one output row per exposure:
 
     sky5577   5577.34 A
     sky6300   6300.31 A
@@ -55,19 +60,26 @@ This script fits single Gaussians to the following airglow lines:
 For each line the fit returns the flux, centroid wavelength, FWHM, background
 level, and RMSE.
 
-Two input modes are supported:
+Two input modes are supported.  Both fit the same quantity — the median
+spectrum across all good science fibers — and give equivalent results for
+the same set of exposures.
 
-  CFrame mode (-file, exp_start/exp_stop, or lvmCFrame filenames):
-    For each CFrame file the median spectrum is computed across all good
-    science fibers (telescope == 'Sci', fibstatus == 0) using the MASK
-    extension.  Gaussians are then fit to that median spectrum.  One output
-    row is produced per exposure.  SFrame paths in the input table are
-    converted to CFrame paths automatically.
+  SummarizeCframe mode (triggered by direct .fits filename arguments):
+    A SummarizeCframe file (XCframe_*.fits) stores, for each exposure, a
+    pre-computed median science-fiber spectrum as one row of its FLUX
+    extension (or SKY_EAST / SKY_WEST for sky-telescope spectra).  This
+    script reads each row directly and fits it.  Use this mode when you
+    have already run SummarizeCframe or one of its variants.
 
-  SummarizeCframe mode (XCframe_*.fits filenames on the command line):
-    Each row of the chosen extension (FLUX, SKY_EAST, or SKY_WEST) in a
-    SummarizeCframe file is a pre-computed median exposure spectrum.
-    Gaussians are fit to each row directly.
+  CFrame mode (triggered by -file or exp_start/exp_stop):
+    Individual lvmCFrame files are processed one at a time.  For each
+    file, the median spectrum is computed on the fly across all good
+    science fibers (telescope == 'Sci', fibstatus == 0), with bad pixels
+    masked via the MASK extension.  Gaussians are then fit to that median.
+    SFrame paths in the input table are converted to CFrame paths
+    automatically; drpall is used as a fallback if a path cannot be
+    resolved directly.  Use this mode when you have a drpall-derived file
+    list or want to skip the SummarizeCframe step.
 
 Primary routines:
 

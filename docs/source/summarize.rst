@@ -398,10 +398,12 @@ A typical workflow for evaluating data quality might be:
 gauss_offset.py — Airglow Line Fitting
 ---------------------------------------
 
-Fits single Gaussians to a fixed set of airglow lines in each exposure row
-of a SummarizeCframe FITS file, producing one output row per exposure.
-This is useful for tracking wavelength-calibration drifts or changes in sky
-brightness over a night or survey.
+Fits single Gaussians to a fixed set of airglow lines in each LVM exposure,
+producing one output row per exposure.  In both input modes the script fits
+the same quantity — the median spectrum across all good science fibers — and
+gives equivalent results for the same set of exposures.  This is useful for
+tracking wavelength-calibration drifts or changes in sky brightness over a
+night or survey.
 
 **Command line usage**::
 
@@ -444,16 +446,20 @@ filename
 
 **Two input modes:**
 
-*CFrame mode* (``-file`` or ``exp_start``/``exp_stop``): each CFrame file
-is opened individually, the median spectrum is computed across all good
-science fibers (``telescope == 'Sci'``, ``fibstatus == 0``) using the
-MASK extension, and Gaussians are fit to that median.  SFrame paths are
-converted to CFrame automatically; drpall is used as a fallback if the
-literal path does not exist.
+*SummarizeCframe mode* (direct ``filename`` arguments): a SummarizeCframe
+file (``XCframe_*.fits``) stores one pre-computed median science-fiber
+spectrum per exposure as a row of its FLUX (or SKY_EAST / SKY_WEST)
+extension.  The script reads each row directly and fits it.  Use this mode
+when you have already run ``SummarizeCframe.py`` or one of its variants.
 
-*SummarizeCframe mode* (direct ``filename`` arguments): each row of the
-chosen extension in an ``XCframe_*.fits`` file is treated as a
-pre-computed median spectrum and fit directly.
+*CFrame mode* (``-file`` or ``exp_start``/``exp_stop``): individual
+lvmCFrame files are opened one at a time.  For each file the median
+spectrum is computed on the fly across all good science fibers
+(``telescope == 'Sci'``, ``fibstatus == 0``) with bad pixels masked via
+the MASK extension.  SFrame paths are converted to CFrame automatically;
+drpall is used as a fallback if a path cannot be resolved directly.  Use
+this mode when you have a drpall-derived file list or want to skip the
+``SummarizeCframe.py`` step.
 
 **Airglow lines fitted:**
 

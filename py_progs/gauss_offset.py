@@ -14,7 +14,7 @@ modes fit the same quantity — the median spectrum across all good science
 fibers — and produce equivalent results for the same exposures.
 
 
-Command line usage:
+Command line usage::
 
     gauss_offset.py [-ext FLUX] [-out root] [-ver drp_ver] [-file xfile]
                     [exp_start [exp_stop [delta]]]

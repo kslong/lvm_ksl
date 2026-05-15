@@ -11,7 +11,7 @@ in the science fibers of a sky-subtracted LVM SFrame exposure, producing
 one output row per fiber.
 
 
-Command line usage:
+Command line usage::
 
     sky_gaussfit.py [-lmc] [-smc] [-v vel] [-out root] filename [filename ...]
 

@@ -22,33 +22,33 @@ Command line usage::
 
     -out root    Root name for output PNG files.  Default: stem of the
                  first input filename.
-    -neb         Plot the standard nebular line set (oi_a, ha, nii_b,
-                 sii_a, sii_b) on one page saved as <root>_neb.png.
-    -lines list  Comma-separated list of line names to plot (e.g.
-                 ha,sii_a,sky6300).  Default: all lines inferred from
-                 flux_ columns in the table, in column order.
-    -np npage    Number of lines per page (default 6, max 6).
+    -neb         Plot only the nebular group (LINE_GROUPS entry 'neb').
+    -lines list  Comma-separated list of line names, saved as _p01.png,
+                 _p02.png, … in groups of -np.  Overrides LINE_GROUPS.
+    -np npage    Lines per page when using -lines (default 6, max 6).
     -s size      Scatter marker size in points^2 (default 30).
     filename     One or more ASCII tables written by sky_gaussfit.py.
-                 If multiple files are given they are stacked into one
-                 combined table before plotting.
+                 If multiple files are given they are stacked before plotting.
 
 
 Description:
 
-For each group of up to 6 lines the script creates one figure with rows
-of three panels (wavelength, flux, FWHM).  Each panel is a scatter plot
-of fiber RA vs Dec with the quantity shown as color.  Colorbars reflect
-the 5th-95th percentile range so outliers do not dominate the scale.
+The default behaviour (no -neb, no -lines) iterates over every entry in
+the LINE_GROUPS table defined near the top of this file and saves one PNG
+per entry named Figs_gaussfit_sky/<root>_<suffix>.png.  Edit LINE_GROUPS
+to control which lines appear on which page.
 
-With -neb the output is a single file <root>_neb.png containing the five
-standard nebular lines (oi_a, ha, nii_b, sii_a, sii_b).
+With -neb only the 'neb' entry in LINE_GROUPS is plotted.
 
-Without -neb, output filenames follow the pattern::
+With -lines a custom comma-separated list is plotted in pages of -np lines
+named _p01.png, _p02.png, etc.
 
-    Figs_gaussfit_sky/<root>_p01.png
-    Figs_gaussfit_sky/<root>_p02.png
-    ...
+Output filenames (default mode)::
+
+    Figs_gaussfit_sky/<root>_neb.png
+    Figs_gaussfit_sky/<root>_sky1.png
+    Figs_gaussfit_sky/<root>_sky2.png
+    Figs_gaussfit_sky/<root>_sky3.png
 
 Primary routines:
 
@@ -77,8 +77,15 @@ from astropy.io import ascii
 FIG_DIR = 'Figs_gaussfit_sky'
 LINES_PER_PAGE = 6
 
-# Standard nebular lines for -neb mode (omits oiii_a/b, oi_b, nii_a)
-NEBULAR_PLOT_LINES = ['oi_a', 'ha', 'nii_b', 'sii_a', 'sii_b']
+# Named line groups: each entry is (suffix, [line, ...]).
+# The default run plots every group and saves <root>_<suffix>.png.
+# Edit this table to control which lines appear on which page.
+LINE_GROUPS = [
+    ('neb',  ['oi_a', 'ha', 'nii_b', 'sii_a', 'sii_b']),
+    ('sky1', ['sky5577', 'sky6300', 'sky6363', 'sky6533', 'sky6553', 'sky6577']),
+    ('sky2', ['sky6912', 'sky6923', 'sky6939', 'sky7358', 'sky7392', 'sky7914']),
+    ('sky3', ['sky8344', 'sky8399', 'sky8827', 'sky8988', 'sky9552', 'sky9719']),
+]
 
 
 def plot_one(ax, xtable, var, marker_size=30):
@@ -137,18 +144,19 @@ def plot_page(xtable, lines, outroot, suffix, marker_size=30):
     plt.close(fig)
 
 
-def plot_all(xtable, lines=None, outroot='sky_gaussfit', nper=LINES_PER_PAGE,
-             marker_size=30):
+def plot_all(xtable, outroot='sky_gaussfit', marker_size=30):
     '''
-    Plot all lines in groups of nper, saving one PNG per group.
-
-    If lines is None the line list is inferred from flux_ columns in xtable,
-    preserving the column order (which matches the sky_gaussfit fit order:
-    nebular lines first, then airglow).
+    Plot every group defined in LINE_GROUPS, saving one PNG per group.
     '''
-    if lines is None:
-        lines = [c[5:] for c in xtable.colnames if c.startswith('flux_')]
+    for suffix, lines in LINE_GROUPS:
+        plot_page(xtable, lines, outroot, suffix, marker_size)
 
+
+def plot_custom(xtable, lines, outroot='sky_gaussfit', nper=LINES_PER_PAGE,
+                marker_size=30):
+    '''
+    Plot a custom line list in pages of nper, saved as _p01.png, _p02.png, etc.
+    '''
     nper = min(nper, LINES_PER_PAGE)
     pages = [lines[i:i + nper] for i in range(0, len(lines), nper)]
     for page_num, page_lines in enumerate(pages, start=1):
@@ -213,10 +221,12 @@ def steer(argv):
         outroot = os.path.splitext(base)[0]
 
     if neb_mode:
-        plot_page(xtable, NEBULAR_PLOT_LINES, outroot, 'neb', marker_size)
+        suffix, neb_lines = next(g for g in LINE_GROUPS if g[0] == 'neb')
+        plot_page(xtable, neb_lines, outroot, suffix, marker_size)
+    elif lines is not None:
+        plot_custom(xtable, lines, outroot, nper, marker_size)
     else:
-        plot_all(xtable, lines=lines, outroot=outroot, nper=nper,
-                 marker_size=marker_size)
+        plot_all(xtable, outroot, marker_size)
 
 
 if __name__ == '__main__':

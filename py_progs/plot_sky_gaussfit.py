@@ -123,21 +123,19 @@ def plot_one(ax, xtable, var, marker_size=30, subtract_median=False):
 def plot_line(axes_row, xtable, line, marker_size=30):
     '''
     Fill one row of three Axes with wave, flux, and fwhm maps for line.
-    The wavelength panel shows wave - median(wave); the median appears in
+    Each panel shows quantity - median(quantity); the median appears in
     the subplot title.
     '''
-    for ax, suffix, title in zip(axes_row,
+    for ax, suffix, label in zip(axes_row,
                                   ['wave', 'flux', 'fwhm'],
                                   ['Wavelength (A)', 'Flux', 'FWHM (A)']):
         var = '%s_%s' % (suffix, line)
-        is_wave = (suffix == 'wave')
-        median_val = plot_one(ax, xtable, var, marker_size,
-                              subtract_median=is_wave)
-        if is_wave and median_val is not None:
-            ax.set_title('%s  %s  [median=%.3f A]' % (line, title, median_val),
+        median_val = plot_one(ax, xtable, var, marker_size, subtract_median=True)
+        if median_val is not None:
+            ax.set_title('%s  %s  [median=%.3f]' % (line, label, median_val),
                          fontsize=9)
         else:
-            ax.set_title('%s  %s' % (line, title), fontsize=9)
+            ax.set_title('%s  %s' % (line, label), fontsize=9)
 
 
 def plot_page(xtable, lines, outroot, suffix, marker_size=30, title=''):
@@ -153,7 +151,7 @@ def plot_page(xtable, lines, outroot, suffix, marker_size=30, title=''):
         plot_line(axes[i], xtable, line, marker_size)
 
     if title:
-        plt.suptitle(title, fontsize=11, y=1.01)
+        plt.suptitle(title, fontsize=11)
     plt.tight_layout()
 
     os.makedirs(FIG_DIR, exist_ok=True)

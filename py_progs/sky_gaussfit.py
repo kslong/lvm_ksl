@@ -30,7 +30,8 @@ For each good science fiber (telescope == 'Sci', fibstatus == 0) the script fits
 single Gaussians to the following lines:
 
     Nebular lines (wavelengths shifted by the supplied velocity):
-        [OI]  6300.304  (oi_a, oi_b)
+        [OI]  6300.309  (oi_a)
+        [OI]  6363.783  (oi_b)
         [NII] 6548.04   (nii_a)
         Ha    6562.80   (ha)
         [NII] 6583.46   (nii_b)
@@ -93,6 +94,8 @@ History:
            sky6300 fit at fixed wavelength alongside existing nebular OI
 260516 ksl Add nii_a (6548.04) and nii_b (6583.46); correct SII wavelengths
            to 6716.440 and 6730.815
+260516 ksl Correct oi_a/oi_b: use ESO wavelengths (6300.309, 6363.783) and
+           apply velocity shift; oi_b was previously fit at the wrong line
 
 '''
 
@@ -128,18 +131,16 @@ def do_one(spectrum_table,vel=0.,xplot=False):
 
     
     try:
-        results,xspec=fit_gaussian_to_spectrum(spectrum_table, line='oi_a',init_wavelength=6300, init_fwhm=1., wavelength_min=6290, wavelength_max=6305)
+        results,xspec=fit_gaussian_to_spectrum(spectrum_table, line='oi_a',init_wavelength=zz*6300.308594, init_fwhm=1., wavelength_min=zz*6295, wavelength_max=zz*6305)
         records.append(results)
         if xplot:
             save_fit('oi_a',xspec)
     except Exception as e:
         print(f"Fitting oi_a; An exception occurred: {e}")
         print(f"Exception type: {type(e).__name__}")
-    
 
-    
     try:
-        results,xspec=fit_gaussian_to_spectrum(spectrum_table, line='oi_b',init_wavelength=6300, init_fwhm=1., wavelength_min=6290, wavelength_max=6305)
+        results,xspec=fit_gaussian_to_spectrum(spectrum_table, line='oi_b',init_wavelength=zz*6363.782715, init_fwhm=1., wavelength_min=zz*6358, wavelength_max=zz*6368)
         records.append(results)
         if xplot:
             save_fit('oi_b',xspec)

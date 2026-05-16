@@ -89,38 +89,40 @@ LINE_GROUPS = [
 
 
 # Per-column color range: fraction of the median used as the ±half-width.
-# wave/fwhm: 30 km/s → delta_lambda = median * 30/3e5
-# flux:      5 % of median
-VRANGE_FRAC = {'wave': 10.0 / 3e5, 'fwhm': 100.0 / 3e5, 'flux': 0.02}
+# wave/fwhm: km/s equivalent → delta_lambda = median * v/3e5
+# flux:      fractional variation of median
+VRANGE_FRAC = {'wave': 5.0 / 3e5, 'fwhm': 100.0 / 3e5, 'flux': 0.02}
 
-# Format string for the median value shown in each subplot title.
-MEDIAN_FMT  = {'wave': '%.3f A', 'fwhm': '%.3f A', 'flux': '%.3e'}
+# Format string for median and MAD-std values shown in each subplot title.
+MEDIAN_FMT  = {'wave': '%.3f', 'fwhm': '%.3f', 'flux': '%.3e'}
 
 
 def plot_one(ax, xtable, var, marker_size=30, subtract_median=False,
              vrange_frac=None):
     '''
     Scatter plot of xtable[var] vs RA/Dec on ax.
-    If subtract_median is True the column median is removed before plotting
-    and returned.  If vrange_frac is also given the color limits are set to
-    ±(|median| * vrange_frac); otherwise the 5th-95th percentile is used.
-    Returns the median, or None if the column is absent or all-NaN.
+    If subtract_median is True the column median is removed before plotting.
+    If vrange_frac is given the color limits are ±(|median| * vrange_frac).
+    Returns (median, mad_std), or (None, None) if data are absent/all-NaN.
+    mad_std = 1.4826 * median(|residuals|).
     '''
     if var not in xtable.colnames:
         ax.text(0.5, 0.5, '%s\nnot in table' % var,
                 transform=ax.transAxes, ha='center', va='center', fontsize=8)
-        return None
+        return None, None
     col = np.array(xtable[var], dtype=float)
     finite = col[np.isfinite(col)]
     if len(finite) == 0:
         ax.text(0.5, 0.5, 'no finite data', transform=ax.transAxes,
                 ha='center', va='center', fontsize=8)
-        return None
+        return None, None
     median_val = None
+    mad_std = None
     if subtract_median:
         median_val = np.median(finite)
         col = col - median_val
         finite = finite - median_val
+        mad_std = 1.4826 * np.median(np.abs(finite))
     if vrange_frac is not None and median_val is not None:
         delta = abs(median_val) * vrange_frac
         vmin, vmax = -delta, delta
@@ -132,28 +134,28 @@ def plot_one(ax, xtable, var, marker_size=30, subtract_median=False,
     plt.colorbar(sc, ax=ax)
     ax.set_xlabel('RA')
     ax.set_ylabel('Dec')
-    return median_val
+    return median_val, mad_std
 
 
 def plot_line(axes_row, xtable, line, marker_size=30):
     '''
     Fill one row of three Axes with wave, flux, and fwhm maps for line.
     Each panel shows quantity - median; color range is ±(|median|*VRANGE_FRAC).
-    The median value and its units appear in each subplot title.
+    Subplot titles show the median and MAD-std of the quantity.
     '''
     for ax, suffix, label in zip(axes_row,
-                                  ['wave', 'flux', 'fwhm'],
-                                  ['Wavelength (A)', 'Flux', 'FWHM (A)']):
+                                  ['wave',       'flux', 'fwhm'],
+                                  [r'$\lambda$ (A)', 'Flux', 'FWHM (A)']):
         var = '%s_%s' % (suffix, line)
-        median_val = plot_one(ax, xtable, var, marker_size,
-                              subtract_median=True,
-                              vrange_frac=VRANGE_FRAC.get(suffix))
+        median_val, mad_std = plot_one(ax, xtable, var, marker_size,
+                                       subtract_median=True,
+                                       vrange_frac=VRANGE_FRAC.get(suffix))
         if median_val is not None:
-            median_str = MEDIAN_FMT.get(suffix, '%.4g') % median_val
-            ax.set_title('%s  %s  [median=%s]' % (line, label, median_str),
-                         fontsize=9)
+            fmt = MEDIAN_FMT.get(suffix, '%.4g')
+            ax.set_title('%s %s [med=%s, σ=%s]' % (
+                line, label, fmt % median_val, fmt % mad_std), fontsize=9)
         else:
-            ax.set_title('%s  %s' % (line, label), fontsize=9)
+            ax.set_title('%s %s' % (line, label), fontsize=9)
 
 
 def plot_page(xtable, lines, outroot, suffix, marker_size=30, title=''):

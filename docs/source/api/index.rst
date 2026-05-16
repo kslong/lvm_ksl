@@ -21,6 +21,7 @@ This page contains auto-generated API reference documentation [#f1]_.
    /api/FitsInfo/index
    /api/fourier_offset/index
    /api/fourier_offset_check/index
+   /api/gauss_offset/index
    /api/GenAnnularBackground/index
    /api/GetDAP/index
    /api/GetFromUtah/index

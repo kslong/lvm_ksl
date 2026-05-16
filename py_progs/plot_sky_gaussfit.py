@@ -91,7 +91,7 @@ LINE_GROUPS = [
 # Per-column color range: fraction of the median used as the ±half-width.
 # wave/fwhm: 30 km/s → delta_lambda = median * 30/3e5
 # flux:      5 % of median
-VRANGE_FRAC = {'wave': 30.0 / 3e5, 'fwhm': 60.0 / 3e5, 'flux': 0.02}
+VRANGE_FRAC = {'wave': 10.0 / 3e5, 'fwhm': 100.0 / 3e5, 'flux': 0.02}
 
 # Format string for the median value shown in each subplot title.
 MEDIAN_FMT  = {'wave': '%.3f A', 'fwhm': '%.3f A', 'flux': '%.3e'}

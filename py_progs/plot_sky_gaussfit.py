@@ -22,6 +22,8 @@ Command line usage::
 
     -out root    Root name for output PNG files.  Default: stem of the
                  first input filename.
+    -neb         Plot the standard nebular line set (oi_a, ha, nii_b,
+                 sii_a, sii_b) on one page saved as <root>_neb.png.
     -lines list  Comma-separated list of line names to plot (e.g.
                  ha,sii_a,sky6300).  Default: all lines inferred from
                  flux_ columns in the table, in column order.
@@ -39,7 +41,10 @@ of three panels (wavelength, flux, FWHM).  Each panel is a scatter plot
 of fiber RA vs Dec with the quantity shown as color.  Colorbars reflect
 the 5th-95th percentile range so outliers do not dominate the scale.
 
-Output filenames follow the pattern::
+With -neb the output is a single file <root>_neb.png containing the five
+standard nebular lines (oi_a, ha, nii_b, sii_a, sii_b).
+
+Without -neb, output filenames follow the pattern::
 
     Figs_gaussfit_sky/<root>_p01.png
     Figs_gaussfit_sky/<root>_p02.png
@@ -71,6 +76,9 @@ from astropy.io import ascii
 
 FIG_DIR = 'Figs_gaussfit_sky'
 LINES_PER_PAGE = 6
+
+# Standard nebular lines for -neb mode (omits oiii_a/b, oi_b, nii_a)
+NEBULAR_PLOT_LINES = ['oi_a', 'ha', 'nii_b', 'sii_a', 'sii_b']
 
 
 def plot_one(ax, xtable, var, marker_size=30):
@@ -109,13 +117,13 @@ def plot_line(axes_row, xtable, line, marker_size=30):
         ax.set_title('%s  %s' % (line, title), fontsize=9)
 
 
-def plot_page(xtable, lines, page_num, outroot, marker_size=30):
+def plot_page(xtable, lines, outroot, suffix, marker_size=30):
     '''
     Create one figure with one row per line (up to LINES_PER_PAGE rows of
-    3 panels each) and save it to FIG_DIR.
+    3 panels each) and save it to FIG_DIR/<outroot>_<suffix>.png.
     '''
     nrows = len(lines)
-    fig, axes = plt.subplots(nrows, 3, figsize=(12, 4 * nrows),
+    fig, axes = plt.subplots(nrows, 3, figsize=(16, 4 * nrows),
                               squeeze=False)
     for i, line in enumerate(lines):
         plot_line(axes[i], xtable, line, marker_size)
@@ -123,7 +131,7 @@ def plot_page(xtable, lines, page_num, outroot, marker_size=30):
     plt.tight_layout()
 
     os.makedirs(FIG_DIR, exist_ok=True)
-    figname = os.path.join(FIG_DIR, '%s_p%02d.png' % (outroot, page_num))
+    figname = os.path.join(FIG_DIR, '%s_%s.png' % (outroot, suffix))
     plt.savefig(figname, dpi=100)
     print('Saved %s' % figname)
     plt.close(fig)
@@ -144,7 +152,7 @@ def plot_all(xtable, lines=None, outroot='sky_gaussfit', nper=LINES_PER_PAGE,
     nper = min(nper, LINES_PER_PAGE)
     pages = [lines[i:i + nper] for i in range(0, len(lines), nper)]
     for page_num, page_lines in enumerate(pages, start=1):
-        plot_page(xtable, page_lines, page_num, outroot, marker_size)
+        plot_page(xtable, page_lines, outroot, 'p%02d' % page_num, marker_size)
 
 
 def steer(argv):
@@ -153,6 +161,7 @@ def steer(argv):
     filenames = []
     nper = LINES_PER_PAGE
     marker_size = 30
+    neb_mode = False
 
     i = 1
     while i < len(argv):
@@ -162,6 +171,8 @@ def steer(argv):
         elif argv[i] == '-out':
             i += 1
             outroot = argv[i]
+        elif argv[i] == '-neb':
+            neb_mode = True
         elif argv[i] == '-lines':
             i += 1
             lines = argv[i].split(',')
@@ -201,8 +212,11 @@ def steer(argv):
         base = os.path.basename(filenames[0])
         outroot = os.path.splitext(base)[0]
 
-    plot_all(xtable, lines=lines, outroot=outroot, nper=nper,
-             marker_size=marker_size)
+    if neb_mode:
+        plot_page(xtable, NEBULAR_PLOT_LINES, outroot, 'neb', marker_size)
+    else:
+        plot_all(xtable, lines=lines, outroot=outroot, nper=nper,
+                 marker_size=marker_size)
 
 
 if __name__ == '__main__':

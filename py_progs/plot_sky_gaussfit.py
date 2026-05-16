@@ -90,7 +90,7 @@ def plot_one(ax, xtable, var):
     vmin = np.percentile(finite, 5)
     vmax = np.percentile(finite, 95)
     sc = ax.scatter(xtable['ra'], xtable['dec'], c=col, cmap='viridis',
-                    vmin=vmin, vmax=vmax, s=4, linewidths=0)
+                    vmin=vmin, vmax=vmax, s=4, linewidths=0, alpha=1)
     plt.colorbar(sc, ax=ax)
     ax.set_xlabel('RA')
     ax.set_ylabel('Dec')

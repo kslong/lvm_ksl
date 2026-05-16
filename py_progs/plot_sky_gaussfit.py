@@ -26,6 +26,7 @@ Command line usage::
                  ha,sii_a,sky6300).  Default: all lines inferred from
                  flux_ columns in the table, in column order.
     -np npage    Number of lines per page (default 6, max 6).
+    -s size      Scatter marker size in points^2 (default 30).
     filename     One or more ASCII tables written by sky_gaussfit.py.
                  If multiple files are given they are stacked into one
                  combined table before plotting.
@@ -72,7 +73,7 @@ FIG_DIR = 'Figs_gaussfit_sky'
 LINES_PER_PAGE = 6
 
 
-def plot_one(ax, xtable, var):
+def plot_one(ax, xtable, var, marker_size=30):
     '''
     Scatter plot of xtable[var] vs RA/Dec on ax.
     Color range is clipped to the 5th-95th percentile of finite values.
@@ -90,13 +91,13 @@ def plot_one(ax, xtable, var):
     vmin = np.percentile(finite, 5)
     vmax = np.percentile(finite, 95)
     sc = ax.scatter(xtable['ra'], xtable['dec'], c=col, cmap='viridis',
-                    vmin=vmin, vmax=vmax, s=4, linewidths=0, alpha=1)
+                    vmin=vmin, vmax=vmax, s=marker_size, linewidths=0, alpha=1)
     plt.colorbar(sc, ax=ax)
     ax.set_xlabel('RA')
     ax.set_ylabel('Dec')
 
 
-def plot_line(axes_row, xtable, line):
+def plot_line(axes_row, xtable, line, marker_size=30):
     '''
     Fill one row of three Axes with wave, flux, and fwhm maps for line.
     '''
@@ -104,11 +105,11 @@ def plot_line(axes_row, xtable, line):
                                   ['wave', 'flux', 'fwhm'],
                                   ['Wavelength (A)', 'Flux', 'FWHM (A)']):
         var = '%s_%s' % (suffix, line)
-        plot_one(ax, xtable, var)
+        plot_one(ax, xtable, var, marker_size)
         ax.set_title('%s  %s' % (line, title), fontsize=9)
 
 
-def plot_page(xtable, lines, page_num, outroot):
+def plot_page(xtable, lines, page_num, outroot, marker_size=30):
     '''
     Create one figure with one row per line (up to LINES_PER_PAGE rows of
     3 panels each) and save it to FIG_DIR.
@@ -117,7 +118,7 @@ def plot_page(xtable, lines, page_num, outroot):
     fig, axes = plt.subplots(nrows, 3, figsize=(12, 4 * nrows),
                               squeeze=False)
     for i, line in enumerate(lines):
-        plot_line(axes[i], xtable, line)
+        plot_line(axes[i], xtable, line, marker_size)
 
     plt.tight_layout()
 
@@ -128,7 +129,8 @@ def plot_page(xtable, lines, page_num, outroot):
     plt.close(fig)
 
 
-def plot_all(xtable, lines=None, outroot='sky_gaussfit', nper=LINES_PER_PAGE):
+def plot_all(xtable, lines=None, outroot='sky_gaussfit', nper=LINES_PER_PAGE,
+             marker_size=30):
     '''
     Plot all lines in groups of nper, saving one PNG per group.
 
@@ -142,7 +144,7 @@ def plot_all(xtable, lines=None, outroot='sky_gaussfit', nper=LINES_PER_PAGE):
     nper = min(nper, LINES_PER_PAGE)
     pages = [lines[i:i + nper] for i in range(0, len(lines), nper)]
     for page_num, page_lines in enumerate(pages, start=1):
-        plot_page(xtable, page_lines, page_num, outroot)
+        plot_page(xtable, page_lines, page_num, outroot, marker_size)
 
 
 def steer(argv):
@@ -150,6 +152,7 @@ def steer(argv):
     lines = None
     filenames = []
     nper = LINES_PER_PAGE
+    marker_size = 30
 
     i = 1
     while i < len(argv):
@@ -165,6 +168,9 @@ def steer(argv):
         elif argv[i] == '-np':
             i += 1
             nper = int(argv[i])
+        elif argv[i] == '-s':
+            i += 1
+            marker_size = int(argv[i])
         elif argv[i][0] == '-':
             print('Unknown option: %s' % argv[i])
             return
@@ -195,7 +201,8 @@ def steer(argv):
         base = os.path.basename(filenames[0])
         outroot = os.path.splitext(base)[0]
 
-    plot_all(xtable, lines=lines, outroot=outroot, nper=nper)
+    plot_all(xtable, lines=lines, outroot=outroot, nper=nper,
+             marker_size=marker_size)
 
 
 if __name__ == '__main__':

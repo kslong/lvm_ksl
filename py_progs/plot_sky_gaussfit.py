@@ -88,12 +88,23 @@ LINE_GROUPS = [
 ]
 
 
-def plot_one(ax, xtable, var, marker_size=30, subtract_median=False):
+# Per-column color range: fraction of the median used as the ±half-width.
+# wave/fwhm: 30 km/s → delta_lambda = median * 30/3e5
+# flux:      5 % of median
+VRANGE_FRAC = {'wave': 30.0 / 3e5, 'fwhm': 30.0 / 3e5, 'flux': 0.05}
+
+# Format string for the median value shown in each subplot title.
+MEDIAN_FMT  = {'wave': '%.3f A', 'fwhm': '%.3f A', 'flux': '%.3e'}
+
+
+def plot_one(ax, xtable, var, marker_size=30, subtract_median=False,
+             vrange_frac=None):
     '''
     Scatter plot of xtable[var] vs RA/Dec on ax.
-    Color range is clipped to the 5th-95th percentile of finite values.
-    If subtract_median is True the median is removed before plotting and
-    returned; otherwise returns None.
+    If subtract_median is True the column median is removed before plotting
+    and returned.  If vrange_frac is also given the color limits are set to
+    ±(|median| * vrange_frac); otherwise the 5th-95th percentile is used.
+    Returns the median, or None if the column is absent or all-NaN.
     '''
     if var not in xtable.colnames:
         ax.text(0.5, 0.5, '%s\nnot in table' % var,
@@ -110,8 +121,12 @@ def plot_one(ax, xtable, var, marker_size=30, subtract_median=False):
         median_val = np.median(finite)
         col = col - median_val
         finite = finite - median_val
-    vmin = np.percentile(finite, 5)
-    vmax = np.percentile(finite, 95)
+    if vrange_frac is not None and median_val is not None:
+        delta = abs(median_val) * vrange_frac
+        vmin, vmax = -delta, delta
+    else:
+        vmin = np.percentile(finite, 5)
+        vmax = np.percentile(finite, 95)
     sc = ax.scatter(xtable['ra'], xtable['dec'], c=col, cmap='viridis',
                     vmin=vmin, vmax=vmax, s=marker_size, linewidths=0, alpha=1)
     plt.colorbar(sc, ax=ax)
@@ -123,16 +138,19 @@ def plot_one(ax, xtable, var, marker_size=30, subtract_median=False):
 def plot_line(axes_row, xtable, line, marker_size=30):
     '''
     Fill one row of three Axes with wave, flux, and fwhm maps for line.
-    Each panel shows quantity - median(quantity); the median appears in
-    the subplot title.
+    Each panel shows quantity - median; color range is ±(|median|*VRANGE_FRAC).
+    The median value and its units appear in each subplot title.
     '''
     for ax, suffix, label in zip(axes_row,
                                   ['wave', 'flux', 'fwhm'],
                                   ['Wavelength (A)', 'Flux', 'FWHM (A)']):
         var = '%s_%s' % (suffix, line)
-        median_val = plot_one(ax, xtable, var, marker_size, subtract_median=True)
+        median_val = plot_one(ax, xtable, var, marker_size,
+                              subtract_median=True,
+                              vrange_frac=VRANGE_FRAC.get(suffix))
         if median_val is not None:
-            ax.set_title('%s  %s  [median=%.3f]' % (line, label, median_val),
+            median_str = MEDIAN_FMT.get(suffix, '%.4g') % median_val
+            ax.set_title('%s  %s  [median=%s]' % (line, label, median_str),
                          fontsize=9)
         else:
             ax.set_title('%s  %s' % (line, label), fontsize=9)
@@ -150,9 +168,9 @@ def plot_page(xtable, lines, outroot, suffix, marker_size=30, title=''):
     for i, line in enumerate(lines):
         plot_line(axes[i], xtable, line, marker_size)
 
+    plt.tight_layout(rect=[0, 0, 1, 0.97])
     if title:
-        plt.suptitle(title, fontsize=11)
-    plt.tight_layout()
+        plt.suptitle(title, fontsize=11, y=0.99)
 
     os.makedirs(FIG_DIR, exist_ok=True)
     figname = os.path.join(FIG_DIR, '%s_%s.png' % (outroot, suffix))

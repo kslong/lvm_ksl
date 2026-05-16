@@ -377,6 +377,8 @@ def do_all(filename='data/lvmSFrame-00009088.fits', vel=0.0, outname='', nproc=8
             results[one].format='.2f'
         elif one.count('rmse'):
             results[one].format='.2e'
+        elif one.count('chi2'):
+            results[one].format='.3f'
         elif one.count('back'):
             results[one].format='.2e'
         elif one.count('ra'):

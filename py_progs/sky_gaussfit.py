@@ -36,12 +36,24 @@ single Gaussians to the following lines:
         [SII] 6731  (sii_b)
 
     Airglow lines (fitted at fixed, unshifted wavelengths):
+        sky5577   5577.34 A
+        sky6300   6300.31 A  (sky OI; nebular OI also fit separately above)
+        sky6363   6363.78 A
         sky6533   6533.04 A
         sky6553   6553.0  A
         sky6577   6577.2  A
-        sky6912   6912.6  A
-        sky6923   6923.2  A
-        sky6939   6939.5  A
+        sky6912   6912.62 A
+        sky6923   6923.22 A
+        sky6939   6939.52 A
+        sky7358   7358.68 A
+        sky7392   7392.21 A
+        sky7914   7913.72 A
+        sky8344   8344.61 A
+        sky8399   8399.18 A
+        sky8827   8827.11 A
+        sky8988   8988.38 A
+        sky9552   9552.55 A
+        sky9719   9719.84 A
 
 For each line the fit returns the flux, centroid wavelength, FWHM, background
 level, and RMSE.  Fibers with too many NaN pixels are skipped.
@@ -75,6 +87,8 @@ wavelengths after sky subtraction.
 History:
 
 240604 ksl Coding begun
+260516 ksl Add 12 airglow lines from gauss_offset (ESO UVES wavelengths);
+           sky6300 fit at fixed wavelength alongside existing nebular OI
 
 '''
 
@@ -247,6 +261,32 @@ def do_one(spectrum_table,vel=0.,xplot=False):
         print(f"Fitting %s:  An exception occurred: {e}" % xname)
         print(f"Exception type: {type(e).__name__}")
 
+    # Additional airglow lines (ESO UVES wavelengths).
+    # sky6300 is the sky OI line; the nebular OI doublet is fit separately above.
+    for xname, xwcen, xwmin, xwmax in [
+        ('sky5577', 5577.34668,  5572., 5582.),
+        ('sky6300', 6300.308594, 6295., 6305.),
+        ('sky6363', 6363.782715, 6358., 6368.),
+        ('sky7358', 7358.680176, 7353., 7363.),
+        ('sky7392', 7392.209961, 7387., 7397.),
+        ('sky7914', 7913.717773, 7908., 7918.),
+        ('sky8344', 8344.613281, 8339., 8349.),
+        ('sky8399', 8399.175781, 8394., 8404.),
+        ('sky8827', 8827.112305, 8822., 8832.),
+        ('sky8988', 8988.383789, 8983., 8993.),
+        ('sky9552', 9552.546875, 9547., 9557.),
+        ('sky9719', 9719.838867, 9714., 9724.),
+    ]:
+        try:
+            results, xspec = fit_gaussian_to_spectrum(
+                spectrum_table, line=xname,
+                init_wavelength=xwcen, init_fwhm=1.,
+                wavelength_min=xwmin, wavelength_max=xwmax)
+            records.append(results)
+            if xplot:
+                save_fit(xname, xspec)
+        except Exception as e:
+            print('Fitting %s: An exception occurred: %s' % (xname, e))
 
     try:
         ztab=hstack(records)

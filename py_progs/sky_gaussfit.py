@@ -30,10 +30,12 @@ For each good science fiber (telescope == 'Sci', fibstatus == 0) the script fits
 single Gaussians to the following lines:
 
     Nebular lines (wavelengths shifted by the supplied velocity):
-        [OI]  6300  (oi_a, oi_b)
-        Ha    6563  (ha)
-        [SII] 6716  (sii_a)
-        [SII] 6731  (sii_b)
+        [OI]  6300.304  (oi_a, oi_b)
+        [NII] 6548.04   (nii_a)
+        Ha    6562.80   (ha)
+        [NII] 6583.46   (nii_b)
+        [SII] 6716.440  (sii_a)
+        [SII] 6730.815  (sii_b)
 
     Airglow lines (fitted at fixed, unshifted wavelengths):
         sky5577   5577.34 A
@@ -89,6 +91,8 @@ History:
 240604 ksl Coding begun
 260516 ksl Add 12 airglow lines from gauss_offset (ESO UVES wavelengths);
            sky6300 fit at fixed wavelength alongside existing nebular OI
+260516 ksl Add nii_a (6548.04) and nii_b (6583.46); correct SII wavelengths
+           to 6716.440 and 6730.815
 
 '''
 
@@ -146,7 +150,16 @@ def do_one(spectrum_table,vel=0.,xplot=False):
 
     
     try:
-        results,xspec=fit_gaussian_to_spectrum(spectrum_table, line='ha', init_wavelength=zz*6563, init_fwhm=1., wavelength_min=zz*6555, wavelength_max=zz*6570)
+        results,xspec=fit_gaussian_to_spectrum(spectrum_table, line='nii_a', init_wavelength=zz*6548.04, init_fwhm=1., wavelength_min=zz*6543, wavelength_max=zz*6553)
+        records.append(results)
+        if xplot:
+            save_fit('nii_a',xspec)
+    except Exception as e:
+        print(f"Fitting [NII]6548: An exception occurred: {e}")
+        print(f"Exception type: {type(e).__name__}")
+
+    try:
+        results,xspec=fit_gaussian_to_spectrum(spectrum_table, line='ha', init_wavelength=zz*6562.80, init_fwhm=1., wavelength_min=zz*6555, wavelength_max=zz*6570)
         records.append(results)
         if xplot:
             save_fit('ha',xspec)
@@ -154,19 +167,26 @@ def do_one(spectrum_table,vel=0.,xplot=False):
         print(f"Fitting Ha An exception occurred: {e}")
         print(f"Exception type: {type(e).__name__}")
 
-    
-            
     try:
-        results,xspec=fit_gaussian_to_spectrum(spectrum_table, line='sii_a',init_wavelength=zz*6716, init_fwhm=1., wavelength_min=zz*6706, wavelength_max=zz*6726)
+        results,xspec=fit_gaussian_to_spectrum(spectrum_table, line='nii_b', init_wavelength=zz*6583.46, init_fwhm=1., wavelength_min=zz*6578, wavelength_max=zz*6593)
+        records.append(results)
+        if xplot:
+            save_fit('nii_b',xspec)
+    except Exception as e:
+        print(f"Fitting [NII]6583: An exception occurred: {e}")
+        print(f"Exception type: {type(e).__name__}")
+
+    try:
+        results,xspec=fit_gaussian_to_spectrum(spectrum_table, line='sii_a',init_wavelength=zz*6716.440, init_fwhm=1., wavelength_min=zz*6706, wavelength_max=zz*6726)
         records.append(results)
         if xplot:
             save_fit('sii_a',xspec)
     except Exception as e:
         print(f"Fitting [SII]6716:  An exception occurred: {e}")
         print(f"Exception type: {type(e).__name__}")
-    
+
     try:
-        results,xspec=fit_gaussian_to_spectrum(spectrum_table, line='sii_b',init_wavelength=zz*6731, init_fwhm=1., wavelength_min=zz*6721, wavelength_max=zz*6741)
+        results,xspec=fit_gaussian_to_spectrum(spectrum_table, line='sii_b',init_wavelength=zz*6730.815, init_fwhm=1., wavelength_min=zz*6721, wavelength_max=zz*6741)
         records.append(results)
         if xplot:
             save_fit('sii_b',xspec)

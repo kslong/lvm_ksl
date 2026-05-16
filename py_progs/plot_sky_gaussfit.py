@@ -88,21 +88,28 @@ LINE_GROUPS = [
 ]
 
 
-def plot_one(ax, xtable, var, marker_size=30):
+def plot_one(ax, xtable, var, marker_size=30, subtract_median=False):
     '''
     Scatter plot of xtable[var] vs RA/Dec on ax.
     Color range is clipped to the 5th-95th percentile of finite values.
+    If subtract_median is True the median is removed before plotting and
+    returned; otherwise returns None.
     '''
     if var not in xtable.colnames:
         ax.text(0.5, 0.5, '%s\nnot in table' % var,
                 transform=ax.transAxes, ha='center', va='center', fontsize=8)
-        return
+        return None
     col = np.array(xtable[var], dtype=float)
     finite = col[np.isfinite(col)]
     if len(finite) == 0:
         ax.text(0.5, 0.5, 'no finite data', transform=ax.transAxes,
                 ha='center', va='center', fontsize=8)
-        return
+        return None
+    median_val = None
+    if subtract_median:
+        median_val = np.median(finite)
+        col = col - median_val
+        finite = finite - median_val
     vmin = np.percentile(finite, 5)
     vmax = np.percentile(finite, 95)
     sc = ax.scatter(xtable['ra'], xtable['dec'], c=col, cmap='viridis',
@@ -110,24 +117,34 @@ def plot_one(ax, xtable, var, marker_size=30):
     plt.colorbar(sc, ax=ax)
     ax.set_xlabel('RA')
     ax.set_ylabel('Dec')
+    return median_val
 
 
 def plot_line(axes_row, xtable, line, marker_size=30):
     '''
     Fill one row of three Axes with wave, flux, and fwhm maps for line.
+    The wavelength panel shows wave - median(wave); the median appears in
+    the subplot title.
     '''
     for ax, suffix, title in zip(axes_row,
                                   ['wave', 'flux', 'fwhm'],
                                   ['Wavelength (A)', 'Flux', 'FWHM (A)']):
         var = '%s_%s' % (suffix, line)
-        plot_one(ax, xtable, var, marker_size)
-        ax.set_title('%s  %s' % (line, title), fontsize=9)
+        is_wave = (suffix == 'wave')
+        median_val = plot_one(ax, xtable, var, marker_size,
+                              subtract_median=is_wave)
+        if is_wave and median_val is not None:
+            ax.set_title('%s  %s  [median=%.3f A]' % (line, title, median_val),
+                         fontsize=9)
+        else:
+            ax.set_title('%s  %s' % (line, title), fontsize=9)
 
 
-def plot_page(xtable, lines, outroot, suffix, marker_size=30):
+def plot_page(xtable, lines, outroot, suffix, marker_size=30, title=''):
     '''
     Create one figure with one row per line (up to LINES_PER_PAGE rows of
     3 panels each) and save it to FIG_DIR/<outroot>_<suffix>.png.
+    title is shown as a suptitle above all panels.
     '''
     nrows = len(lines)
     fig, axes = plt.subplots(nrows, 3, figsize=(16, 4 * nrows),
@@ -135,32 +152,35 @@ def plot_page(xtable, lines, outroot, suffix, marker_size=30):
     for i, line in enumerate(lines):
         plot_line(axes[i], xtable, line, marker_size)
 
+    if title:
+        plt.suptitle(title, fontsize=11, y=1.01)
     plt.tight_layout()
 
     os.makedirs(FIG_DIR, exist_ok=True)
     figname = os.path.join(FIG_DIR, '%s_%s.png' % (outroot, suffix))
-    plt.savefig(figname, dpi=100)
+    plt.savefig(figname, dpi=100, bbox_inches='tight')
     print('Saved %s' % figname)
     plt.close(fig)
 
 
-def plot_all(xtable, outroot='sky_gaussfit', marker_size=30):
+def plot_all(xtable, outroot='sky_gaussfit', marker_size=30, title=''):
     '''
     Plot every group defined in LINE_GROUPS, saving one PNG per group.
     '''
     for suffix, lines in LINE_GROUPS:
-        plot_page(xtable, lines, outroot, suffix, marker_size)
+        plot_page(xtable, lines, outroot, suffix, marker_size, title)
 
 
 def plot_custom(xtable, lines, outroot='sky_gaussfit', nper=LINES_PER_PAGE,
-                marker_size=30):
+                marker_size=30, title=''):
     '''
     Plot a custom line list in pages of nper, saved as _p01.png, _p02.png, etc.
     '''
     nper = min(nper, LINES_PER_PAGE)
     pages = [lines[i:i + nper] for i in range(0, len(lines), nper)]
     for page_num, page_lines in enumerate(pages, start=1):
-        plot_page(xtable, page_lines, outroot, 'p%02d' % page_num, marker_size)
+        plot_page(xtable, page_lines, outroot, 'p%02d' % page_num,
+                  marker_size, title)
 
 
 def steer(argv):
@@ -220,13 +240,18 @@ def steer(argv):
         base = os.path.basename(filenames[0])
         outroot = os.path.splitext(base)[0]
 
+    # Suptitle: basename of each input file, extension stripped
+    title = '  '.join(
+        os.path.splitext(os.path.basename(f))[0] for f in filenames
+    )
+
     if neb_mode:
         suffix, neb_lines = next(g for g in LINE_GROUPS if g[0] == 'neb')
-        plot_page(xtable, neb_lines, outroot, suffix, marker_size)
+        plot_page(xtable, neb_lines, outroot, suffix, marker_size, title)
     elif lines is not None:
-        plot_custom(xtable, lines, outroot, nper, marker_size)
+        plot_custom(xtable, lines, outroot, nper, marker_size, title)
     else:
-        plot_all(xtable, outroot, marker_size)
+        plot_all(xtable, outroot, marker_size, title)
 
 
 if __name__ == '__main__':

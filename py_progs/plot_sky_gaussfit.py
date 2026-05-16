@@ -129,7 +129,7 @@ def plot_one(ax, xtable, var, marker_size=30, subtract_median=False,
     else:
         vmin = np.percentile(finite, 5)
         vmax = np.percentile(finite, 95)
-    sc = ax.scatter(xtable['ra'], xtable['dec'], c=col, cmap='viridis',
+    sc = ax.scatter(xtable['ra'], xtable['dec'], c=col, cmap='RdBu_r',
                     vmin=vmin, vmax=vmax, s=marker_size, linewidths=0, alpha=1)
     plt.colorbar(sc, ax=ax)
     ax.set_xlabel('RA')

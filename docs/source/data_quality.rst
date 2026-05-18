@@ -289,6 +289,89 @@ to fetch Gaia reference spectra).
     eval_standard.py data/lvmCFrame-00012345.fits
 
 
+plot_sky_gaussfit.py — Sky Subtraction Residual Maps
+-----------------------------------------------------
+
+Visualises fiber-by-fiber sky Gaussian fit results produced by
+``sky_gaussfit.py`` as spatial scatter maps (fiber RA vs Dec coloured by
+the residual), one page per fitted quantity.  Three PNG files are written
+per input file:
+
+- ``<root>_wave.png`` — centroid wavelength residuals (Å)
+- ``<root>_flux.png`` — flux residuals (fractional)
+- ``<root>_fwhm.png`` — FWHM residuals (km/s)
+
+Each page is a 6-row × 3-column grid, one panel per airglow line (18 lines
+total).  Each panel subtracts the per-panel median before plotting so the
+colorbar shows the residual; the suptitle records the colour range applied.
+Panel titles show the line name, median value, and MAD-based standard
+deviation.
+
+**Command line usage**::
+
+    plot_sky_gaussfit.py [-out root] [-s size] filename [filename ...]
+
+**Options:**
+
+-out root
+    Root name for the output PNGs when a single input file is given.
+    Ignored when multiple files are provided (each uses its own stem).
+
+-s size
+    Scatter marker size in points² (default 30).
+
+**Arguments:**
+
+filename
+    One or more ASCII fixed-width tables written by ``sky_gaussfit.py``.
+    Each file is processed independently; no stacking is performed.
+
+**Colour limits:**
+
+The limits are controlled by ``VRANGE_FRAC`` (for wave and flux) and
+``FWHM_VRANGE_KMS`` (for FWHM) near the top of the script.
+
+.. list-table::
+   :header-rows: 1
+   :widths: 10 50 20
+
+   * - Quantity
+     - Scale
+     - Default range
+   * - wave
+     - ± (median_wave × 5 km/s / c) Å
+     - ±5 km/s equiv.
+   * - flux
+     - Fractional variation of median flux
+     - ±2 %
+   * - fwhm
+     - Absolute, in km/s (FWHM_Ang / lambda × c)
+     - ±30 km/s
+
+FWHM is converted to velocity space using each line's central wavelength
+so that all 18 panels share a common km/s scale, consistent with the
+quadrature broadening formula FWHM_obs² = FWHM_inst² + σ².
+
+**Output:**
+
+Three PNG files saved to ``Figs_gaussfit_sky/``:
+
+- ``Figs_gaussfit_sky/<root>_wave.png``
+- ``Figs_gaussfit_sky/<root>_flux.png``
+- ``Figs_gaussfit_sky/<root>_fwhm.png``
+
+**Typical workflow**::
+
+    # 1. Fit all science fibers in an SFrame file
+    sky_gaussfit.py -lmc lvmSFrame-00012345.fits
+
+    # 2. Plot spatial residual maps from the fit results
+    plot_sky_gaussfit.py lvmSFrame-00012345.txt
+
+    # 3. Process many files at once (one PNG set per file)
+    plot_sky_gaussfit.py lvmSFrame-*.txt
+
+
 See Also
 --------
 
@@ -299,3 +382,4 @@ See Also
 - :doc:`api/eval_sky/index` - API documentation
 - :doc:`api/eval_standard/index` - API documentation
 - :doc:`summarize` - Tools for cataloging and summarizing exposures
+- :doc:`spectral_fitting` - ``sky_gaussfit.py`` produces the input tables for ``plot_sky_gaussfit.py``

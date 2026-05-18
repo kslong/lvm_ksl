@@ -134,6 +134,9 @@ from astropy.time import Time
 from lvm_ksl.lvm_gaussfit import fit_gaussian_to_spectrum, check_for_nan
 
 
+# Initial FWHM guess in km/s, converted per line to Angstroms via lambda/c.
+FWHM_INIT_KMS = 75.0
+
 # Wavelengths taken from
 # https://www.eso.org/observing/dfo/quality/UVES/pipeline/sky_spectrum.html
 AIRGLOW_LINES = [
@@ -209,9 +212,10 @@ def do_one(spectrum_table):
 
     for xname, xwcen, xwmin, xwmax in AIRGLOW_LINES:
         try:
+            init_fwhm = FWHM_INIT_KMS / 3e5 * xwcen
             results, xspec = fit_gaussian_to_spectrum(
                 spectrum_table, line=xname,
-                init_wavelength=xwcen, init_fwhm=1.,
+                init_wavelength=xwcen, init_fwhm=init_fwhm,
                 wavelength_min=xwmin, wavelength_max=xwmax)
             records.append(results)
         except Exception as e:

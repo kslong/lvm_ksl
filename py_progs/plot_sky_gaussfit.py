@@ -6,56 +6,43 @@
 
 Synopsis:
 
-Display sky_gaussfit.py fit results as sky maps of wavelength, flux, and
-FWHM for each fitted line.  Up to 6 lines are shown per page (one row of
-three panels per line: centroid wavelength, integrated flux, FWHM), with
-colors scaled to the 5th-95th percentile of each quantity.  Pages are
-saved as PNG files to the directory Figs_gaussfit_sky/.
+Display sky_gaussfit.py fit results for all 18 sky (airglow) lines using
+one page per fitted quantity.  Three pages are produced:
+
+    <root>_wave.png  — centroid wavelength residuals (wave - median)
+    <root>_flux.png  — flux residuals (flux - median)
+    <root>_fwhm.png  — FWHM residuals (fwhm - median)
+
+Each page is a 6-row × 3-column grid of scatter plots (fiber RA vs Dec
+colored by the residual), one panel per sky line.  Subplot titles give
+the line name, median value, and MAD-based standard deviation.
 
 
 Command line usage::
 
-    plot_sky_gaussfit.py [-out root] [-lines line1,line2,...] [-np npage]
-                         filename [filename ...]
+    plot_sky_gaussfit.py [-out root] [-s size] filename [filename ...]
 
     where
 
-    -out root    Root name for output PNG files.  Default: stem of the
-                 first input filename.
-    -neb         Plot only the nebular group (LINE_GROUPS entry 'neb').
-    -lines list  Comma-separated list of line names, saved as _p01.png,
-                 _p02.png, … in groups of -np.  Overrides LINE_GROUPS.
-    -np npage    Lines per page when using -lines (default 6, max 6).
+    -out root    Root name for output PNG files when a single input file is
+                 given.  Ignored when multiple files are supplied (each file
+                 uses its own stem as the root).
     -s size      Scatter marker size in points^2 (default 30).
     filename     One or more ASCII tables written by sky_gaussfit.py.
-                 If multiple files are given they are stacked before plotting.
+                 Each file is plotted independently; no stacking is done.
 
 
 Description:
 
-The default behaviour (no -neb, no -lines) iterates over every entry in
-the LINE_GROUPS table defined near the top of this file and saves one PNG
-per entry named Figs_gaussfit_sky/<root>_<suffix>.png.  Edit LINE_GROUPS
-to control which lines appear on which page.
-
-With -neb only the 'neb' entry in LINE_GROUPS is plotted.
-
-With -lines a custom comma-separated list is plotted in pages of -np lines
-named _p01.png, _p02.png, etc.
-
-Output filenames (default mode)::
-
-    Figs_gaussfit_sky/<root>_neb.png
-    Figs_gaussfit_sky/<root>_sky1.png
-    Figs_gaussfit_sky/<root>_sky2.png
-    Figs_gaussfit_sky/<root>_sky3.png
+Each input file produces its own three output PNGs.  Color limits for each
+quantity are set to ±(median × VRANGE_FRAC), giving a fixed, comparable
+scale across all sky lines on a page.  Edit VRANGE_FRAC and FWHM_VRANGE_KMS
+near the top of the file to adjust.
 
 Primary routines:
 
-    plot_one   - scatter plot of one quantity on one Axes object
-    plot_line  - fill one row (wave, flux, fwhm) for a single line
-    plot_page  - create and save one multi-row figure
-    plot_all   - iterate over all lines in groups, calling plot_page
+    plot_quantity  - create and save one full-page figure for one quantity
+    plot_all       - call plot_quantity for wave, flux, and fwhm
 
 
 History:
@@ -75,139 +62,160 @@ from astropy.io import ascii
 
 
 FIG_DIR = 'Figs_gaussfit_sky'
-LINES_PER_PAGE = 6
 
-# Named line groups: each entry is (suffix, [line, ...]).
-# The default run plots every group and saves <root>_<suffix>.png.
-# Edit this table to control which lines appear on which page.
-LINE_GROUPS = [
-    ('neb',  ['oi_a', 'ha', 'nii_b', 'sii_a', 'sii_b']),
-    ('sky1', ['sky5577', 'sky6300', 'sky6363', 'sky6533', 'sky6553', 'sky6577']),
-    ('sky2', ['sky6912', 'sky6923', 'sky6939', 'sky7358', 'sky7392', 'sky7914']),
-    ('sky3', ['sky8344', 'sky8399', 'sky8827', 'sky8988', 'sky9552', 'sky9719']),
+# The 18 airglow lines in wavelength order (must match sky_gaussfit output).
+SKY_LINES = [
+    'sky5577', 'sky6300', 'sky6363', 'sky6533', 'sky6553', 'sky6577',
+    'sky6912', 'sky6923', 'sky6939', 'sky7358', 'sky7392', 'sky7914',
+    'sky8344', 'sky8399', 'sky8827', 'sky8988', 'sky9552', 'sky9719',
 ]
 
+# Central wavelengths (A) for each sky line — used to convert FWHM to km/s.
+SKY_LINE_WAVE = {
+    'sky5577': 5577.34,  'sky6300': 6300.31,  'sky6363': 6363.78,
+    'sky6533': 6533.04,  'sky6553': 6553.0,   'sky6577': 6577.2,
+    'sky6912': 6912.62,  'sky6923': 6923.22,  'sky6939': 6939.52,
+    'sky7358': 7358.68,  'sky7392': 7392.21,  'sky7914': 7913.72,
+    'sky8344': 8344.61,  'sky8399': 8399.18,  'sky8827': 8827.11,
+    'sky8988': 8988.38,  'sky9552': 9552.55,  'sky9719': 9719.84,
+}
 
-# Per-column color range: fraction of the median used as the ±half-width.
-# wave/fwhm: km/s equivalent → delta_lambda = median * v/3e5
-# flux:      fractional variation of median
-VRANGE_FRAC = {'wave': 5.0 / 3e5, 'fwhm': 100.0 / 3e5, 'flux': 0.02}
+# Grid layout for 18 panels.
+NROWS, NCOLS = 6, 3
 
-# Format string for median and MAD-std values shown in each subplot title.
-MEDIAN_FMT  = {'wave': '%.3f', 'fwhm': '%.3f', 'flux': '%.3e'}
+# Per-quantity color range: ±(|median| × VRANGE_FRAC).
+# wave: Angstrom shift equivalent to the given km/s.
+# flux: fractional variation of median.
+# fwhm: handled separately in velocity space (see FWHM_VRANGE_KMS).
+VRANGE_FRAC = {'wave': 5.0 / 3e5, 'flux': 0.02}
+
+# Absolute ±half-width for FWHM color limits (km/s).
+# FWHM_obs^2 = FWHM_inst^2 + sigma^2  (all in km/s); this sets the display range.
+FWHM_VRANGE_KMS = 30.0
+
+# Title format for median and MAD-std values.
+MEDIAN_FMT  = {'wave': '%.3f', 'fwhm': '%.1f', 'flux': '%.3e'}
+
+# Axis labels for each quantity.
+QUANTITY_LABEL = {
+    'wave': r'$\lambda$ residual (A)',
+    'flux': 'Flux residual',
+    'fwhm': 'FWHM residual (km/s)',
+}
+
+# Human-readable color-limit description for the suptitle of each page.
+VRANGE_LABEL = {
+    'wave': u'±5 km/s',
+    'fwhm': u'±%.0f km/s' % FWHM_VRANGE_KMS,
+    'flux': u'±2%',
+}
 
 
-def plot_one(ax, xtable, var, marker_size=30, subtract_median=False,
-             vrange_frac=None):
+def plot_panel(ax, xtable, var, quantity, marker_size=30, line_wave=None):
     '''
-    Scatter plot of xtable[var] vs RA/Dec on ax.
-    If subtract_median is True the column median is removed before plotting.
-    If vrange_frac is given the color limits are ±(|median| * vrange_frac).
-    Returns (median, mad_std), or (None, None) if data are absent/all-NaN.
-    mad_std = 1.4826 * median(|residuals|).
+    Draw one scatter panel for xtable[var] on ax.
+    Subtracts the median, applies fixed color limits, and returns
+    (median_val, mad_std) or (None, None).
+
+    For quantity='fwhm', pass line_wave (A) to convert FWHM from Angstroms
+    to km/s via FWHM_kms = (FWHM_AA / line_wave) * c before plotting.
+    Returned median_val and mad_std are then in km/s.
     '''
     if var not in xtable.colnames:
-        ax.text(0.5, 0.5, '%s\nnot in table' % var,
-                transform=ax.transAxes, ha='center', va='center', fontsize=8)
+        ax.text(0.5, 0.5, 'not in table', transform=ax.transAxes,
+                ha='center', va='center', fontsize=7)
+        ax.set_visible(True)
         return None, None
+
     col = np.array(xtable[var], dtype=float)
     finite = col[np.isfinite(col)]
     if len(finite) == 0:
-        ax.text(0.5, 0.5, 'no finite data', transform=ax.transAxes,
-                ha='center', va='center', fontsize=8)
+        ax.text(0.5, 0.5, 'no data', transform=ax.transAxes,
+                ha='center', va='center', fontsize=7)
         return None, None
-    median_val = None
-    mad_std = None
-    if subtract_median:
-        median_val = np.median(finite)
-        col = col - median_val
-        finite = finite - median_val
-        mad_std = 1.4826 * np.median(np.abs(finite))
-    if vrange_frac is not None and median_val is not None:
-        delta = abs(median_val) * vrange_frac
-        vmin, vmax = -delta, delta
+
+    # Convert FWHM (A) → km/s so all sky lines share the same velocity scale.
+    if quantity == 'fwhm' and line_wave is not None:
+        col = col / line_wave * 3e5
+        finite = finite / line_wave * 3e5
+
+    median_val = np.median(finite)
+    col = col - median_val
+    finite = finite - median_val
+    mad_std = 1.4826 * np.median(np.abs(finite))
+
+    if quantity == 'fwhm' and line_wave is not None:
+        vmin, vmax = -FWHM_VRANGE_KMS, FWHM_VRANGE_KMS
     else:
-        vmin = np.percentile(finite, 5)
-        vmax = np.percentile(finite, 95)
+        vrange = VRANGE_FRAC.get(quantity)
+        if vrange is not None:
+            delta = abs(median_val) * vrange
+            vmin, vmax = -delta, delta
+        else:
+            vmin = np.percentile(finite, 5)
+            vmax = np.percentile(finite, 95)
+
     sc = ax.scatter(xtable['ra'], xtable['dec'], c=col, cmap='viridis',
                     vmin=vmin, vmax=vmax, s=marker_size, linewidths=0, alpha=1)
     plt.colorbar(sc, ax=ax)
-    ax.set_xlabel('RA')
-    ax.set_ylabel('Dec')
+    ax.set_xlabel('RA', fontsize=7)
+    ax.set_ylabel('Dec', fontsize=7)
+    ax.tick_params(labelsize=7)
     return median_val, mad_std
 
 
-def plot_line(axes_row, xtable, line, marker_size=30):
+def plot_quantity(xtable, quantity, outroot, title='', marker_size=30):
     '''
-    Fill one row of three Axes with wave, flux, and fwhm maps for line.
-    Each panel shows quantity - median; color range is ±(|median|*VRANGE_FRAC).
-    Subplot titles show the median and MAD-std of the quantity.
+    Create one 6×3 grid page showing all SKY_LINES for the given quantity
+    (wave, flux, or fwhm) and save it to FIG_DIR/<outroot>_<quantity>.png.
     '''
-    for ax, suffix, label in zip(axes_row,
-                                  ['wave',       'flux', 'fwhm'],
-                                  [r'$\lambda$ (A)', 'Flux', 'FWHM (A)']):
-        var = '%s_%s' % (suffix, line)
-        median_val, mad_std = plot_one(ax, xtable, var, marker_size,
-                                       subtract_median=True,
-                                       vrange_frac=VRANGE_FRAC.get(suffix))
-        if median_val is not None:
-            fmt = MEDIAN_FMT.get(suffix, '%.4g')
-            ax.set_title('%s %s [med=%s, σ=%s]' % (
-                line, label, fmt % median_val, fmt % mad_std), fontsize=9)
-        else:
-            ax.set_title('%s %s' % (line, label), fontsize=9)
-
-
-def plot_page(xtable, lines, outroot, suffix, marker_size=30, title=''):
-    '''
-    Create one figure with one row per line (up to LINES_PER_PAGE rows of
-    3 panels each) and save it to FIG_DIR/<outroot>_<suffix>.png.
-    title is shown as a suptitle above all panels.
-    '''
-    nrows = len(lines)
-    fig, axes = plt.subplots(nrows, 3, figsize=(16, 4 * nrows),
+    fig, axes = plt.subplots(NROWS, NCOLS, figsize=(16, 4 * NROWS),
                               squeeze=False)
-    for i, line in enumerate(lines):
-        plot_line(axes[i], xtable, line, marker_size)
+
+    for idx, line in enumerate(SKY_LINES):
+        row, col_idx = divmod(idx, NCOLS)
+        ax = axes[row][col_idx]
+        var = '%s_%s' % (quantity, line)
+        line_wave = SKY_LINE_WAVE.get(line) if quantity == 'fwhm' else None
+        median_val, mad_std = plot_panel(ax, xtable, var, quantity, marker_size,
+                                         line_wave=line_wave)
+        if median_val is not None:
+            fmt = MEDIAN_FMT.get(quantity, '%.4g')
+            ax.set_title('%s  [med=%s  σ=%s]' % (line, fmt % median_val,
+                                                   fmt % mad_std), fontsize=8)
+        else:
+            ax.set_title(line, fontsize=8)
+
+    # Hide any unused panels (shouldn't happen with 18 lines and 6×3=18 cells)
+    for idx in range(len(SKY_LINES), NROWS * NCOLS):
+        row, col_idx = divmod(idx, NCOLS)
+        axes[row][col_idx].set_visible(False)
 
     plt.tight_layout(rect=[0, 0, 1, 0.97])
     if title:
-        plt.suptitle(title, fontsize=16, y=0.99)
+        plt.suptitle('%s — %s  [color: %s]' % (
+            title, QUANTITY_LABEL[quantity], VRANGE_LABEL.get(quantity, '')),
+            fontsize=16, y=0.99)
 
     os.makedirs(FIG_DIR, exist_ok=True)
-    figname = os.path.join(FIG_DIR, '%s_%s.png' % (outroot, suffix))
+    figname = os.path.join(FIG_DIR, '%s_%s.png' % (outroot, quantity))
     plt.savefig(figname, dpi=100, bbox_inches='tight')
     print('Saved %s' % figname)
     plt.close(fig)
 
 
-def plot_all(xtable, outroot='sky_gaussfit', marker_size=30, title=''):
+def plot_all(xtable, outroot='sky_gaussfit2', title='', marker_size=30):
     '''
-    Plot every group defined in LINE_GROUPS, saving one PNG per group.
+    Produce wave, flux, and fwhm pages for all 18 sky lines.
     '''
-    for suffix, lines in LINE_GROUPS:
-        plot_page(xtable, lines, outroot, suffix, marker_size, title)
-
-
-def plot_custom(xtable, lines, outroot='sky_gaussfit', nper=LINES_PER_PAGE,
-                marker_size=30, title=''):
-    '''
-    Plot a custom line list in pages of nper, saved as _p01.png, _p02.png, etc.
-    '''
-    nper = min(nper, LINES_PER_PAGE)
-    pages = [lines[i:i + nper] for i in range(0, len(lines), nper)]
-    for page_num, page_lines in enumerate(pages, start=1):
-        plot_page(xtable, page_lines, outroot, 'p%02d' % page_num,
-                  marker_size, title)
+    for quantity in ('wave', 'flux', 'fwhm'):
+        plot_quantity(xtable, quantity, outroot, title, marker_size)
 
 
 def steer(argv):
     outroot = ''
-    lines = None
     filenames = []
-    nper = LINES_PER_PAGE
     marker_size = 30
-    neb_mode = False
 
     i = 1
     while i < len(argv):
@@ -217,14 +225,6 @@ def steer(argv):
         elif argv[i] == '-out':
             i += 1
             outroot = argv[i]
-        elif argv[i] == '-neb':
-            neb_mode = True
-        elif argv[i] == '-lines':
-            i += 1
-            lines = argv[i].split(',')
-        elif argv[i] == '-np':
-            i += 1
-            nper = int(argv[i])
         elif argv[i] == '-s':
             i += 1
             marker_size = int(argv[i])
@@ -239,37 +239,17 @@ def steer(argv):
         print(__doc__)
         return
 
-    tables = []
     for fname in filenames:
         try:
-            t = ascii.read(fname)
-            tables.append(t)
-            print('Read %d rows from %s' % (len(t), fname))
+            xtable = ascii.read(fname)
+            print('Read %d rows from %s' % (len(xtable), fname))
         except Exception as e:
             print('Could not read %s: %s' % (fname, e))
+            continue
 
-    if not tables:
-        print('No tables could be read.')
-        return
-
-    xtable = vstack(tables) if len(tables) > 1 else tables[0]
-
-    if outroot == '':
-        base = os.path.basename(filenames[0])
-        outroot = os.path.splitext(base)[0]
-
-    # Suptitle: basename of each input file, extension stripped
-    title = '  '.join(
-        os.path.splitext(os.path.basename(f))[0] for f in filenames
-    )
-
-    if neb_mode:
-        suffix, neb_lines = next(g for g in LINE_GROUPS if g[0] == 'neb')
-        plot_page(xtable, neb_lines, outroot, suffix, marker_size, title)
-    elif lines is not None:
-        plot_custom(xtable, lines, outroot, nper, marker_size, title)
-    else:
-        plot_all(xtable, outroot, marker_size, title)
+        stem = os.path.splitext(os.path.basename(fname))[0]
+        root = outroot if (outroot and len(filenames) == 1) else stem
+        plot_all(xtable, root, stem, marker_size)
 
 
 if __name__ == '__main__':

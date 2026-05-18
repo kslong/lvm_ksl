@@ -40,6 +40,7 @@ This page contains auto-generated API reference documentation [#f1]_.
    /api/MakeLVMReg/index
    /api/MakeVideo/index
    /api/peaks/index
+   /api/plot_sky_gaussfit/index
    /api/PlotSpec/index
    /api/PlotSpec3/index
    /api/Prep4SkyCorr/index

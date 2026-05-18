@@ -223,6 +223,11 @@ parallelism for debugging.
     sky_gaussfit.py spectrum1.txt spectrum2.txt
 
 
+Spatial maps of the per-fiber fit results (wavelength residuals, flux
+residuals, and FWHM residuals for all 18 airglow lines) are produced by
+``plot_sky_gaussfit.py``; see :doc:`data_quality` for full documentation.
+
+
 Multi-Component Fitting
 -----------------------
 
@@ -369,6 +374,7 @@ See Also
 
 - :doc:`snapshots` - Batch processing with automatic fitting
 - :doc:`summarize` - Summarizing exposures; ``gauss_offset.py`` for airglow monitoring
+- :doc:`data_quality` - ``plot_sky_gaussfit.py`` for spatial maps of sky Gaussian fit residuals
 - :doc:`api/lvm_gaussfit/index` - API documentation
 - :doc:`api/sky_gaussfit/index` - API documentation
 - :doc:`api/lvm_double/index` - API documentation

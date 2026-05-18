@@ -82,7 +82,7 @@ of how the raw spectra (including sky) vary over time.
     Minimum exposure time in seconds to include (default: 900).
 
 -ver drp_ver
-    DRP version to use (default: 1.1.1).
+    DRP version to use (default: 1.2.0).
 
 **Arguments:**
 
@@ -97,12 +97,23 @@ delta
 
 **Output:**
 
-A FITS file with one row per exposure, containing:
+A FITS file with the following extensions:
 
-- Median science fiber spectrum
-- SKY_EAST telescope spectrum
-- SKY_WEST telescope spectrum
-- Exposure metadata (MJD, coordinates, etc.)
+=========  =============  =====================================================
+Extension  Type           Contents
+=========  =============  =====================================================
+PRIMARY    ImageHDU       No data; header records Title
+WAVE       ImageHDU       1-D wavelength array
+FLUX       ImageHDU       2-D array (n_exposures × n_wavelengths), median science fiber flux
+SKY_EAST   ImageHDU       2-D array, SKY_EAST telescope spectrum
+SKY_WEST   ImageHDU       2-D array, SKY_WEST telescope spectrum
+LSF        ImageHDU       2-D array, line spread function
+drp_all    BinTableHDU    drpall metadata for the included exposures
+=========  =============  =====================================================
+
+The default output filename follows the pattern
+``XCframe_<ver>_<exp_start>_<exp_stop>_<delta>_<percent>.fits``,
+e.g. ``XCframe_1.2.0_10000_20000_10_50.fits``.
 
 **Use cases:**
 
@@ -152,12 +163,23 @@ delta
 
 **Output:**
 
-A FITS file with one row per exposure, containing:
+A FITS file with the following extensions:
 
-- Percentile sky-subtracted flux spectrum
-- Sky spectrum
-- Inverse variance spectrum
-- Exposure metadata
+=========  =============  =====================================================
+Extension  Type           Contents
+=========  =============  =====================================================
+PRIMARY    ImageHDU       No data; header records Title
+WAVE       ImageHDU       1-D wavelength array
+FLUX       ImageHDU       2-D array (n_exposures × n_wavelengths), percentile sky-subtracted flux
+SKY        ImageHDU       2-D array, sky spectrum
+IVAR       ImageHDU       2-D array, inverse variance
+LSF        ImageHDU       2-D array, line spread function
+drp_all    BinTableHDU    drpall metadata for the included exposures
+=========  =============  =====================================================
+
+The default output filename follows the pattern
+``XSFrame_<ver>_<exp_start>_<exp_stop>_<delta>_<percent>.fits``,
+e.g. ``XSFrame_1.2.0_10000_20000_10_50.fits``.
 
 **Use cases:**
 
@@ -219,13 +241,23 @@ delta
 
 **Output:**
 
-A FITS file with one row per exposure, containing:
+A FITS file with the following extensions:
 
-- Percentile spectrum for inner ring fibers
-- Percentile spectrum for middle ring fibers
-- Percentile spectrum for outer ring fibers
-- Median sky spectrum
-- Exposure metadata
+===========  =============  =====================================================
+Extension    Type           Contents
+===========  =============  =====================================================
+PRIMARY      ImageHDU       No data; header records PERCENT, INNER, MIDDLE, OUTER
+WAVE         ImageHDU       1-D wavelength array
+FLUX_INNER   ImageHDU       2-D array (n_exposures × n_wavelengths), percentile flux for inner ring fibers
+FLUX_MIDDLE  ImageHDU       2-D array, percentile flux for middle ring fibers
+FLUX_OUTER   ImageHDU       2-D array, percentile flux for outer ring fibers
+SKY          ImageHDU       2-D array, median sky spectrum
+drp_all      BinTableHDU    drpall metadata for the included exposures
+===========  =============  =====================================================
+
+The default output filename follows the pattern
+``XRings_<ver>_<exp_start>_<exp_stop>_<delta>_<percent>.fits``,
+e.g. ``XRings_1.2.0_10000_20000_10_50.fits``.
 
 **Use cases:**
 
@@ -302,19 +334,23 @@ FLUX3      ImageHDU       2-D array (n_exposures × n_wavelengths), spectrograph
 drp_all    BinTableHDU    drpall metadata for the accepted exposures only
 =========  =============  =====================================================
 
-A fixed-width ASCII table ``<out>.skipped.txt`` is also always written,
-listing every rejected exposure with columns ``expnum``, ``mjd``,
+A fixed-width ASCII table ``<out>.skipped.txt`` is also written when any
+exposures are rejected, listing each one with columns ``expnum``, ``mjd``,
 ``tileid``, ``SP1``, ``SP2``, ``SP3`` (``True`` = present, ``False`` =
-absent).  This file is written even if no exposures were skipped, providing
-a record that the completeness check was performed.
+absent).
 
 **Notes:**
 
 The drpall ``location`` column records SFrame paths.  For CFrame files the
 script replaces ``'SFrame'`` with ``'CFrame'`` in the path automatically.
-The output filename includes the file type (e.g.
-``XSpec_CFrame_1.2.0_10000_20000_10_50.fits``) so that CFrame and SFrame
-runs do not overwrite each other.
+
+The default output filename follows the pattern
+``XSpec_<type>_<ver>_<exp_start>_<exp_stop>_<delta>_<percent>.fits``,
+where ``<type>`` is ``CFrame`` or ``SFrame``, e.g.
+``XSpec_CFrame_1.2.0_10000_20000_10_50.fits``.  The skipped-exposure file
+takes the same root with a ``.skipped.txt`` suffix, e.g.
+``XSpec_CFrame_1.2.0_10000_20000_10_50.skipped.txt``.  Using the file type
+in the name means CFrame and SFrame runs do not overwrite each other.
 
 **Use cases:**
 
@@ -357,6 +393,122 @@ A typical workflow for evaluating data quality might be:
    Add ``-sf`` to compare the same exposures after sky subtraction::
 
        SummarizeSpec.py -sf -out spec_summary_sf 10000 20000 10
+
+
+gauss_offset.py — Airglow Line Fitting
+---------------------------------------
+
+Fits single Gaussians to a fixed set of airglow lines in each LVM exposure,
+producing one output row per exposure.  In both input modes the script fits
+the same quantity — the median spectrum across all good science fibers — and
+gives equivalent results for the same set of exposures.  This is useful for
+tracking wavelength-calibration drifts or changes in sky brightness over a
+night or survey.
+
+**Command line usage**::
+
+    gauss_offset.py [-ext FLUX] [-out root] [-ver drp_ver] [-file xfile]
+                    [exp_start [exp_stop [delta]]]
+                    filename [filename ...]
+
+**Options:**
+
+-ext FLUX|SKY_EAST|SKY_WEST
+    Extension to fit (default: FLUX).
+
+-out root
+    Root name for the output file.  If omitted, the output filename is
+    derived automatically (see Output below).
+
+-ver drp_ver
+    DRP version for drpall lookup when resolving file paths (default 1.2.1).
+
+-file xfile
+    Read lvmCFrame filenames from a table that has a column named
+    ``filename`` or ``Filename``.  SFrame paths are converted to CFrame
+    automatically.  These are combined with any files from
+    ``exp_start``/``exp_stop``.
+
+**Arguments:**
+
+exp_start
+    First exposure number.  Combined with ``exp_stop``, queries drpall
+    to build the list of CFrame files to process.
+
+exp_stop
+    Last exposure number (inclusive).
+
+delta
+    Use every Nth exposure in [exp_start, exp_stop] (default 1 = all).
+
+filename
+    One or more SummarizeCframe FITS files (``XCframe_*.fits``).
+
+**Two input modes:**
+
+*SummarizeCframe mode* (direct ``filename`` arguments): a SummarizeCframe
+file (``XCframe_*.fits``) stores one pre-computed median science-fiber
+spectrum per exposure as a row of its FLUX (or SKY_EAST / SKY_WEST)
+extension.  The script reads each row directly and fits it.  Use this mode
+when you have already run ``SummarizeCframe.py`` or one of its variants.
+
+*CFrame mode* (``-file`` or ``exp_start``/``exp_stop``): individual
+lvmCFrame files are opened one at a time.  For each file the median
+spectrum is computed on the fly across all good science fibers
+(``telescope == 'Sci'``, ``fibstatus == 0``) with bad pixels masked via
+the MASK extension.  SFrame paths are converted to CFrame automatically;
+drpall is used as a fallback if a path cannot be resolved directly.  Use
+this mode when you have a drpall-derived file list or want to skip the
+``SummarizeCframe.py`` step.
+
+**Airglow lines fitted:**
+
+=========  ===========
+Line name  Wavelength
+=========  ===========
+sky5577    5577.34 A
+sky6300    6300.31 A
+sky6363    6363.78 A
+sky7358    7358.68 A
+sky7392    7392.21 A
+sky7914    7913.72 A
+sky8344    8344.61 A
+sky8399    8399.18 A
+sky8827    8827.11 A
+sky8988    8988.38 A
+sky9552    9552.55 A
+sky9719    9719.84 A
+=========  ===========
+
+Wavelengths are from the ESO UVES sky spectrum atlas.
+
+**Output:**
+
+A FITS binary table with one row per exposure.  Columns cover the fit
+parameters (flux, wave, fwhm, back, rmse) for each line, plus ``expnum``
+and ``mjd``.
+
+- CFrame mode: ``Gauss_<ext>.<YYMMDD>.fits`` by default.
+- SummarizeCframe mode: ``<input_stem>_gauss.<ext>.fits`` by default.
+
+Supplying ``-out root`` overrides both defaults.
+
+**Examples**::
+
+    # CFrame mode: read file list from a drpall-derived table
+    gauss_offset.py -file drpall_dr20.fits
+
+    # CFrame mode: use drpall to select exposures 11000–12000, every 5th
+    gauss_offset.py -ver 1.2.0 11000 12000 5
+
+    # CFrame mode: fit the east sky telescope
+    gauss_offset.py -ext SKY_EAST -file drpall_dr20.fits
+
+    # SummarizeCframe mode: fit a pre-built summary file
+    gauss_offset.py XCframe_1.2.0_10000_20000_10_50.fits
+
+    # SummarizeCframe mode: fit sky east extension
+    gauss_offset.py -ext SKY_EAST XCframe_1.2.0_10000_20000_10_50.fits
 
 
 See Also

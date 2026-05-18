@@ -19,6 +19,9 @@ This page contains auto-generated API reference documentation [#f1]_.
    /api/fib2radec/index
    /api/find_obs/index
    /api/FitsInfo/index
+   /api/fourier_offset/index
+   /api/fourier_offset_check/index
+   /api/gauss_offset/index
    /api/GenAnnularBackground/index
    /api/GetDAP/index
    /api/GetFromUtah/index
@@ -29,7 +32,6 @@ This page contains auto-generated API reference documentation [#f1]_.
    /api/kslmap/index
    /api/line_map/index
    /api/LocateData/index
-   /api/LocateReduced/index
    /api/LSnap/index
    /api/lvm_double/index
    /api/lvm_flux/index
@@ -38,6 +40,7 @@ This page contains auto-generated API reference documentation [#f1]_.
    /api/MakeLVMReg/index
    /api/MakeVideo/index
    /api/peaks/index
+   /api/plot_sky_gaussfit/index
    /api/PlotSpec/index
    /api/PlotSpec3/index
    /api/Prep4SkyCorr/index

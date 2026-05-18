@@ -12,12 +12,13 @@ from series of LVM exposures
 
 Command line usage (if any):
 
-    usage: LocateData.py [-h] [-cp] [-dir whatever] [-drp 1.2.0] [-CFrame] exp_start [exp_stop]
+    usage: LocateData.py [-h] [-cp] [-link] [-dir whatever] [-drp 1.2.0] [-CFrame] exp_start [exp_stop]
 
     where exp_start and exp_stop are LVM exposure numbers that one wishes to locate. If
     exp_stop is not provided, a single exposure will be returned. -h prints out this help file.
     -cp means not only to locate the files but to copy them to local data directory.
-    -dir whatever gives an alternative place to copy the data. Note that -dir implies -cp
+    -link creates symbolic links in the local data directory instead of copying.
+    -dir whatever gives an alternative place to copy or link the data. Note that -dir implies -cp
     even if it is not given. -drp 1.2.0 selects data from a specific drp run, e.g. 1.2.0.
     -CFrame locates CFrame files instead of SFrame files, which is the default.
 
@@ -161,10 +162,9 @@ def find_em(exp_start=3596,exp_stop=3599,file_type='SFrame',xver=''):
 
     return xtab
 
-def get_em(xtab,destination=''):
+def get_em(xtab,destination='',link=False):
     '''
-    Move data that has been found either into the local directory 
-    or a data directory
+    Copy or symlink data that has been found into a local directory.
     '''
 
     if destination=='':
@@ -172,15 +172,24 @@ def get_em(xtab,destination=''):
 
     if os.path.isdir(destination)==False:
         os.mkdir(destination)
-        
-            
+
     for one in xtab:
-        if one['Location']!='Unknown':        
-            print('Copying %s to %s' % (one['Location'],destination))
-            try:
-                shutil.copy(one['Location'], destination)
-            except:
-                print('Error: Could not copy %s' % one['Location'])
+        if one['Location']!='Unknown':
+            dest_path = os.path.join(destination, os.path.basename(one['Location']))
+            if link:
+                print('Linking %s to %s' % (one['Location'], destination))
+                try:
+                    if os.path.islink(dest_path) or os.path.exists(dest_path):
+                        os.remove(dest_path)
+                    os.symlink(one['Location'], dest_path)
+                except Exception as e:
+                    print('Error: Could not link %s: %s' % (one['Location'], e))
+            else:
+                print('Copying %s to %s' % (one['Location'],destination))
+                try:
+                    shutil.copy(one['Location'], destination)
+                except Exception as e:
+                    print('Error: Could not copy %s: %s' % (one['Location'], e))
         else:
             print('Note that %s was not located' % (one['Filename']))
     return
@@ -188,11 +197,12 @@ def get_em(xtab,destination=''):
         
 def steer(argv):
     '''
-    usage: LocateData.py [-h] [-cp] [-dir whatever] [-drp 1.2.0] '-C] exp_start [exp_stop]
+    usage: LocateData.py [-h] [-cp] [-link] [-dir whatever] [-drp 1.2.0] [-C] exp_start [exp_stop]
     '''
     exp_start=0
     exp_stop=0
     xcp=False
+    xlink=False
     destination=''
     ftype='SFrame'
     drpver=''
@@ -203,6 +213,9 @@ def steer(argv):
                print(__doc__)
                return
         elif argv[i]=='-cp':
+            xcp=True
+        elif argv[i]=='-link':
+            xlink=True
             xcp=True
         elif argv[i]=='-dir':
             xcp=True
@@ -249,7 +262,7 @@ def steer(argv):
         return 
 
     if xcp:
-        get_em(locate,destination)    
+        get_em(locate,destination,link=xlink)
 
     return
         

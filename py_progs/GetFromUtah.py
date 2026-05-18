@@ -24,6 +24,9 @@ Command Line Usage
 -cp
     Copy the retrieved data to a local directory
 
+-link
+    Create symbolic links in the local directory instead of copying
+
 -CFrame
     Retrieve CFrame data instead of SFrame data
 
@@ -143,6 +146,7 @@ def steer(argv):
     """
     drp_ver="1.2.0"
     copy=False
+    xlink=False
     xtile=1028683
     xtile='*'
     xmjd=60281
@@ -163,6 +167,9 @@ def steer(argv):
         elif argv[i]=='-CFrame':
             ftype='CFrame'
         elif argv[i]=='-cp':
+            copy=True
+        elif argv[i]=='-link':
+            xlink=True
             copy=True
         elif argv[i]=='-drp':
             i+=1
@@ -196,7 +203,7 @@ def steer(argv):
     xtab=LocateData.find_em(exp_start,exp_stop,ftype)
     print(xtab)
     if copy==True:
-        LocateData.get_em(xtab,destination=xdest)
+        LocateData.get_em(xtab,destination=xdest,link=xlink)
 
 
 

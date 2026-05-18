@@ -27,6 +27,7 @@ are experimwenatls.  Those that have detailed documantion are the most reliable.
    find_obs
    data_retrieval
    summarize
+   data_quality
    sky_subtraction
    spectral_fitting
    visualization

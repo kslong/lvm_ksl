@@ -13,6 +13,7 @@ Overview
 The spectral fitting tools include:
 
 - ``lvm_gaussfit.py`` - Fit standard emission lines across an RSS file
+- ``sky_gaussfit.py`` - Fit nebular and airglow lines fiber-by-fiber in SFrame files
 - ``lvm_double.py`` - Fit single or double Gaussian profiles to a line
 - ``lvm_triple.py`` - Fit up to triple Gaussian profiles
 - ``lvm_flux.py`` - Calculate fluxes using parameters from other fits
@@ -103,6 +104,128 @@ The standard line list includes:
 - [OIII] 5007 A
 - H-beta (4861 A)
 - And others depending on wavelength coverage
+
+
+sky_gaussfit.py — Fiber-by-Fiber Nebular and Airglow Fitting
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+Fits single Gaussians to a fixed set of nebular emission lines and airglow
+lines for every good science fiber in a sky-subtracted LVM SFrame file,
+producing one output row per fiber.  This is complementary to
+``lvm_gaussfit.py``: whereas ``lvm_gaussfit.py`` is a general-purpose
+fitter for individual spectra or RSS files, ``sky_gaussfit.py`` is tuned
+for survey-scale fiber-by-fiber analysis of SFrame data and includes a
+comprehensive airglow line set for monitoring sky-subtraction residuals.
+
+**Usage**::
+
+    sky_gaussfit.py [-lmc] [-smc] [-v vel] [-out root] [-np nproc] filename [filename ...]
+
+**Options:**
+
+-lmc
+    Apply the LMC radial velocity (~262 km/s) to nebular lines.
+
+-smc
+    Apply the SMC radial velocity (~146 km/s) to nebular lines.
+
+-v vel
+    Apply an arbitrary radial velocity in km/s to nebular lines.
+
+-out root
+    Root name for the output file (default: derived from input filename).
+
+-np nproc
+    Number of parallel processes for fiber fitting (default: 8).
+
+**Arguments:**
+
+filename
+    One or more SFrame FITS files.  ASCII spectrum files with WAVE and FLUX
+    columns are also accepted (processed via ``do_individual``).
+
+**Lines fitted:**
+
+Nebular lines — wavelengths are shifted by the supplied velocity:
+
+=========  ===========  ==========
+Line       Wavelength   Column tag
+=========  ===========  ==========
+[OIII]     4958.911 A   oiii_a
+[OIII]     5006.843 A   oiii_b
+[OI]       6300.309 A   oi_a
+[OI]       6363.783 A   oi_b
+[NII]      6548.04  A   nii_a
+Ha         6562.80  A   ha
+[NII]      6583.46  A   nii_b
+[SII]      6716.440 A   sii_a
+[SII]      6730.815 A   sii_b
+=========  ===========  ==========
+
+Airglow lines — fitted at fixed, unshifted wavelengths (ESO UVES atlas):
+
+=========  ===========
+Line name  Wavelength
+=========  ===========
+sky5577    5577.34 A
+sky6300    6300.31 A
+sky6363    6363.78 A
+sky6533    6533.04 A
+sky6553    6553.0  A
+sky6577    6577.2  A
+sky6912    6912.62 A
+sky6923    6923.22 A
+sky6939    6939.52 A
+sky7358    7358.68 A
+sky7392    7392.21 A
+sky7914    7913.72 A
+sky8344    8344.61 A
+sky8399    8399.18 A
+sky8827    8827.11 A
+sky8988    8988.38 A
+sky9552    9552.55 A
+sky9719    9719.84 A
+=========  ===========
+
+Note that sky6300 and sky6363 overlap the nebular [OI] doublet.  Both are
+fit independently: the sky lines at fixed wavelengths, the nebular lines
+velocity-shifted.
+
+**Output:**
+
+When the input is an SFrame FITS file, the output is an ASCII fixed-width
+table (one row per successfully fit fiber) with columns covering the fit
+parameters (flux, wave, fwhm, back, rmse) for each line together with
+fiberid, ra, and dec.  The output filename defaults to the input filename
+with ``.fits`` replaced by ``.txt``, or ``<root>.txt`` if ``-out`` is
+supplied.
+
+When the input is one or more ASCII spectrum files, output is written to
+``Gauss_<stem>.txt`` (single file) or ``Gauss_<root>.txt`` (multiple files).
+
+**Performance:**
+
+Fiber fitting is parallelized using ``multiprocessing.Pool``.  The spectrum
+is pre-trimmed to the fitting range and per-line index arrays are
+pre-computed once per file, so each worker operates only on the small
+wavelength window needed for each line.  Use ``-np 1`` to disable
+parallelism for debugging.
+
+**Example**::
+
+    # Fit all fibers in an LMC SFrame file, 12 parallel processes
+    sky_gaussfit.py -lmc -np 12 lvmSFrame-00012345.fits
+
+    # Fit with an arbitrary velocity
+    sky_gaussfit.py -v 280 -out my_field lvmSFrame-00009088.fits
+
+    # Fit individual ASCII spectra (no velocity shift)
+    sky_gaussfit.py spectrum1.txt spectrum2.txt
+
+
+Spatial maps of the per-fiber fit results (wavelength residuals, flux
+residuals, and FWHM residuals for all 18 airglow lines) are produced by
+``plot_sky_gaussfit.py``; see :doc:`data_quality` for full documentation.
 
 
 Multi-Component Fitting
@@ -250,7 +373,10 @@ See Also
 --------
 
 - :doc:`snapshots` - Batch processing with automatic fitting
+- :doc:`summarize` - Summarizing exposures; ``gauss_offset.py`` for airglow monitoring
+- :doc:`data_quality` - ``plot_sky_gaussfit.py`` for spatial maps of sky Gaussian fit residuals
 - :doc:`api/lvm_gaussfit/index` - API documentation
+- :doc:`api/sky_gaussfit/index` - API documentation
 - :doc:`api/lvm_double/index` - API documentation
 - :doc:`api/lvm_triple/index` - API documentation
 - :doc:`api/lvm_flux/index` - API documentation

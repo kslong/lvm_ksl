@@ -10,11 +10,12 @@ Create an Mpeg from a lot of pngs
 
 Command line usage (if any):
 
-    usage: MakeVideo.py [-h] [-out outroot] boat_load of pngs
+    usage: MakeVideo.py [-h] [-out outroot] [-fps N] boat_load of pngs
 
     where:
-        -h prints out this help and exits
-        -out root name for output mpeg file
+        -h        print this help and exit
+        -out root root name for output mp4 file (default: test.mp4)
+        -fps N    frames per second (default: 4 = 0.25 s/frame); lower = slower, higher = faster
 
 Description:  
 
@@ -41,7 +42,7 @@ import subprocess
 import os
 import tempfile
 
-def create_mpeg_from_png_list(png_list, output_file='output.mp4', fps=24):
+def create_mpeg_from_png_list(png_list, output_file='output.mp4', fps=4):
     """
     Create an MPEG video from a list of PNG files using ffmpeg.
 
@@ -53,20 +54,25 @@ def create_mpeg_from_png_list(png_list, output_file='output.mp4', fps=24):
     # Sort the list to ensure frame order
     png_list = sorted(png_list)
 
-    # Create a temporary file listing all the image paths
-    with tempfile.NamedTemporaryFile(mode='w', delete=False) as list_file:
+    # Duration per frame in seconds
+    duration = 1.0 / fps
+
+    # Concat file with explicit per-frame duration (avoids DTS timestamp errors)
+    with tempfile.NamedTemporaryFile(mode='w', suffix='.txt', delete=False) as list_file:
         for png in png_list:
             list_file.write(f"file '{os.path.abspath(png)}'\n")
+            list_file.write(f"duration {duration}\n")
         list_path = list_file.name
 
     try:
         command = [
             'ffmpeg',
             '-y',
-            '-r', str(fps),
             '-f', 'concat',
             '-safe', '0',
             '-i', list_path,
+            # Pad to even dimensions required by libx264
+            '-vf', 'pad=ceil(iw/2)*2:ceil(ih/2)*2',
             '-c:v', 'libx264',
             '-pix_fmt', 'yuv420p',
             output_file
@@ -82,7 +88,7 @@ def steer(argv):
 
     pngs=[]
     outname='test'
-    fps = 24
+    fps = 4
     
     i=1
     while i<len(argv):
@@ -92,6 +98,9 @@ def steer(argv):
         elif argv[i][:4]=='-out':
             i+=1
             outname=argv[i]
+        elif argv[i][:4]=='-fps':
+            i+=1
+            fps=int(argv[i])
         elif argv[i][0]=='-':
             print('Error: Unknown switch: ',argv[:10])
             return

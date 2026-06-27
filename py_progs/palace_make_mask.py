@@ -711,7 +711,7 @@ def make_plot(wave, sky_flux, palace_model_scaled, mask, threshold,
         fig.suptitle(title, fontsize=10, y=1.002)
     plt.tight_layout()
     if savepath:
-        fig.savefig(savepath, bbox_inches="tight")
+        fig.savefig(savepath, bbox_inches="tight", dpi=150)
         print(f"Plot saved to {savepath}")
     if show:
         plt.show()
@@ -800,7 +800,7 @@ def main():
     save_output(outpath, wave, sky_median, mask, palace_model_scaled,
                 args.threshold, scale, args.factor, args.sky_ext)
 
-    plot_path = Path(outpath).with_suffix(".pdf")
+    plot_path = Path(outpath).with_suffix(".png")
     title = (f"{Path(args.fits_file).name}  |  "
              f"threshold = {args.threshold:.3g}  |  "
              f"scale = {scale:.3g}  |  "

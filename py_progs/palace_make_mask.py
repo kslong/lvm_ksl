@@ -627,11 +627,11 @@ def save_output(outpath, wave, sky_flux, mask, palace_model_scaled,
 # ---------------------------------------------------------------------------
 
 def make_plot(wave, sky_flux, palace_model_scaled, mask, threshold,
-              arm_ranges=ARM_RANGES, title=""):
-    """Display a three-panel diagnostic plot, one panel per spectrograph arm.
+              arm_ranges=ARM_RANGES, title="", savepath=None, show=True):
+    """Save and optionally display a three-panel diagnostic plot.
 
-    Each panel shows:
-      - Sky spectrum (full, faded grey) — the median observed sky spectrum
+    One panel per spectrograph arm.  Each panel shows:
+      - Sky spectrum (full, faded) — the median observed sky spectrum
       - Sky continuum (bold black) — sky spectrum with masked pixels blanked
         to NaN, showing only the pixels available for continuum fitting
       - PALACE model (coloured) — the scaled sky line contamination model
@@ -657,6 +657,10 @@ def make_plot(wave, sky_flux, palace_model_scaled, mask, threshold,
         Mapping of arm name to (wmin, wmax) wavelength range.
     title : str
         Figure suptitle string.
+    savepath : str or Path or None
+        If given, save the figure to this path before displaying.
+    show : bool
+        If True, call plt.show() to display the figure interactively.
     """
     import matplotlib.pyplot as plt
 
@@ -706,7 +710,12 @@ def make_plot(wave, sky_flux, palace_model_scaled, mask, threshold,
     if title:
         fig.suptitle(title, fontsize=10, y=1.002)
     plt.tight_layout()
-    plt.show()
+    if savepath:
+        fig.savefig(savepath, bbox_inches="tight")
+        print(f"Plot saved to {savepath}")
+    if show:
+        plt.show()
+    plt.close(fig)
 
 
 # ---------------------------------------------------------------------------
@@ -735,7 +744,7 @@ def main():
     p.add_argument("--min-window", type=float, default=5.0,
                    help="Minimum window width in Å for the printed window table")
     p.add_argument("--plot",       action="store_true",
-                   help="Show a three-arm diagnostic plot")
+                   help="Display the diagnostic plot interactively (always saved as PDF)")
     args = p.parse_args()
 
     # default output filename
@@ -791,13 +800,13 @@ def main():
     save_output(outpath, wave, sky_median, mask, palace_model_scaled,
                 args.threshold, scale, args.factor, args.sky_ext)
 
-    if args.plot:
-        title = (f"{Path(args.fits_file).name}  |  "
-                 f"threshold = {args.threshold:.3g}  |  "
-                 f"scale = {scale:.3g}  |  "
-                 f"FACTOR = {args.factor:.1e}")
-        make_plot(wave, sky_median, palace_model_scaled, mask,
-                  args.threshold, title=title)
+    plot_path = Path(outpath).with_suffix(".pdf")
+    title = (f"{Path(args.fits_file).name}  |  "
+             f"threshold = {args.threshold:.3g}  |  "
+             f"scale = {scale:.3g}  |  "
+             f"FACTOR = {args.factor:.1e}")
+    make_plot(wave, sky_median, palace_model_scaled, mask, args.threshold,
+              title=title, savepath=plot_path, show=args.plot)
 
 
 if __name__ == "__main__":

@@ -208,6 +208,107 @@ The ESO Sky Model package must be installed locally, with the
 ``calcskymodel`` executable available.
 
 
+PALACE-based Sky Line Masking and Sky Spectrum Collection
+----------------------------------------------------------
+
+These tools support the development of improved sky subtraction by identifying
+sky-line-free wavelength windows for continuum fitting and by assembling
+stacked sky spectra from the LVM sky telescopes.  Together they are intended
+to characterise the sky background well enough to constrain physical models
+of the airglow emission.
+
+palace_make_mask.py
+^^^^^^^^^^^^^^^^^^^
+
+Builds a sky-line contamination mask across the full LVM wavelength range
+(3600-9800 Å) using the PALACE (Paranal Airglow Line And Continuum Emission,
+Noll et al. 2024) sky emission model.  Four components are rendered onto the
+LVM wavelength grid: OH vibrational-rotational bands, OI recombination lines,
+atomic forbidden/permitted lines (NaI, KI, [NI], OI), and the O2 A-band.
+Each component is normalised to its own peak before summing so that no single
+family dominates the mask.  The combined model is scaled to the observed sky
+spectrum via a least-squares fit to bright OH pixels in the Z arm, and pixels
+where the predicted contamination exceeds a user-specified threshold are
+flagged as unusable for continuum fitting.
+
+**Usage**::
+
+    palace_make_mask.py fits_file palace_dir [--threshold T] [--plot] ...
+
+**Arguments:**
+
+fits_file
+    LVM XCframe FITS file (provides WAVE, sky spectrum, and LSF).
+
+palace_dir
+    Path to the ``palace/PMD`` directory containing the PALACE data files.
+
+**Key options:**
+
+--threshold T
+    Contamination threshold in FACTOR-scaled flux units.  Lower values give a
+    stricter mask.  Default is 0.01 (= 1×10⁻¹⁶ erg s⁻¹ cm⁻² Å⁻¹ with the
+    default FACTOR of 10¹⁴).  The tradeoff between mask strictness and the
+    number of clean pixels available for continuum fitting is the primary
+    tuning parameter.
+
+--plot
+    Display the diagnostic plot interactively (it is always saved as a PNG).
+
+**Output:**
+
+A FITS file (``palace_mask_<stem>.fits``) containing:
+
+- ``WAVE`` — wavelength array (Å)
+- ``SKY`` — median observed sky spectrum (FACTOR-scaled)
+- ``CONTINUUM`` — sky spectrum with contaminated pixels set to NaN
+- ``MASK`` — boolean mask (1 = clean, 0 = contaminated)
+
+A PNG diagnostic plot (``palace_mask_<stem>.png``) showing all three
+spectrograph arms on a log flux scale with the PALACE model, threshold line,
+the full sky spectrum, and the clean continuum pixels highlighted.
+
+GetSky_from_CFrame_sum.py
+^^^^^^^^^^^^^^^^^^^^^^^^^
+
+Inventories which sky fields have been observed in an XCframe summary file
+and, optionally, extracts all sky spectra for a chosen field into a single
+FITS file for stacking or modelling.
+
+LVM records both an east (SKY_EAST) and west (SKY_WEST) sky telescope
+pointing for each science exposure.  The DRP_ALL table inside an XCframe
+summary file lists the field names in the ``skye_name`` and ``skyw_name``
+columns.  This program has two operating modes:
+
+*Summary mode* (no source name given): counts how many times each sky field
+appears across both sky telescopes, prints the top N entries sorted by
+observation count, and writes the full count table to
+``sky_summary_<stem>.fits``.
+
+*Extraction mode* (source name given): selects all rows where the field name
+matches, extracts the corresponding spectra from SKY_EAST and SKY_WEST,
+merges paired metadata columns (``skye_ra``/``skyw_ra`` → ``ra``, etc.) into
+single columns for the relevant telescope, removes science-pointing columns,
+and writes the result to ``Sky_<source_name>.fits``.
+
+**Usage**::
+
+    # Inventory sky fields
+    GetSky_from_CFrame_sum.py fits_file
+
+    # Extract spectra for one field
+    GetSky_from_CFrame_sum.py fits_file source_name [--output PATH]
+
+**Output (extraction mode):**
+
+A FITS file containing:
+
+- ``WAVE`` — wavelength array (Å)
+- ``FLUX`` — sky spectra, shape (N_obs, N_pix), one row per observation
+- ``DRP_ALL`` — metadata table with merged sky columns and a ``tel`` column
+  indicating which sky telescope (SKY_EAST or SKY_WEST) each row came from
+
+
 Typical Workflows
 -----------------
 
@@ -268,3 +369,5 @@ See Also
 - :doc:`api/SkySub/index` - API documentation
 - :doc:`api/SkyCalcObs/index` - API documentation
 - :doc:`api/SkyModelObs/index` - API documentation
+- :doc:`api/palace_make_mask/index` - API documentation
+- :doc:`api/GetSky_from_CFrame_sum/index` - API documentation

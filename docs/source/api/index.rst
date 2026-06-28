@@ -27,6 +27,7 @@ This page contains auto-generated API reference documentation [#f1]_.
    /api/GetFromUtah/index
    /api/GetRegSpec/index
    /api/GetSimple/index
+   /api/GetSky_from_CFrame_sum/index
    /api/GetSolar/index
    /api/GetSpec/index
    /api/kslmap/index
@@ -39,6 +40,7 @@ This page contains auto-generated API reference documentation [#f1]_.
    /api/lvm_triple/index
    /api/MakeLVMReg/index
    /api/MakeVideo/index
+   /api/palace_make_mask/index
    /api/peaks/index
    /api/plot_sky_gaussfit/index
    /api/PlotSpec/index

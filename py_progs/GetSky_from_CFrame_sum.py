@@ -1,78 +1,81 @@
 #!/usr/bin/env python
-"""
-GetSky_from_CFrame_sum.py
-=========================
+# coding: utf-8
 
-Synopsis
---------
-Summarise sky field observation counts from an LVM XCframe summary file, or
-extract all sky spectra for a named sky field into a new FITS file.
+'''
+                    Space Telescope Science Institute
 
-Description
------------
-LVM exposures record both an east and a west sky field alongside each science
-pointing.  The DRP_ALL table inside an XCframe summary file carries the field
-names in the columns skye_name and skyw_name.  This program has two operating
-modes depending on whether a source name is supplied:
+Synopsis:
 
-Summary mode (no source name)
-    Counts how many times each sky field appears across both the east and west
-    sky telescopes, prints the top --n-print entries sorted by observation
-    count (most observed first), and writes the full count table to a FITS
-    file named sky_summary_<input_stem>.fits.
+    Summarise sky field observation counts from an LVM XCframe summary file,
+    or extract all sky spectra for a named sky field into a new FITS file.
 
-Extraction mode (source name given)
-    Collects every row in the DRP_ALL table where skye_name or skyw_name
-    matches the requested source, extracts the corresponding sky spectra from
-    the SKY_EAST and SKY_WEST extensions, and writes them to a FITS file
-    named Sky_<source_name>.fits (or the path given by --output).
+Command line usage (if any):
 
-Output FITS structure (extraction mode)
-----------------------------------------
-  PRIMARY    No spectral data; header records Source and input filename.
-  WAVE       float32  (Npix,)            Wavelength array (Å).
-  FLUX       float32  (Nobs, Npix)       Sky spectra; one row per observation.
-  DRP_ALL    BinTable (Nobs rows)        Subset of the input DRP_ALL table for
-                                         the selected source, with three extra
-                                         columns added:
-                                           line_no      — original row index in
-                                                          the input DRP_ALL table
-                                           Source_name  — the requested name
-                                           tel          — 'SKY_EAST' or 'SKY_WEST'
+    usage: GetSky_from_CFrame_sum.py [-h] [--output PATH] [--n-print N]
+                                     fits_file [source_name]
 
-Usage
------
-    # Summary mode — count observations per sky field
-    python GetSky_from_CFrame_sum.py <fits_file>
+    where
 
-    # Extraction mode — extract spectra for one sky field
-    python GetSky_from_CFrame_sum.py <fits_file> <source_name>
+    fits_file     is the path to an LVM XCframe summary FITS file containing
+                  a DRP_ALL table (with skye_name and skyw_name columns),
+                  a WAVE extension, and SKY_EAST / SKY_WEST extensions.
 
-    # Custom output filename
-    python GetSky_from_CFrame_sum.py <fits_file> <source_name> --output my_sky.fits
+    source_name   (optional) exact sky field name to extract.  If omitted
+                  the routine runs in summary mode.
 
-Arguments
----------
-    fits_file     Path to the LVM XCframe summary FITS file.  Must contain
-                  a DRP_ALL BinTableHDU with skye_name and skyw_name columns,
-                  a WAVE ImageHDU, and SKY_EAST / SKY_WEST ImageHDUs.
-    source_name   (Optional) Name of the sky field to extract.  Must match
-                  the values in the skye_name or skyw_name columns exactly.
+    --output PATH sets the output FITS filename (extraction mode only;
+                  default: Sky_<source_name>.fits).
 
-Options
--------
-    --output PATH   Output FITS path for extraction mode.
-                    (default: Sky_<source_name>.fits)
-    --n-print N     Number of top sky fields to print in summary mode.
-                    (default: 10)
+    --n-print N   number of top sky fields to print in summary mode
+                  (default: 10).
 
-Notes
------
-History
-    260628  Written based on LocateSky.ipynb (Knox Long / Claude)
-"""
+Description:
+
+    LVM exposures observe both an east and a west sky field alongside each
+    science pointing.  The DRP_ALL table inside an XCframe summary file
+    records which sky fields were observed in the skye_name and skyw_name
+    columns.  This program operates in two modes:
+
+    Summary mode (no source_name given):
+        Counts how many times each sky field appears across both the east and
+        west sky telescopes, prints the top N entries sorted by count (most
+        observed first), and writes the full count table to a FITS file named
+        sky_summary_<input_stem>.fits.  This is useful for identifying which
+        sky fields have been observed enough times to build a high-quality
+        stacked sky spectrum.
+
+    Extraction mode (source_name given):
+        Collects every row in DRP_ALL where skye_name or skyw_name matches
+        the requested source, extracts the corresponding spectra from the
+        SKY_EAST and SKY_WEST extensions, and writes them to a FITS file.
+        Paired skye_*/skyw_* metadata columns (ra, dec, amass, alt, etc.)
+        are merged into single columns reflecting the correct telescope for
+        each spectrum row.  Science-pointing columns (sci_ra, sci_dec, etc.)
+        are removed as they do not pertain to the sky field.
+
+    Output FITS structure (extraction mode):
+        PRIMARY   header: SOURCE, INPUT, N_EAST, N_WEST, N_TOTAL
+        WAVE      float32 (Npix,)       wavelength array (Å)
+        FLUX      float32 (Nobs, Npix)  sky spectra; one row per observation
+        DRP_ALL   BinTable (Nobs rows)  metadata; added cols: line_no, Source_name, tel
+
+Primary routines:
+
+    summarise_sky_fields
+    get_sky_spectra
+
+Notes:
+
+    If source_name is not found in the file, the program exits with a
+    non-zero status and prints the top 10 available sky fields.
+
+History:
+
+    260628  ksl  Coding begun based on LocateSky.ipynb
+'''
 
 import argparse
+import sys
 from pathlib import Path
 
 import numpy as np
@@ -140,6 +143,72 @@ def save_summary(tab, fits_file):
 
 
 # ---------------------------------------------------------------------------
+# Sky column merging
+# ---------------------------------------------------------------------------
+
+# Paired skye_*/skyw_* columns that are collapsed into a single column in
+# the output table.  For each row, the value is taken from the skye_* column
+# when tel == 'SKY_EAST' and from the skyw_* column when tel == 'SKY_WEST'.
+_PAIRED_COLS = [
+    ("skye_ra",       "skyw_ra",       "ra"),
+    ("skye_dec",      "skyw_dec",      "dec"),
+    ("skye_pa",       "skyw_pa",       "pa"),
+    ("skye_amass",    "skyw_amass",    "amass"),
+    ("skye_astsrc",   "skyw_astsrc",   "astsrc"),
+    ("skye_kmpos",    "skyw_kmpos",    "kmpos"),
+    ("skye_focpos",   "skyw_focpos",   "focpos"),
+    ("skye_name",     "skyw_name",     "name"),
+    ("skye_alt",      "skyw_alt",      "alt"),
+    ("skye_sh_hght",  "skyw_sh_hght",  "sh_hght"),
+    ("skye_moon_sep", "skyw_moon_sep", "moon_sep"),
+]
+
+# Columns removed from the output table because they describe the science
+# pointing rather than the sky field (sci_mean_sen* are kept).
+_DROP_COLS = [
+    "sci_ra", "sci_dec", "sci_pa", "sci_amass", "sci_astsrc",
+    "sci_kmpos", "sci_focpos", "sci_alt", "sci_sh_hght", "sci_moon_sep",
+    "sci_skye_sep", "sci_skyw_sep",
+]
+
+
+def _merge_sky_columns(tab):
+    """Replace paired skye_*/skyw_* columns with a single merged column.
+
+    For each (skye_col, skyw_col, merged_name) triplet in _PAIRED_COLS, a new
+    column named merged_name is added whose value is taken from skye_col for
+    rows where tel == 'SKY_EAST' and from skyw_col for rows where tel ==
+    'SKY_WEST'.  Both original columns are then removed.
+
+    Parameters
+    ----------
+    tab : astropy Table
+        Combined table from vstack([skye_rows, skyw_rows]).  Must contain a
+        'tel' column with values 'SKY_EAST' or 'SKY_WEST'.
+
+    Returns
+    -------
+    astropy Table
+        Table with merged columns substituted for the paired originals.
+    """
+    is_east = np.array(tab["tel"]) == "SKY_EAST"
+
+    for col_e, col_w, col_out in _PAIRED_COLS:
+        if col_e not in tab.colnames or col_w not in tab.colnames:
+            continue
+        vals_e = np.array(tab[col_e])
+        vals_w = np.array(tab[col_w])
+        tab[col_out] = np.where(is_east, vals_e, vals_w)
+        tab.remove_columns([col_e, col_w])
+
+    to_drop = [c for c in _DROP_COLS if c in tab.colnames]
+    if to_drop:
+        tab.remove_columns(to_drop)
+
+    return tab
+
+
+# ---------------------------------------------------------------------------
 # Extraction mode
 # ---------------------------------------------------------------------------
 
@@ -177,18 +246,34 @@ def get_sky_spectra(fits_file, source_name, outpath=None):
     skye_mask = np.char.strip(np.array(drp["skye_name"], dtype=str)) == source_name
     skyw_mask = np.char.strip(np.array(drp["skyw_name"], dtype=str)) == source_name
 
+    n_east  = int(skye_mask.sum())
+    n_west  = int(skyw_mask.sum())
+    n_total = n_east + n_west
+
+    if n_total == 0:
+        # build the available source list so the user knows what to ask for
+        sky = np.concatenate([
+            np.array(drp["skye_name"], dtype=str),
+            np.array(drp["skyw_name"], dtype=str),
+        ])
+        sky = sky[np.char.strip(sky) != ""]
+        available, counts = np.unique(sky, return_counts=True)
+        order = np.argsort(counts)[::-1]
+
+        print(f"\nERROR: '{source_name}' not found in skye_name or skyw_name.")
+        print(f"       {len(available)} sky fields are present in {Path(fits_file).name}.")
+        print(f"       Top 10 by observation count:")
+        print(f"\n         {'Source_name':<20}  {'Count':>6}")
+        print(f"         " + "-" * 28)
+        for i in order[:10]:
+            print(f"         {available[i]:<20}  {counts[i]:>6d}")
+        print(f"\n       Run without a source name to see the full list.")
+        sys.exit(1)
+
     skye_rows = drp[skye_mask].copy()
     skyw_rows = drp[skyw_mask].copy()
     skye_rows["tel"] = "SKY_EAST"
     skyw_rows["tel"] = "SKY_WEST"
-
-    n_east = int(skye_mask.sum())
-    n_west = int(skyw_mask.sum())
-    n_total = n_east + n_west
-
-    if n_total == 0:
-        print(f"ERROR: source '{source_name}' not found in skye_name or skyw_name.")
-        return
 
     print(f"Source: {source_name}")
     print(f"  SKY_EAST observations: {n_east}")
@@ -198,7 +283,7 @@ def get_sky_spectra(fits_file, source_name, outpath=None):
     skye_spec = sky_east[skye_rows["line_no"]] if n_east > 0 else np.empty((0, wave.size))
     skyw_spec = sky_west[skyw_rows["line_no"]] if n_west > 0 else np.empty((0, wave.size))
 
-    tab  = vstack([skye_rows, skyw_rows])
+    tab  = _merge_sky_columns(vstack([skye_rows, skyw_rows]))
     spec = np.vstack([skye_spec, skyw_spec])   # shape (n_total, n_wave)
 
     hdr = fits.Header()

@@ -1,142 +1,116 @@
 #!/usr/bin/env python
-"""
-palace_clean_windows.py
-=======================
+# coding: utf-8
 
-Synopsis
---------
-Build a sky-line mask for LVM spectra using PALACE sky emission models, and
-identify the wavelength windows that are clean enough to use for continuum
-measurement.
+'''
+                    Space Telescope Science Institute
 
-Description
------------
-Night-sky emission in the LVM wavelength range (3600–9800 Å) is dominated by
-OH vibrational-rotational lines in the near-infrared (Z arm, 7400–9800 Å),
-atomic forbidden lines ([NI], OI, NaI, KI) in the blue and red, and the O2
-atmospheric band near 8650 Å.  These features contaminate any attempt to fit
-a smooth continuum through the spectrum.
+Synopsis:
 
-This program builds a model of sky line emission using the PALACE (Paranal
-Airglow Line And Continuum Emission) reference data set (Noll et al. 2024),
-renders each sky line component onto the LVM wavelength grid with the
-instrument LSF, scales the combined model to match the observed sky spectrum,
-and produces a boolean mask that is True (good) at pixels where the predicted
-sky line contamination is below a user-specified flux threshold.
+    Build a sky-line contamination mask for LVM spectra using PALACE sky
+    emission models, identifying wavelength windows clean enough for
+    continuum measurement.
 
-Sky line model
---------------
-Four PALACE components are used:
+Command line usage (if any):
 
-  OH   — hydroxyl vibrational-rotational bands from pmd_popmodel_OH.dat.
-          Line amplitudes are proportional to Einstein Aij × degeneracy gi,
-          grouped by (v_upper, N_upper, F_upper) quantum numbers.
+    usage: palace_make_mask.py [-h] [--sky-ext NAME] [--threshold T]
+                               [--factor F] [--no-lsf] [--lsf-sigma S]
+                               [--output PATH] [--min-window W] [--plot]
+                               fits_file palace_dir
 
-  OI   — oxygen recombination lines from pmd_intmodel_Orc.dat.
-          Two multiplet groups (OI 7774 Å and OI 8446 Å).
+    where
 
-  atom — atomic forbidden/permitted lines (NaI, KI, [NI], OI green/red) from
-          pmd_intdata_atom.dat.  Intensities from the PALACE climatology in
-          Rayleigh units.  Hydrogen recombination and OI recombination lines
-          are excluded (handled separately above).
+    fits_file     is an LVM XCframe FITS file providing WAVE, a sky spectrum
+                  extension (default SKY_EAST), and optionally LSF.
 
-  O2   — molecular oxygen A-band near 8650 Å from pmd_popmodel_O2.dat,
-          computed for a rotational temperature of 191.5 K.
+    palace_dir    is the path to the palace/PMD directory containing the
+                  PALACE data files (pmd_popmodel_OH.dat, etc.).
 
-Each component is normalised to its own peak before being summed into the
-combined model.  This prevents the very bright OH lines from completely
-suppressing the atomic lines in the mask.
+    --sky-ext NAME    sky spectrum extension name (default: SKY_EAST).
 
-The combined model is then scaled by a single least-squares factor so that
-it best matches the observed sky spectrum at bright OH pixels in the Z arm
-(7400–9800 Å), where the scaling is most reliable.  The resulting scaled
-model is in the same flux units as the sky spectrum (factor × flux, where
-factor = 1e14 by default so that typical sky flux values are of order unity).
+    --threshold T     contamination threshold in FACTOR*flux units; pixels
+                      where the model exceeds this are masked.  Lower values
+                      give a stricter mask with fewer clean pixels.
+                      (default: 0.01)
 
-Threshold and tradeoff
-----------------------
-A pixel is flagged as clean (mask = True) when:
+    --factor F        flux scale factor applied on read; brings raw cgs flux
+                      (~7e-15 erg/s/cm2/A) to order unity (~0.7).
+                      (default: 1e14)
 
-    palace_model_scaled[i] < threshold
+    --no-lsf          use fixed --lsf-sigma instead of reading LSF from file.
 
-The threshold is expressed in the same scaled flux units as the sky spectrum.
-A lower threshold means stricter masking (fewer clean pixels but lower
-contamination), while a higher threshold is more permissive (more clean pixels
-but more residual sky line flux).  The default of 0.01 in FACTOR=1e14 units
-corresponds to a sky line contamination level of 1e-16 erg s⁻¹ cm⁻² Å⁻¹,
-which is well below the typical Z-arm continuum (~7e-15 erg s⁻¹ cm⁻² Å⁻¹).
+    --lsf-sigma S     fixed Gaussian LSF sigma in Å (default: 0.65).
 
-Output FITS file
-----------------
-The output FITS file (written by default to palace_mask_<input_stem>.fits)
-contains four extensions:
+    --output PATH     output FITS path (default: palace_mask_<stem>.fits).
 
-  WAVE       float32  (Npix,)   Wavelength array in Å (air wavelengths)
-  SKY        float32  (Npix,)   Input sky spectrum (median over all fibers,
-                                scaled by FACTOR)
-  CONTINUUM  float32  (Npix,)   Sky spectrum with sky-line-contaminated pixels
-                                set to NaN; these are the pixels that can be
-                                used for continuum fitting
-  MASK       uint8    (Npix,)   Boolean mask: 1 = clean, 0 = contaminated
+    --min-window W    minimum clean window width in Å for the printed table
+                      (default: 5).
 
-The primary HDU header records THRESH (threshold), SCALE (model scale factor),
-FACTOR (flux scale factor), and SKYEXT (source sky extension name).
+    --plot            display the diagnostic plot interactively (it is always
+                      saved as a PNG alongside the output FITS).
 
-Usage
------
-    python palace_clean_windows.py <fits_file> <palace_dir> [options]
+Description:
 
-    # Basic run with default threshold and output file
-    python palace_clean_windows.py XCframe_1.2.1_7325_48860_1_50.fits palace/PMD
+    Night-sky emission across the LVM wavelength range (3600-9800 A) is
+    dominated by OH vibrational-rotational lines in the Z arm (7400-9800 A),
+    atomic forbidden lines ([NI], OI, NaI, KI) in the B and R arms, and the
+    O2 A-band near 8650 A.  These features contaminate attempts to fit a
+    smooth stellar or nebular continuum through the spectrum.
 
-    # Adjust threshold and show diagnostic plot
-    python palace_clean_windows.py XCframe_1.2.1_7325_48860_1_50.fits palace/PMD \\
-        --threshold 0.05 --plot
+    This program constructs a model of the sky line emission from the PALACE
+    (Paranal Airglow Line And Continuum Emission, Noll et al. 2024) reference
+    data set, renders each component onto the LVM wavelength grid convolved
+    with the instrument LSF, scales the result to match an observed sky
+    spectrum, and produces a boolean mask that is True at pixels where the
+    predicted contamination is below the threshold.
 
-    # Save to a specific output file
-    python palace_clean_windows.py XCframe_1.2.1_7325_48860_1_50.fits palace/PMD \\
-        --threshold 0.01 --output my_mask.fits --plot
+    Four PALACE components are used:
+      OH    hydroxyl vibrational-rotational bands (pmd_popmodel_OH.dat);
+            amplitudes proportional to Einstein Aij x degeneracy gi, grouped
+            by (v_upper, N_upper, F_upper) quantum numbers.
+      OI    oxygen recombination multiplets at 7774 and 8446 A
+            (pmd_intmodel_Orc.dat).
+      atom  atomic lines NaI, KI, [NI], OI green/red from the PALACE
+            climatology in Rayleigh units (pmd_intdata_atom.dat).
+      O2    molecular oxygen A-band near 8650 A at T_rot = 191.5 K
+            (pmd_popmodel_O2.dat).
 
-Arguments
----------
-    fits_file    LVM XCframe FITS file.  Must contain WAVE, a sky spectrum
-                 extension (default SKY_EAST), and optionally LSF.
-    palace_dir   Path to the palace/PMD directory containing the PALACE data
-                 files (pmd_popmodel_OH.dat, pmd_intdata_atom.dat, etc.).
+    Each component is normalised to its own peak before summing so that no
+    single family dominates the mask.  The combined model is then scaled to
+    the observed sky spectrum via a least-squares fit to the bright OH pixels
+    in the Z arm.
 
-Options
--------
-    --sky-ext NAME     FITS extension name for the sky spectrum.
-                       (default: SKY_EAST)
-    --threshold T      Sky line contamination threshold in FACTOR*flux units.
-                       Pixels where the scaled PALACE model exceeds this value
-                       are masked.  Lower = stricter mask, fewer clean pixels.
-                       (default: 0.01)
-    --factor F         Multiplicative factor applied to the raw flux values
-                       when reading from the FITS file.  Brings raw cgs flux
-                       (~7e-15 erg s⁻¹ cm⁻² Å⁻¹) into convenient numeric
-                       range (~0.7 in FACTOR units).
-                       (default: 1e14)
-    --no-lsf           If set, use a fixed Gaussian LSF sigma (--lsf-sigma)
-                       instead of reading the per-pixel LSF from the FITS file.
-    --lsf-sigma S      Fixed Gaussian LSF sigma in Å.  Only used when
-                       --no-lsf is specified.
-                       (default: 0.65 Å ≈ FWHM 1.5 Å)
-    --output PATH      Write output FITS to PATH.  If not given, defaults to
-                       palace_mask_<stem>.fits in the current directory, where
-                       <stem> is the input filename without extension.
-    --min-window W     Minimum clean window width in Å to include in the
-                       printed window table.
-                       (default: 5 Å)
-    --plot             Display a three-panel diagnostic plot (one per arm)
-                       showing the sky spectrum, PALACE model, threshold, and
-                       the clean continuum.
+    The threshold controls the tradeoff between mask strictness and the
+    fraction of pixels available for continuum fitting.  The default of 0.01
+    (FACTOR=1e14 units) corresponds to 1e-16 erg/s/cm2/A, well below the
+    typical Z-arm continuum (~7e-15 erg/s/cm2/A).
 
-Notes
------
-History
-    260627  Written (Knox Long / Claude)
-"""
+    Output FITS extensions:
+      WAVE       float32 (Npix,)   wavelength array (A, air)
+      SKY        float32 (Npix,)   median sky spectrum (FACTOR-scaled)
+      CONTINUUM  float32 (Npix,)   sky with masked pixels set to NaN
+      MASK       uint8   (Npix,)   1 = clean, 0 = contaminated
+
+    A three-panel diagnostic PNG is always written alongside the FITS output.
+
+Primary routines:
+
+    build_palace_line_model
+    scale_model_to_sky
+    make_sky_mask
+    find_clean_windows
+
+Notes:
+
+    The model scale factor is derived from the Z arm only (OH-dominated),
+    so the absolute threshold values are most meaningful in the Z arm.  The
+    mask is still useful in the B and R arms but atomic line heights may be
+    approximate relative to OH.
+
+History:
+
+    260627  ksl  Coding begun
+    260628  ksl  Renamed to palace_make_mask.py; added PNG output; threshold default 0.01
+'''
 
 import argparse
 from pathlib import Path
@@ -570,18 +544,9 @@ def save_output(outpath, wave, sky_flux, mask, palace_model_scaled,
                 threshold, scale, factor, sky_ext):
     """Write the mask and associated spectra to a FITS file.
 
-    Extensions
-    ----------
-    PRIMARY    No data.  Header records the run parameters.
-    WAVE       float32  Wavelength array (Å, air).
-    SKY        float32  Input sky spectrum (FACTOR-scaled flux), the median
-                        over all fibers from the sky extension of the input
-                        FITS file.
-    CONTINUUM  float32  SKY spectrum with sky-line-contaminated pixels set
-                        to NaN.  These are the pixels available for continuum
-                        measurement.
-    MASK       uint8    Clean-pixel mask: 1 = clean (usable), 0 = masked
-                        (sky line contaminated).
+    Extensions: PRIMARY (no data, header only), WAVE (float32 wavelengths),
+    SKY (float32 median sky spectrum, FACTOR-scaled), CONTINUUM (float32 sky
+    with contaminated pixels set to NaN), MASK (uint8 clean-pixel mask).
 
     Parameters
     ----------

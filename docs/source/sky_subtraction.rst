@@ -217,6 +217,110 @@ stacked sky spectra from the LVM sky telescopes.  Together they are intended
 to characterise the sky background well enough to constrain physical models
 of the airglow emission.
 
+XSkySepIvan.py
+^^^^^^^^^^^^^^
+
+Decomposes LVM sky spectra into physical emission components using the
+PALACE (Paranal Airglow Line And Continuum Emission, Noll et al. 2024) line
+model combined with a B-spline Moon/zodiacal continuum.  This script is a
+wrapper for the ``SkyDecomp`` class written by Ivan Katkov (lvmsky repository,
+``skysub/sky_decomp/fit.py``).
+
+The decomposition solves a non-negative quadratic programme (Clarabel solver)
+for the amplitudes of six component families:
+
+- **OH** — 402 groups of hydroxyl vibrational-rotational lines (HITRAN data)
+- **Moon** — B-spline envelope multiplied by a rebinned solar spectrum (captures Moon reflected light and zodiacal continuum)
+- **Diffuse** — PALACE diffuse continuum: HO\ :sub:`2`, FeO, O\ :sub:`2`\Ac
+- **Atom** — atomic airglow: NaI, KI, [NI], OI (green and red)
+- **ORC** — OI recombination multiplets at 7774 and 8446 Å
+- **O2** — molecular oxygen A-band (~8650 Å); rotational temperature fitted
+
+The script supports two input modes:
+
+*Sky-file mode* (files produced by ``GetSky_from_CFrame_sum.py``): each row
+of the FLUX array is a sky-telescope spectrum of the same field from a
+different exposure.  Noise is estimated from pixel-to-pixel differences since
+no IVAR extension is present.
+
+*XCframe mode*: standard LVM summary file with FLUX/SKY_EAST/SKY_WEST
+extensions.  IVAR is read from the file if present, otherwise estimated.
+
+**Usage**::
+
+    # Process all spectra in a Sky file
+    XSkySepIvan.py Sky_WHAM_south_08.fits
+
+    # Process specific rows of a Sky file
+    XSkySepIvan.py Sky_WHAM_south_08.fits 0 5 10
+
+    # Process all rows of an XCframe extension
+    XSkySepIvan.py XCframe_file.fits SKY_EAST
+
+    # Process specific rows of an XCframe extension
+    XSkySepIvan.py XCframe_file.fits SKY_EAST 0 300 600
+
+    # Process every 1000th row of an XCframe extension
+    XSkySepIvan.py XCframe_file.fits SKY_EAST -delta 1000
+
+**Key options:**
+
+-delta N
+    Process every N-th row (0, N, 2N, ...) instead of all rows.
+    Ignored if explicit row numbers are given.
+
+-lsf FWHM
+    Fixed LSF FWHM in Angstroms (default 1.3 Å).
+
+-refits N
+    Number of iterative per-channel LSF kernel refits (default 0).
+
+-out outroot
+    Set output filename root.
+
+**Output:**
+
+A FITS file with extensions WAVE, FLUX, LINES, CONT, OH, ATOM, ORC, O2,
+MOON, DIFFUSE, RESID (all float32, shape N_obs × N_pix), plus a DRP_ALL
+table carrying the input metadata and, in sky-file mode, fitted quality
+metrics (chi2_red, r2, t_o2, rms_resid).
+
+XSkySepIvan_eval.py
+^^^^^^^^^^^^^^^^^^^
+
+Evaluates the quality of a PALACE sky decomposition produced by
+``XSkySepIvan.py`` by creating an interactive three-panel HTML plot over a
+chosen wavelength window.
+
+Each panel shows the median spectrum (coloured line) surrounded by a shaded
+10th/90th percentile band, with a random sample of individual spectra overlaid
+in grey so outliers and systematic trends are immediately visible:
+
+- **Panel 1 (Flux)** — input sky spectra
+- **Panel 2 (Residual)** — fit residuals (FLUX − model)
+- **Panel 3 (Continuum)** — smooth Moon/zodiacal + diffuse continuum, log scale
+
+Each panel carries its own legend.  The individual-spectrum alpha is set
+automatically as ``min(0.7, 3/√N)`` so traces remain legible regardless of
+how many spectra are in the file.
+
+**Usage**::
+
+    # Full wavelength range
+    XSkySepIvan_eval.py palace_file.fits
+
+    # Specific window
+    XSkySepIvan_eval.py palace_file.fits 9300 9600
+
+    # Limit random sample overlay
+    XSkySepIvan_eval.py palace_file.fits 6000 7000 -num 10
+
+**Output:**
+
+An HTML file named ``<stem>_<wmin>_<wmax>.html`` (e.g.
+``palace_Sky_WHAM_south_08_9300_9600.html``) that can be opened in any
+browser for interactive zoom, pan, and hover inspection.
+
 palace_make_mask.py
 ^^^^^^^^^^^^^^^^^^^
 
@@ -371,3 +475,5 @@ See Also
 - :doc:`api/SkyModelObs/index` - API documentation
 - :doc:`api/palace_make_mask/index` - API documentation
 - :doc:`api/GetSky_from_CFrame_sum/index` - API documentation
+- :doc:`api/XSkySepIvan/index` - API documentation
+- :doc:`api/XSkySepIvan_eval/index` - API documentation

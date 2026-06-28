@@ -74,6 +74,8 @@ This page contains auto-generated API reference documentation [#f1]_.
    /api/unicode2ascii/index
    /api/w28_gaussfit/index
    /api/xhtml/index
+   /api/XSkySepIvan/index
+   /api/XSkySepIvan_eval/index
    /api/xSummarizeData/index
    /api/zSummarizeData/index
 

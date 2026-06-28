@@ -16,7 +16,8 @@ release = '1.0'
 
 extensions = [
         'autoapi.extension',
-         'sphinx.ext.viewcode',  # Add [source] links
+        'sphinx.ext.viewcode',
+        'sphinx.ext.napoleon',   # NumPy-style docstring support
         ]
 
 templates_path = ['_templates']

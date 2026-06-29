@@ -480,10 +480,12 @@ A FITS file (``skycont_<stem>.fits``) containing:
 GetSkyCont_eval.py
 ^^^^^^^^^^^^^^^^^^
 
-Evaluates the continuum fit produced by ``GetSkyCont.py`` by creating an
-interactive four-panel Plotly HTML plot over a chosen wavelength window.
-Axis limits are derived from data percentiles rather than extremes so that
-a handful of outlier pixels do not compress the scale.
+Evaluates the continuum fit produced by ``GetSkyCont.py`` by writing a single
+HTML file containing two interactive Plotly figures.  Axis limits are derived
+from data percentiles rather than extremes so that a handful of outlier pixels
+do not compress the scale.
+
+**Figure 1 — four-panel spectral overview:**
 
 - **Panel 1 (Flux + Continuum, log)** — observed sky spectra with the fitted
   total continuum median overlaid in red.  A green line near the bottom of
@@ -498,6 +500,16 @@ a handful of outlier pixels do not compress the scale.
 - **Panel 4 (Residual, linear)** — FLUX − CONT; should be near zero in clean
   regions and show sky-line emission in the masked regions.
 
+**Figure 2 — per-arm residual histograms:**
+
+Three panels (Blue 3600–5900 Å, Red 5900–7600 Å, NIR 7600–9800 Å) each show
+the distribution of all residual flux values — across every spectrum and every
+clean (unmasked) pixel in that arm.  The x-axis is residual flux; the y-axis
+is count N.  A Gaussian with center = median and σ = NMAD is overlaid in
+black.  An annotation box reports N, the median, NMAD, skewness, and the
+10th/90th percentiles.  The histogram range is clipped to median ± 5·NMAD to
+suppress extreme outliers.
+
 **Usage**::
 
     # Full wavelength range
@@ -511,8 +523,8 @@ a handful of outlier pixels do not compress the scale.
 
 **Output:**
 
-An HTML file named ``<stem>_<wmin>_<wmax>.html`` that can be opened in any
-browser for interactive zoom, pan, and hover inspection.
+An HTML file named ``<stem>_<wmin>_<wmax>.html`` containing both figures,
+viewable in any browser with interactive zoom, pan, and hover inspection.
 
 
 Typical Workflows

@@ -412,6 +412,108 @@ A FITS file containing:
 - ``DRP_ALL`` — metadata table with merged sky columns and a ``tel`` column
   indicating which sky telescope (SKY_EAST or SKY_WEST) each row came from
 
+GetSkyCont.py
+^^^^^^^^^^^^^
+
+Fits a smooth two-component B-spline continuum to LVM sky spectra, separating
+the continuum into a MOON/zodiacal component (B-splines modulated by a solar
+spectrum) and a DIFFUSE component (plain B-splines for airglow continuum).
+The fit is performed only on pixels flagged as line-free by a
+``palace_make_mask.py`` mask; the result is evaluated at all wavelengths so
+the continuum interpolates smoothly across emission-line regions.
+
+The solar spectrum is read from a high-resolution reference file
+(Meftah et al., LATMOS); its Fraunhofer absorption structure is kept fixed
+while the B-spline envelope adjusts the colour and amplitude of the
+Moon-reflected and zodiacal-light contribution.
+
+**Usage**::
+
+    # Sky-file mode (output of GetSky_from_CFrame_sum.py):
+    GetSkyCont.py sky_file.fits -mask mask.fits [row_no ...] [-delta N]
+
+    # XCframe / XSFrame summary file mode:
+    GetSkyCont.py xframe.fits ext -mask mask.fits [row_no ...] [-delta N]
+
+**Arguments:**
+
+sky_file.fits
+    Sky_<name>.fits produced by ``GetSky_from_CFrame_sum.py``.
+
+xframe.fits, ext
+    XCframe or XSFrame summary FITS file and the extension to read
+    (e.g. ``SKY_EAST``, ``SKY_WEST``, ``FLUX``).
+
+row_no
+    Zero or more 0-based row indices.  If omitted all rows are processed
+    (subject to ``-delta``).
+
+**Key options:**
+
+-mask file
+    (required) palace_mask FITS file from ``palace_make_mask.py``
+    (MASK extension: 1 = clean, 0 = line-affected).
+
+-delta N
+    Process every N-th row (0, N, 2N, ...) instead of all rows.
+
+-kstep N
+    B-spline knot spacing in Angstroms (default 100 Å, giving ~66 basis
+    functions per component).
+
+-out outroot
+    Set output filename root.
+
+**Output:**
+
+A FITS file (``skycont_<stem>.fits``) containing:
+
+- ``WAVE`` — wavelength array (Å)
+- ``FLUX`` — input sky spectra (N_obs × N_pix)
+- ``CONT`` — total continuum = MOON + DIFFUSE
+- ``MOON`` — B-spline × solar component (Moon/zodiacal light)
+- ``DIFFUSE`` — plain B-spline component (diffuse airglow continuum)
+- ``RESID`` — residual FLUX − CONT (line emission isolated from continuum)
+- ``MASK`` — boolean clean-pixel mask from the input palace_mask file
+- ``DRP_ALL`` — observation metadata table
+
+GetSkyCont_eval.py
+^^^^^^^^^^^^^^^^^^
+
+Evaluates the continuum fit produced by ``GetSkyCont.py`` by creating an
+interactive four-panel Plotly HTML plot over a chosen wavelength window.
+Axis limits are derived from data percentiles rather than extremes so that
+a handful of outlier pixels do not compress the scale.
+
+- **Panel 1 (Flux + Continuum, log)** — observed sky spectra with the fitted
+  total continuum median overlaid in red.  A green line near the bottom of
+  the panel marks the wavelengths included in the fit (gaps where sky lines
+  were masked); grey vertical bands shade the excluded regions.
+- **Panel 2 (Total Continuum, log)** — the CONT band (10th–90th percentile
+  and median) showing the overall level and smoothness of the B-spline model.
+- **Panel 3 (Components, log)** — MOON (red) and DIFFUSE (orange) components
+  on the same y-axis as Panel 2, with the total CONT median in purple.  The
+  relative amplitude of the components shows how much of the continuum is
+  Moon/zodiacal versus diffuse airglow.
+- **Panel 4 (Residual, linear)** — FLUX − CONT; should be near zero in clean
+  regions and show sky-line emission in the masked regions.
+
+**Usage**::
+
+    # Full wavelength range
+    GetSkyCont_eval.py skycont_file.fits
+
+    # Specific window
+    GetSkyCont_eval.py skycont_file.fits 6000 7000
+
+    # Limit the random sample overlay
+    GetSkyCont_eval.py skycont_file.fits 6000 7000 -num 10
+
+**Output:**
+
+An HTML file named ``<stem>_<wmin>_<wmax>.html`` that can be opened in any
+browser for interactive zoom, pan, and hover inspection.
+
 
 Typical Workflows
 -----------------
@@ -450,6 +552,25 @@ Comparing with Sky Models
 2. Compare with observed sky from SKY_EAST or SKY_WEST telescopes
 3. Identify discrepancies that may indicate calibration issues
 
+Fitting and Evaluating the Sky Continuum
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+1. Build a palace line mask for the field::
+
+       palace_make_mask.py XCframe_file.fits /path/to/palace/PMD
+
+2. Collect sky spectra from repeated observations of the field::
+
+       GetSky_from_CFrame_sum.py XCframe_file.fits Sky_WHAM_south_08
+
+3. Fit the two-component B-spline continuum::
+
+       GetSkyCont.py Sky_WHAM_south_08.fits -mask palace_mask_XCframe.fits
+
+4. Evaluate the fit interactively::
+
+       GetSkyCont_eval.py skycont_Sky_WHAM_south_08.fits
+
 
 Notes
 -----
@@ -477,3 +598,5 @@ See Also
 - :doc:`api/GetSky_from_CFrame_sum/index` - API documentation
 - :doc:`api/XSkySepIvan/index` - API documentation
 - :doc:`api/XSkySepIvan_eval/index` - API documentation
+- :doc:`api/GetSkyCont/index` - API documentation
+- :doc:`api/GetSkyCont_eval/index` - API documentation

@@ -38,10 +38,10 @@ fourier_offset_check
 
        do_one
 
-   Notes:
+   .. rubric:: Notes
 
-       The LSF extension is assumed to contain FWHM values in Angstroms on
-       the same wavelength grid as the WAVE extension.
+   The LSF extension is assumed to contain FWHM values in Angstroms on
+   the same wavelength grid as the WAVE extension.
 
    History:
 
@@ -66,17 +66,21 @@ Module Contents
    Add a synthetic Gaussian emission line to the FLUX extension of a
    CFrame file and write the result to test_<basename>.fits.
 
-   Parameters
-   ----------
-   filename : str
-       Path to the input lvmCFrame FITS file.
-   wave : float
-       Central wavelength of the line in Angstroms.
-   flux : float
-       Integrated line flux in erg/s/cm^2.
-   off1, off2, off3 : float
-       Wavelength offset in Angstroms applied to all fibers in
-       spectrographs 1, 2, and 3 respectively.
+   :param filename: Path to the input lvmCFrame FITS file.
+   :type filename: str
+   :param wave: Central wavelength of the line in Angstroms.
+   :type wave: float
+   :param flux: Integrated line flux in erg/s/cm^2.
+   :type flux: float
+   :param off1: Wavelength offset in Angstroms applied to all fibers in
+                spectrographs 1, 2, and 3 respectively.
+   :type off1: float
+   :param off2: Wavelength offset in Angstroms applied to all fibers in
+                spectrographs 1, 2, and 3 respectively.
+   :type off2: float
+   :param off3: Wavelength offset in Angstroms applied to all fibers in
+                spectrographs 1, 2, and 3 respectively.
+   :type off3: float
 
 
 .. py:function:: steer(argv)

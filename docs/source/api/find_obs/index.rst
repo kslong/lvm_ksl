@@ -117,19 +117,22 @@ Module Contents
    column names, the observation copy is suffixed with ``_obs`` to
    avoid clashes before the two tables are horizontally stacked.
 
-   Parameters:
-       source_file (str): Path to the ASCII source catalog.  Must
-       contain columns ``RA`` (degrees), ``Dec`` (degrees), and
-       ``Source_name``.
-       obs (astropy.table.Table): Observation table from
-       ``load_observations``.
-       max_sep_arcsec (float): Cross-match radius in arcseconds.
+   :param source_file: Path to the ASCII source catalog.  Must
+   :type source_file: str
+   :param contain columns ``RA``:
+   :type contain columns ``RA``: degrees), ``Dec`` (degrees
+   :param ``Source_name``.:
+   :param obs: Observation table from
+   :type obs: astropy.table.Table
+   :param ``load_observations``.:
+   :param max_sep_arcsec: Cross-match radius in arcseconds.
+   :type max_sep_arcsec: float
 
-   Returns:
-       astropy.table.Table: Matched table with one row per observation-source
-       pair.  Includes all columns from both the source catalog and the
-       observation table, plus a ``separation`` column in arcseconds.
-       Returns an empty Table if no matches are found.
+   :returns: Matched table with one row per observation-source
+             pair.  Includes all columns from both the source catalog and the
+             observation table, plus a ``separation`` column in arcseconds.
+             Returns an empty Table if no matches are found.
+   :rtype: astropy.table.Table
 
 
 .. py:function:: load_observations(drpall_file)
@@ -143,12 +146,12 @@ Module Contents
    A ``Source_name`` column is added containing the zero-padded
    exposure number, which is used later to group matched rows.
 
-   Parameters:
-       drpall_file (str): Path to the LVM drpall FITS file.
+   :param drpall_file: Path to the LVM drpall FITS file.
+   :type drpall_file: str
 
-   Returns:
-       astropy.table.Table: Table with columns expnum, mjd, exptime,
-       RA, Dec, tileid, location, and Source_name.
+   :returns: Table with columns expnum, mjd, exptime,
+             RA, Dec, tileid, location, and Source_name.
+   :rtype: astropy.table.Table
 
 
 .. py:function:: steer(argv)
@@ -161,11 +164,10 @@ Module Contents
    ``find_matches``, and ``summarize`` in sequence and writes the
    results to two fixed-width ASCII files.
 
-   Parameters:
-       argv (list): Command line argument list (typically ``sys.argv``).
+   :param argv: Command line argument list (typically ``sys.argv``).
+   :type argv: list
 
-   Returns:
-       None
+   :returns: None
 
 
 .. py:function:: summarize(matches)
@@ -177,14 +179,14 @@ Module Contents
    accumulated exposure time, and the median angular separation between
    the source and the matched pointing centres.
 
-   Parameters:
-       matches (astropy.table.Table): Matched pair table returned by
-           ``find_matches``.  Must contain columns ``Source_name``,
-           ``exptime``, and ``separation``.
+   :param matches: Matched pair table returned by
+                   ``find_matches``.  Must contain columns ``Source_name``,
+                   ``exptime``, and ``separation``.
+   :type matches: astropy.table.Table
 
-   Returns:
-       astropy.table.Table: Summary table with columns ``Source_name``,
-       ``Nobs`` (int), ``TotExp`` (float, seconds), and
-       ``MedSep`` (float, arcseconds), one row per unique source.
+   :returns: Summary table with columns ``Source_name``,
+             ``Nobs`` (int), ``TotExp`` (float, seconds), and
+             ``MedSep`` (float, arcseconds), one row per unique source.
+   :rtype: astropy.table.Table
 
 

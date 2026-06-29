@@ -115,40 +115,46 @@ Module Contents
    Add survey classification, near/far sky telescope, and redshift columns
    to a drpall table.
 
-   Parameters:
-       xtab (astropy.table.Table): drpall table with sci_ra, sci_dec,
-           skye_ra, skye_dec, skyw_ra, skyw_dec columns.
+   :param xtab: drpall table with sci_ra, sci_dec,
+                skye_ra, skye_dec, skyw_ra, skyw_dec columns.
+   :type xtab: astropy.table.Table
 
-   Returns:
-       astropy.table.Table: Input table with Survey, Near, Far, and
-       Redshift columns added.
+   :returns: Input table with Survey, Near, Far, and
+             Redshift columns added.
+   :rtype: astropy.table.Table
 
 
 .. py:function:: doit(exp_start=4000, exp_stop=8000, delta=5, exp_min=900.0, out_name='', drp_ver='1.2.0', percentile=50, file_type='CFrame')
 
    Top-level driver: read drpall, select exposures, compute spectrograph spectra.
 
-   Parameters:
-       exp_start (int): First exposure number to process.
-       exp_stop (int): Last exposure number to process.
-       delta (int): Process every Nth exposure.
-       exp_min (float): Minimum exposure time in seconds.
-       out_name (str): Output file root name.
-       drp_ver (str): DRP version string.
-       percentile (int): Percentile to compute across fibers.
-       file_type (str): 'CFrame' (default) or 'SFrame'.
+   :param exp_start: First exposure number to process.
+   :type exp_start: int
+   :param exp_stop: Last exposure number to process.
+   :type exp_stop: int
+   :param delta: Process every Nth exposure.
+   :type delta: int
+   :param exp_min: Minimum exposure time in seconds.
+   :type exp_min: float
+   :param out_name: Output file root name.
+   :type out_name: str
+   :param drp_ver: DRP version string.
+   :type drp_ver: str
+   :param percentile: Percentile to compute across fibers.
+   :type percentile: int
+   :param file_type: 'CFrame' (default) or 'SFrame'.
+   :type file_type: str
 
-   Returns:
-       None
+   :returns: None
 
 
 .. py:function:: find_top()
 
    Determine the top-level data directory for the current machine.
 
-   Returns:
-       str: Path to the top-level data directory, or an empty string
-       if the location cannot be determined.
+   :returns: Path to the top-level data directory, or an empty string
+             if the location cannot be determined.
+   :rtype: str
 
 
 .. py:function:: get_all_spec_specs(filename, percentile=50)
@@ -161,17 +167,18 @@ Module Contents
    None for all arrays together with a status dictionary that records
    which spectrographs were found.
 
-   Parameters:
-       filename (str): Path to the SFrame FITS file.
-       percentile (int): Percentile to compute across fibers (default 50).
+   :param filename: Path to the SFrame FITS file.
+   :type filename: str
+   :param percentile: Percentile to compute across fibers (default 50).
+   :type percentile: int
 
-   Returns:
-       tuple: (wav, flux1, flux2, flux3, status) where wav is the
-       wavelength array, flux1/flux2/flux3 are 1-D percentile spectra
-       for spectrographs 1/2/3, and status is a dict with keys 'SP1',
-       'SP2', 'SP3' set to True if fibers were found and False otherwise.
-       If the file cannot be opened, returns (None, None, None, None, None).
-       If any spectrograph is missing, returns (None, None, None, None, status).
+   :returns: (wav, flux1, flux2, flux3, status) where wav is the
+             wavelength array, flux1/flux2/flux3 are 1-D percentile spectra
+             for spectrographs 1/2/3, and status is a dict with keys 'SP1',
+             'SP2', 'SP3' set to True if fibers were found and False otherwise.
+             If the file cannot be opened, returns (None, None, None, None, None).
+             If any spectrograph is missing, returns (None, None, None, None, status).
+   :rtype: tuple
 
 
 .. py:function:: get_spec(xtab, spectrograph_id)
@@ -181,12 +188,13 @@ Module Contents
    Filters to rows where telescope == 'Sci', fibstatus == 0, and
    spectrographid == spectrograph_id.
 
-   Parameters:
-       xtab (astropy.table.Table): SLITMAP table from an SFrame file.
-       spectrograph_id (int): Spectrograph identifier (1, 2, or 3).
+   :param xtab: SLITMAP table from an SFrame file.
+   :type xtab: astropy.table.Table
+   :param spectrograph_id: Spectrograph identifier (1, 2, or 3).
+   :type spectrograph_id: int
 
-   Returns:
-       astropy.table.Table: Filtered table of matching fibers.
+   :returns: Filtered table of matching fibers.
+   :rtype: astropy.table.Table
 
 
 .. py:function:: make_spec_specs(xtab, data_dir, outfile='', percentile=50, file_type='CFrame')
@@ -210,16 +218,19 @@ Module Contents
    rejected exposure with columns expnum, mjd, tileid, SP1, SP2, SP3
    showing which spectrographs were present (True) or absent (False).
 
-   Parameters:
-       xtab (astropy.table.Table): drpall table of selected exposures.
-       data_dir (str): Top-level data directory prepended to the location
-       column of xtab to form full file paths.
-       outfile (str): Output filename root (default 'test_spec.fits').
-       percentile (int): Percentile to compute across fibers (default 50).
-       file_type (str): 'CFrame' (default) or 'SFrame'.
+   :param xtab: drpall table of selected exposures.
+   :type xtab: astropy.table.Table
+   :param data_dir: Top-level data directory prepended to the location
+   :type data_dir: str
+   :param column of xtab to form full file paths.:
+   :param outfile: Output filename root (default 'test_spec.fits').
+   :type outfile: str
+   :param percentile: Percentile to compute across fibers (default 50).
+   :type percentile: int
+   :param file_type: 'CFrame' (default) or 'SFrame'.
+   :type file_type: str
 
-   Returns:
-       None
+   :returns: None
 
 
 .. py:function:: read_drpall(drp_ver='1.2.0')
@@ -228,38 +239,41 @@ Module Contents
 
    Looks for the file locally first, then falls back to the Utah path.
 
-   Parameters:
-       drp_ver (str): DRP version string (default '1.2.0').
+   :param drp_ver: DRP version string (default '1.2.0').
+   :type drp_ver: str
 
-   Returns:
-       astropy.table.Table: drpall table with survey classification
-       columns added, or an empty list if the file cannot be found
-       or read.
+   :returns: drpall table with survey classification
+             columns added, or an empty list if the file cannot be found
+             or read.
+   :rtype: astropy.table.Table
 
 
 .. py:function:: select(ztab, exp_start=4000, exp_stop=8000, delta=5, exp_min=900.0)
 
    Select every Nth exposure between exp_start and exp_stop.
 
-   Parameters:
-       ztab (astropy.table.Table): drpall table.
-       exp_start (int): First exposure number to include.
-       exp_stop (int): Last exposure number to include.
-       delta (int): Step size; selects every Nth row.
-       exp_min (float): Minimum exposure time in seconds.
+   :param ztab: drpall table.
+   :type ztab: astropy.table.Table
+   :param exp_start: First exposure number to include.
+   :type exp_start: int
+   :param exp_stop: Last exposure number to include.
+   :type exp_stop: int
+   :param delta: Step size; selects every Nth row.
+   :type delta: int
+   :param exp_min: Minimum exposure time in seconds.
+   :type exp_min: float
 
-   Returns:
-       astropy.table.Table: Filtered table.
+   :returns: Filtered table.
+   :rtype: astropy.table.Table
 
 
 .. py:function:: steer(argv)
 
    Parse command line arguments and run the spectrograph summary.
 
-   Parameters:
-       argv (list): Command line argument list (typically sys.argv).
+   :param argv: Command line argument list (typically sys.argv).
+   :type argv: list
 
-   Returns:
-       None
+   :returns: None
 
 

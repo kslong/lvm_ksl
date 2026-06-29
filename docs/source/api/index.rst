@@ -28,6 +28,8 @@ This page contains auto-generated API reference documentation [#f1]_.
    /api/GetRegSpec/index
    /api/GetSimple/index
    /api/GetSky_from_CFrame_sum/index
+   /api/GetSkyCont/index
+   /api/GetSkyCont_eval/index
    /api/GetSolar/index
    /api/GetSpec/index
    /api/kslmap/index

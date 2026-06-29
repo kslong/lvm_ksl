@@ -481,9 +481,8 @@ GetSkyCont_eval.py
 ^^^^^^^^^^^^^^^^^^
 
 Evaluates the continuum fit produced by ``GetSkyCont.py`` by writing a single
-HTML file containing two interactive Plotly figures.  Axis limits are derived
-from data percentiles rather than extremes so that a handful of outlier pixels
-do not compress the scale.
+HTML file containing three interactive Plotly figures.  Also updates the
+DRP_ALL table in the input FITS file with per-spectrum fit-quality statistics.
 
 **Figure 1 — four-panel spectral overview:**
 
@@ -510,6 +509,36 @@ black.  An annotation box reports N, the median, NMAD, skewness, and the
 10th/90th percentiles.  The histogram range is clipped to median ± 5·NMAD to
 suppress extreme outliers.
 
+**Figure 3 — per-spectrum fit quality:**
+
+- **Row 1** — three scatter plots (Blue, Red, NIR) of per-spectrum median
+  residual (x-axis) vs NMAD (y-axis).  Each point is one spectrum; hovering
+  shows the spectrum row index and its median and NMAD values.  Axis limits
+  are clipped to the 2nd–98th percentile range so extreme outliers do not
+  compress the scale for the bulk of the spectra; any off-scale spectra are
+  noted in an annotation box.  A dashed vertical line marks x = 0 (ideal
+  median); a dotted horizontal line marks the ensemble NMAD for reference.
+- **Row 2** — NMAD vs original spectrum number (log y-scale) for all three
+  arms on one panel, so that clusters of temporally adjacent poor fits are
+  immediately visible.  Dotted horizontal lines mark the ensemble NMAD per arm.
+
+**Per-spectrum statistics written to DRP_ALL:**
+
+For each arm (``blue``, ``red``, ``nir``) and for all arms combined
+(``all``), four float32 columns are added or updated in the DRP_ALL table:
+
++---------------------+---------------------------------------------+
+| Column              | Description                                 |
++=====================+=============================================+
+| ``resid_med_<arm>`` | median residual in clean pixels             |
++---------------------+---------------------------------------------+
+| ``resid_nmad_<arm>``| NMAD of residuals in clean pixels           |
++---------------------+---------------------------------------------+
+| ``resid_rms_<arm>`` | RMS of residuals in clean pixels            |
++---------------------+---------------------------------------------+
+| ``resid_skew_<arm>``| skewness of residuals in clean pixels       |
++---------------------+---------------------------------------------+
+
 **Usage**::
 
     # Full wavelength range
@@ -523,8 +552,10 @@ suppress extreme outliers.
 
 **Output:**
 
-An HTML file named ``<stem>_<wmin>_<wmax>.html`` containing both figures,
-viewable in any browser with interactive zoom, pan, and hover inspection.
+An HTML file named ``<stem>_<wmin>_<wmax>.html`` containing all three
+figures, viewable in any browser with interactive zoom, pan, and hover
+inspection.  The input FITS file is updated in place with the DRP_ALL
+statistics columns.
 
 
 Typical Workflows

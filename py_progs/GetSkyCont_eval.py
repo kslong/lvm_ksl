@@ -69,10 +69,10 @@ Description:
     marks the ideal median; a dashed horizontal line marks the ensemble NMAD
     for reference.
 
-    Row 2: ranked NMAD plot showing all three arms on the same panel, with
-    spectra sorted worst-to-best by their overall (all clean pixels) NMAD.
-    The x-axis is rank (0 = worst); hover shows the original spectrum row
-    index.  A horizontal dashed line marks the ensemble NMAD per arm.
+    Row 2: NMAD for all three arms plotted against original spectrum number
+    (log y-scale) so that clusters of temporally adjacent bad observations
+    are immediately visible.  Hover shows spectrum index and NMAD value.
+    A dotted horizontal line marks the ensemble NMAD per arm.
 
     Per-spectrum statistics written to DRP_ALL:
 

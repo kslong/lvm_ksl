@@ -5,15 +5,15 @@ GetSkyCont_eval
 
 .. autoapi-nested-parse::
 
-                  Space Telescope Science Institute
+                      Space Telescope Science Institute
 
    Synopsis:
 
        Evaluate continuum fits produced by GetSkyCont.py by plotting flux,
        continuum, components, and residuals over a chosen wavelength window.
-       Reads a FITS file produced by GetSkyCont.py, writes an interactive
-       Plotly HTML file, and updates the DRP_ALL table in the input FITS
-       file with per-spectrum fit-quality statistics.
+       Reads a FITS file produced by GetSkyCont.py and writes an interactive
+       Plotly HTML file.  Also computes per-spectrum fit-quality statistics
+       and writes them back to the DRP_ALL table in the input FITS file.
 
    Command line usage (if any):
 
@@ -32,8 +32,8 @@ GetSkyCont_eval
 
    Description:
 
-       Writes a single HTML file containing three interactive Plotly figures
-       and updates the DRP_ALL table in the input FITS file with per-spectrum
+       Writes a single HTML file containing three interactive Plotly figures and
+       updates the DRP_ALL table in the input FITS file with per-spectrum
        fit-quality statistics.
 
        Figure 1 — four-panel spectral overview:
@@ -59,21 +59,19 @@ GetSkyCont_eval
 
        Three panels (Blue 3600-5900 A, Red 5900-7600 A, NIR 7600-9800 A) each
        showing the distribution of all residual flux values (all spectra, all
-       clean pixels) in that wavelength range.  The x-axis is residual flux;
-       the y-axis is count N.  A Gaussian with center = median and sigma = NMAD
-       is overlaid in black.  An annotation box reports N, the median, NMAD,
-       skewness, and the 10th/90th percentiles.  The histogram range is clipped
-       to median +/- 5*NMAD to suppress extreme outliers.
+       clean pixels) in that wavelength range.  The x-axis is residual flux; the
+       y-axis is count N.  A Gaussian with center = median and sigma = NMAD is
+       overlaid in black.  An annotation box in each panel reports N, the median,
+       NMAD, skewness, and the 10th/90th percentiles.  The histogram range is
+       clipped to median +/- 5*NMAD to suppress extreme outliers.
 
        Figure 3 — per-spectrum fit quality:
 
        Row 1: three scatter plots (Blue, Red, NIR) of per-spectrum median
        residual (x) vs NMAD (y).  Each point is one spectrum; hover shows the
-       spectrum row index and its median/NMAD.  Axis limits are clipped to the
-       2nd-98th percentile range so that extreme outliers do not compress the
-       scale; the annotation reports how many spectra are off-scale.  A dashed
-       vertical line marks x=0 (ideal median); a dotted horizontal line marks
-       the ensemble NMAD for reference.
+       spectrum row index and its median/NMAD.  A dashed vertical line at x=0
+       marks the ideal median; a dashed horizontal line marks the ensemble NMAD
+       for reference.
 
        Row 2: NMAD for all three arms plotted against original spectrum number
        (log y-scale) so that clusters of temporally adjacent bad observations
@@ -83,7 +81,8 @@ GetSkyCont_eval
        Per-spectrum statistics written to DRP_ALL:
 
        For each arm (blue, red, nir) and for all arms combined (all), four
-       float32 columns are added (or updated) in the DRP_ALL table:
+       float32 columns are added (or updated) in the DRP_ALL table::
+
            resid_med_<arm>   — median residual in clean pixels
            resid_nmad_<arm>  — NMAD of residuals in clean pixels
            resid_rms_<arm>   — RMS of residuals in clean pixels
@@ -109,6 +108,14 @@ GetSkyCont_eval
 
 
 
+Attributes
+----------
+
+.. autoapisummary::
+
+   GetSkyCont_eval.ARM_DEFS
+
+
 Functions
 ---------
 
@@ -120,6 +127,10 @@ Functions
 
 Module Contents
 ---------------
+
+.. py:data:: ARM_DEFS
+   :value: [('Blue', 3600.0, 5900.0, 'rgba(31,119,180,0.6)'), ('Red', 5900.0, 7600.0,...
+
 
 .. py:function:: plot_eval(filename, wmin=3600.0, wmax=9800.0, n_sample=20, outroot='')
 

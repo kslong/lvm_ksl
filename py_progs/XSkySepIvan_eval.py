@@ -62,6 +62,19 @@ import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 
 
+_USAGE = '''Usage: XSkySepIvan_eval.py palace_file.fits [wmin wmax] [-num N] [-out outroot]
+
+Arguments:
+  palace_file.fits  FITS file from XSkySepIvan.py
+  wmin              minimum wavelength in Angstroms (default 3600)
+  wmax              maximum wavelength in Angstroms (default 9800)
+
+Options:
+  -num N        number of individual spectra to overlay (default 20; 0 = band only)
+  -out outroot  output filename root (default: <stem>_<wmin>_<wmax>)
+'''
+
+
 def _band_traces(wave, arr, name, color_band, color_med, show_band_legend, legend_ref='legend'):
     '''Return Plotly traces for a median line with a shaded 10/90-pct band.'''
     p10 = np.nanpercentile(arr, 10, axis=0)
@@ -214,7 +227,7 @@ def steer(argv):
     i = 1
     while i < len(argv):
         if argv[i][:2] == '-h':
-            print(__doc__)
+            print(_USAGE)
             return
         elif argv[i] == '-num':
             i += 1
@@ -236,7 +249,7 @@ def steer(argv):
         i += 1
 
     if not filename:
-        print(__doc__)
+        print(_USAGE)
         return
 
     wmin = positional_nums[0] if len(positional_nums) > 0 else 3600.0
@@ -249,4 +262,4 @@ if __name__ == '__main__':
     if len(sys.argv) > 1:
         steer(sys.argv)
     else:
-        print(__doc__)
+        print(_USAGE)

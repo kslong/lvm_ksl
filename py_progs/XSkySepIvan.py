@@ -52,7 +52,8 @@ Description:
     residuals.  O2 rotational temperature is fitted from the A-band before
     the main QP solve.
 
-    Components fitted:
+    Components fitted::
+
       OH      402 groups of OH vibrational-rotational lines (HITRAN)
       Moon    B-spline envelope x rebinned solar spectrum (Moon + Zodi)
       Diffuse PALACE diffuse continuum: HO2, FeO, O2Ac
@@ -74,20 +75,61 @@ Description:
         when present, otherwise estimated.  Single row or strided batch
         (-many) processing.
 
-    Output FITS structure (both modes):
-        PRIMARY   header with run parameters
-        WAVE      float32 (Npix,)        wavelength array (A)
-        FLUX      float32 (Nobs, Npix)   input spectra
-        LINES     float32 (Nobs, Npix)   total emission (OH+ATOM+ORC+O2)
-        CONT      float32 (Nobs, Npix)   total continuum (MOON+DIFFUSE)
-        OH        float32 (Nobs, Npix)   OH band component
-        ATOM      float32 (Nobs, Npix)   atomic airglow
-        ORC       float32 (Nobs, Npix)   OI recombination lines
-        O2        float32 (Nobs, Npix)   O2 A-band component
-        MOON      float32 (Nobs, Npix)   Moon/zodi continuum
-        DIFFUSE   float32 (Nobs, Npix)   diffuse continuum
-        RESID     float32 (Nobs, Npix)   fit residuals (FLUX-LINES-CONT)
-        DRP_ALL   BinTable (Nobs rows)   metadata for processed rows
+    Output FITS structure (both modes)::
+
+        PRIMARY    header with run parameters
+        WAVE       float32 (Npix,)          wavelength array (A)
+        FLUX       float32 (Nobs, Npix)     input spectra
+        LINES      float32 (Nobs, Npix)     total emission (OH+ATOM+ORC+O2)
+        CONT       float32 (Nobs, Npix)     total continuum (MOON+DIFFUSE)
+        OH         float32 (Nobs, Npix)     OH band component
+        ATOM       float32 (Nobs, Npix)     atomic airglow
+        ORC        float32 (Nobs, Npix)     OI recombination lines
+        O2         float32 (Nobs, Npix)     O2 A-band component
+        MOON       float32 (Nobs, Npix)     Moon/zodi continuum
+        DIFFUSE    float32 (Nobs, Npix)     diffuse continuum
+        RESID      float32 (Nobs, Npix)     fit residuals (FLUX-LINES-CONT)
+        COEF       BinTable (Nobs rows)    one column per design-matrix entry
+                                            (442 columns) in physical flux units
+                                            (coef * flux_scale); column names
+                                            match the name column of COEF_META:
+                                            OH_v{v}_N{nn}_F{f}, Moon_bs{nn},
+                                            HO2, FeO, O2Ac, NaI, KI, NI_forb,
+                                            OI_5577, OI_6300, OI_7774, OI_8446,
+                                            O2_Aband
+        COEF_META  BinTable (Ncoef rows)   one row per coefficient with columns:
+                       name         design name (OH_000, ATOM_Na, Moon_bs00, ...)
+                       component    OH / Moon / Diffuse / Atom / ORC / O2
+                       v_upper      upper vibrational quantum number (-1 non-OH)
+                       N_upper      upper rotational quantum number  (-1 non-OH)
+                       F_upper      upper spin-rotation component    (-1 non-OH)
+                       wave_peak    wavelength (A) of the dominant line (OH:
+                                    highest Aij*gi) or peak of the convolved
+                                    template (Moon B-spline peak, atomic line
+                                    center, ORC feature center, O2 band peak)
+                       coef_median  median physical coefficient over spectra
+                       coef_mean    mean physical coefficient over spectra
+                       coef_nmad    NMAD (robust scatter) over spectra
+                       coef_min     minimum coefficient over spectra
+                       coef_max     maximum coefficient over spectra
+                       coef_skew    skewness over spectra (positive = tail of
+                                    bright outliers; all in same flux units as FLUX)
+        DRP_ALL    BinTable (Nobs rows)    metadata plus compact coefficient
+                                            summary columns using the same names
+                                            as COEF_META (all physical flux units):
+                       OH_v{3..10}  summed OH amplitude over all N,F at that v
+                       NaI          NaI doublet
+                       KI           KI doublet
+                       NI_forb      [NI] forbidden doublet
+                       OI_5577      OI green forbidden line
+                       OI_6300      OI red forbidden doublet
+                       OI_7774      OI recombination triplet
+                       OI_8446      OI recombination doublet
+                       O2_Aband     O2 A-band
+                       HO2          HO2 diffuse continuum
+                       FeO          FeO diffuse continuum
+                       O2Ac         O2Ac diffuse continuum
+                       Moon_med     median Moon envelope (flux/median-solar)
 
 Primary routines:
 
@@ -111,6 +153,7 @@ History:
 
     260619  ksl  XSkySepPalace.py coding begun
     260628  ksl  Renamed to XSkySepIvan.py; added Sky file mode and -lsf/-refits
+    260629  ksl  Added COEF image, COEF_META table, and DRP_ALL coefficient summary
 '''
 
 import sys
@@ -128,10 +171,42 @@ LVMSKY_SKYSUB = Path('/Users/long/SDSS/lvmsky/skysub')
 if str(LVMSKY_SKYSUB) not in sys.path:
     sys.path.insert(0, str(LVMSKY_SKYSUB))
 
-from sky_decomp.fit import SkyDecomp
+from sky_decomp.fit import SkyDecomp, vac_to_air, decode_hitran_id, OH_GROUP_KEYS
 
 # Directory containing palace/PMD/ and the solar spectrum file
 DEFAULT_BASE_DIR = Path('/Users/long/Projects/lvm_sky2606/skysub_ivan')
+
+_CAP_WAVE = 5.0   # Å extra margin on each side when selecting PMD lines
+
+_USAGE = '''Usage:
+  XSkySepIvan.py sky_file.fits [row_no ...]               (Sky-file mode)
+  XSkySepIvan.py xframe.fits ext [row_no ...] [-delta N]  (XCframe mode)
+
+Arguments:
+  sky_file.fits  Sky_<name>.fits from GetSky_from_CFrame_sum.py
+  xframe.fits    XCframe or XSFrame summary FITS file
+  ext            FITS extension (FLUX, SKY_EAST, SKY_WEST, ...)
+  row_no         0-based row indices (default: all rows)
+
+Options:
+  -delta N    process every N-th row instead of all
+  -lsf FWHM   LSF FWHM in Angstroms (default 1.3)
+  -refits N   number of iterative LSF kernel refits (default 0)
+  -out ROOT   output filename root (default: palace_<ext>_<stem>)
+'''
+
+# Maps PALACE internal atom/ORC names to spectroscopic FITS column names
+_ATOM_COEF_COL = {
+    'ATOM_K':  'KI',
+    'ATOM_N':  'NI_forb',
+    'ATOM_Na': 'NaI',
+    'ATOM_Og': 'OI_5577',
+    'ATOM_Or': 'OI_6300',
+}
+_ORC_COEF_COL = {
+    'ATOM_Orc_OI0777': 'OI_7774',
+    'ATOM_Orc_OI0845': 'OI_8446',
+}
 
 
 # ──────────────────────────────────────────────────────────────
@@ -690,6 +765,162 @@ def coef_summary(xspec, coef):
 
 
 # ──────────────────────────────────────────────────────────────
+# Coefficient metadata and DRP summary
+# ──────────────────────────────────────────────────────────────
+
+def build_coef_meta(base_dir=DEFAULT_BASE_DIR):
+    '''Build a Table mapping every design-matrix column to its physical identity.
+
+    Must be called after at least one decomposition so _decomposer is cached.
+    The returned Table has one row per coefficient in the same order as the
+    coef vector returned by decompose_one / decompose_one_skyfile.
+
+    Six distribution statistics (coef_median, coef_mean, coef_nmad, coef_min,
+    coef_max, coef_skew) are added by process_skyfile / process_many after the
+    processing loop, before writing COEF_META to disk.
+
+    Returns
+    -------
+    astropy.table.Table
+        One row per design-matrix entry with columns: ``name`` (descriptive
+        string matching the COEF BinTable column names, e.g.
+        ``OH_v4_N12_F1``, ``Moon_bs07``, ``NaI``, ``O2_Aband``);
+        ``component`` (OH / Moon / Diffuse / Atom / ORC / O2);
+        ``v_upper``, ``N_upper``, ``F_upper`` (int16 OH quantum numbers,
+        -1 for non-OH); ``wave_peak`` (float32, dominant line wavelength in
+        Angstroms for OH groups, or template peak wavelength for all other
+        components).
+    '''
+    d = _decomposer
+    if d is None:
+        raise RuntimeError('build_coef_meta: run a decomposition first.')
+
+    wave = d.wave
+    oh_file = Path(base_dir) / 'palace' / 'PMD' / 'pmd_popmodel_OH.dat'
+    oh = Table.read(str(oh_file), format='ascii.basic', guess=False,
+                    comment='#', fast_reader=False)
+    oh['wave'] = vac_to_air(np.asarray(oh['lam'], float) * 1e4)
+    mask = ((oh['wave'] >= wave.min() - _CAP_WAVE) &
+            (oh['wave'] <= wave.max() + _CAP_WAVE))
+    oh = decode_hitran_id(oh[mask])
+    groups = oh.group_by(OH_GROUP_KEYS).groups
+
+    rows = []
+    for i, grp in enumerate(groups):
+        v   = int(grp['v_upper'][0])
+        n   = int(grp['N_upper'][0])
+        f   = int(grp['F_upper'][0])
+        amp = np.asarray(grp['Aij'] * grp['gi'], float)
+        wpeak = float(np.asarray(grp['wave'])[np.argmax(amp)])
+        rows.append((f'OH_v{v}_N{n:02d}_F{f}', 'OH', v, n, f, wpeak))
+
+    # For non-OH components use the peak of the convolved template on wave
+    solar  = d.vector_moon
+    safe   = solar > 0.01 * float(np.nanmedian(solar))
+
+    for i, name in enumerate(d.moon_names):
+        envelope = np.where(safe, d.matrix_moon[i] / solar, 0.0)
+        wpeak = float(wave[np.argmax(envelope)])
+        rows.append((name, 'Moon', -1, -1, -1, wpeak))
+
+    vecs = [d.vector_ho2, d.vector_feo, d.vector_o2ac]
+    for name, vec in zip(d.diffuse_names, vecs):
+        wpeak = float(wave[np.argmax(vec)])
+        rows.append((name, 'Diffuse', -1, -1, -1, wpeak))
+
+    for i, name in enumerate(d.atom_names):
+        wpeak = float(wave[np.argmax(d.matrix_atom[i])])
+        rows.append((_ATOM_COEF_COL[name], 'Atom', -1, -1, -1, wpeak))
+
+    for i, name in enumerate(d.orc_names):
+        wpeak = float(wave[np.argmax(d.matrix_orc[i])])
+        rows.append((_ORC_COEF_COL[name], 'ORC', -1, -1, -1, wpeak))
+
+    for i, name in enumerate(d.o2_names):
+        wpeak = float(wave[np.argmax(d.matrix_o2[i])])
+        rows.append(('O2_Aband', 'O2', -1, -1, -1, wpeak))
+
+    meta = Table(rows=rows,
+                 names=['name', 'component', 'v_upper', 'N_upper', 'F_upper',
+                        'wave_peak'])
+    for col in ('v_upper', 'N_upper', 'F_upper'):
+        meta[col] = meta[col].astype(np.int16)
+    meta['wave_peak'] = meta['wave_peak'].astype(np.float32)
+    return meta
+
+
+def _coef_drp_summary(coef_phys, meta):
+    '''Compute compact per-spectrum DRP summary from physical-unit coefficients.
+
+    Parameters
+    ----------
+    coef_phys : ndarray
+        Coefficient vector scaled to physical flux units (coef * flux_scale).
+    meta : astropy Table
+        Output of build_coef_meta().
+
+    Returns
+    -------
+    dict mapping column name -> float, with 20 entries using the same naming
+    convention as COEF_META:
+        OH_v{3..10}   summed OH amplitude over all N, F groups at that v_upper
+        NaI           NaI doublet amplitude
+        KI            KI doublet amplitude
+        NI_forb       [NI] forbidden doublet amplitude
+        OI_5577       OI green forbidden line amplitude
+        OI_6300       OI red forbidden doublet amplitude
+        OI_7774       OI recombination triplet amplitude
+        OI_8446       OI recombination doublet amplitude
+        O2_Aband      O2 A-band amplitude
+        HO2           HO2 diffuse continuum amplitude
+        FeO           FeO diffuse continuum amplitude
+        O2Ac          O2Ac diffuse continuum amplitude
+        Moon_med      median of fitted Moon envelope (flux / median-solar)
+    '''
+    d = _decomposer
+    coef_phys = np.asarray(coef_phys, float)
+    comp = np.asarray(meta['component'])
+    v_col = np.asarray(meta['v_upper'])
+
+    summary = {}
+
+    # Per-vibrational-level OH sums
+    oh_sel = comp == 'OH'
+    for v in range(3, 11):
+        summary[f'OH_v{v}'] = float(np.sum(coef_phys[oh_sel & (v_col == v)]))
+
+    # Atomic species — use same names as COEF_META via _ATOM_COEF_COL
+    atom_idx = np.where(comp == 'Atom')[0]
+    for j, name in enumerate(d.atom_names):
+        summary[_ATOM_COEF_COL[name]] = float(coef_phys[atom_idx[j]])
+
+    # ORC groups — use same names as COEF_META via _ORC_COEF_COL
+    orc_idx = np.where(comp == 'ORC')[0]
+    for j, name in enumerate(d.orc_names):
+        summary[_ORC_COEF_COL[name]] = float(coef_phys[orc_idx[j]])
+
+    # O2
+    o2_idx = np.where(comp == 'O2')[0]
+    summary['O2_Aband'] = float(coef_phys[o2_idx[0]]) if o2_idx.size else np.nan
+
+    # Diffuse continua — use PALACE names directly (HO2, FeO, O2Ac)
+    diff_idx = np.where(comp == 'Diffuse')[0]
+    for j, name in enumerate(d.diffuse_names):
+        summary[name] = float(coef_phys[diff_idx[j]])
+
+    # Moon: median of fitted envelope relative to normalised solar
+    moon_idx    = np.where(comp == 'Moon')[0]
+    moon_c      = coef_phys[moon_idx]
+    fitted_moon = moon_c @ d.matrix_moon
+    solar_rb    = d.vector_moon
+    safe        = solar_rb > 0.01 * float(np.nanmedian(solar_rb))
+    envelope    = np.where(safe, fitted_moon / solar_rb, np.nan)
+    summary['Moon_med'] = float(np.nanmedian(envelope))
+
+    return summary
+
+
+# ──────────────────────────────────────────────────────────────
 # Batch processing helpers
 # ──────────────────────────────────────────────────────────────
 
@@ -760,12 +991,33 @@ def process_many(filename, ext, rows=None, delta=None, outroot='',
 
     print(f'Number of spectra processed: {len(spectra)}')
 
-    coeff        = np.array(coefficients)
-    qtab         = xtab[rows_to_process]
-    qtab['row']  = rows_to_process
-    ctab         = array_to_table(coeff)
-    ctab['row']  = rows_to_process
-    xtab_final   = join(ctab, qtab, join_type='left')
+    # Physical-unit coefficients: coef (normalised) * flux_scale per spectrum
+    coeff = np.array(coefficients)
+    flux_scales = []
+    for xspec in spectra:
+        flux = np.asarray(xspec['FLUX'], float)
+        finite = np.isfinite(flux)
+        fs = float(np.sqrt(np.nanmean(flux[finite] ** 2))) if finite.any() else 1.0
+        flux_scales.append(max(fs, 1e-30))
+    coeff_phys = coeff * np.array(flux_scales)[:, None]
+
+    meta = build_coef_meta(base_dir=base_dir)
+    meta['coef_median'] = np.median(coeff_phys, axis=0).astype(np.float32)
+    meta['coef_mean']   = np.mean(coeff_phys,   axis=0).astype(np.float32)
+    _dev = coeff_phys - np.median(coeff_phys, axis=0)
+    meta['coef_nmad']   = (1.4826 * np.median(np.abs(_dev), axis=0)).astype(np.float32)
+    meta['coef_min']    = np.min(coeff_phys,    axis=0).astype(np.float32)
+    meta['coef_max']    = np.max(coeff_phys,    axis=0).astype(np.float32)
+    _std = np.std(coeff_phys, axis=0)
+    _std_safe = np.where(_std > 0, _std, np.nan)
+    meta['coef_skew']   = (np.mean((_dev / _std_safe) ** 3, axis=0)).astype(np.float32)
+
+    qtab = xtab[rows_to_process]
+    qtab['row'] = rows_to_process
+    summary_rows = [_coef_drp_summary(coeff_phys[i], meta) for i in range(len(spectra))]
+    for col in summary_rows[0]:
+        qtab[col] = np.array([r[col] for r in summary_rows], dtype=np.float32)
+    xtab_final = qtab
 
     if outroot == '':
         outroot = f'palace_{ext}_{Path(filename).stem}'
@@ -789,6 +1041,13 @@ def process_many(filename, ext, rows=None, delta=None, outroot='',
             data=table_col_to_array(spectra, col).astype(np.float32),
             name=col,
         ))
+    coef_cols = [fits.Column(name=str(meta['name'][i]), format='E',
+                             array=coeff_phys[:, i].astype(np.float32))
+                 for i in range(len(meta))]
+    coef_hdu = fits.BinTableHDU.from_columns(coef_cols)
+    coef_hdu.name = 'COEF'
+    hdu_list.append(coef_hdu)
+    hdu_list.append(fits.BinTableHDU(meta, name='COEF_META'))
     hdu_list.append(fits.BinTableHDU(xtab_final, name='DRP_ALL'))
 
     outfile = f'{outroot}.fits'
@@ -852,11 +1111,31 @@ def process_skyfile(filename, rows=None, delta=None, outroot='',
 
     print(f'Number of spectra processed: {len(spectra)}')
 
-    coeff        = np.array(coefficients)
-    qtab         = xtab[processed_rows]
-    qtab['row']  = processed_rows
+    # Physical-unit coefficients: coef (normalised) * flux_scale per spectrum
+    coeff = np.array(coefficients)
+    flux_scales = []
+    for xspec in spectra:
+        flux = np.asarray(xspec['FLUX'], float)
+        finite = np.isfinite(flux)
+        fs = float(np.sqrt(np.nanmean(flux[finite] ** 2))) if finite.any() else 1.0
+        flux_scales.append(max(fs, 1e-30))
+    coeff_phys = coeff * np.array(flux_scales)[:, None]
 
-    # Attach fit quality metrics as columns in the metadata table
+    meta = build_coef_meta(base_dir=base_dir)
+    meta['coef_median'] = np.median(coeff_phys, axis=0).astype(np.float32)
+    meta['coef_mean']   = np.mean(coeff_phys,   axis=0).astype(np.float32)
+    _dev = coeff_phys - np.median(coeff_phys, axis=0)
+    meta['coef_nmad']   = (1.4826 * np.median(np.abs(_dev), axis=0)).astype(np.float32)
+    meta['coef_min']    = np.min(coeff_phys,    axis=0).astype(np.float32)
+    meta['coef_max']    = np.max(coeff_phys,    axis=0).astype(np.float32)
+    _std = np.std(coeff_phys, axis=0)
+    _std_safe = np.where(_std > 0, _std, np.nan)
+    meta['coef_skew']   = (np.mean((_dev / _std_safe) ** 3, axis=0)).astype(np.float32)
+
+    qtab = xtab[processed_rows]
+    qtab['row'] = processed_rows
+
+    # Fit quality metrics
     qtab['chi2_red']   = [m['chi2_red']   for m in metrics_list]
     qtab['r2']         = [m['r2']         for m in metrics_list]
     qtab['rms_resid']  = [m['rms_resid']  for m in metrics_list]
@@ -864,9 +1143,11 @@ def process_skyfile(filename, rows=None, delta=None, outroot='',
     qtab['t_o2_err']   = [m['t_o2_err']   for m in metrics_list]
     qtab['fit_status'] = [m['fit_status'] for m in metrics_list]
 
-    ctab        = array_to_table(coeff)
-    ctab['row'] = processed_rows
-    xtab_final  = join(ctab, qtab, join_type='left', keys='row')
+    # Compact per-component coefficient summary
+    summary_rows = [_coef_drp_summary(coeff_phys[i], meta) for i in range(len(spectra))]
+    for col in summary_rows[0]:
+        qtab[col] = np.array([r[col] for r in summary_rows], dtype=np.float32)
+    xtab_final = qtab
 
     if outroot == '':
         outroot = 'palace_%s' % Path(filename).stem
@@ -889,6 +1170,13 @@ def process_skyfile(filename, rows=None, delta=None, outroot='',
             data=table_col_to_array(spectra, col).astype(np.float32),
             name=col,
         ))
+    coef_cols = [fits.Column(name=str(meta['name'][i]), format='E',
+                             array=coeff_phys[:, i].astype(np.float32))
+                 for i in range(len(meta))]
+    coef_hdu = fits.BinTableHDU.from_columns(coef_cols)
+    coef_hdu.name = 'COEF'
+    hdu_list.append(coef_hdu)
+    hdu_list.append(fits.BinTableHDU(meta, name='COEF_META'))
     hdu_list.append(fits.BinTableHDU(xtab_final, name='DRP_ALL'))
 
     outfile = '%s.fits' % outroot
@@ -912,7 +1200,7 @@ def steer(argv):
     i = 1
     while i < len(argv):
         if argv[i][:2] == '-h':
-            print(__doc__)
+            print(_USAGE)
             return
         elif argv[i] == '-out':
             i += 1
@@ -941,7 +1229,7 @@ def steer(argv):
         i += 1
 
     if not filename:
-        print(__doc__)
+        print(_USAGE)
         return
 
     # ── Sky-file mode ─────────────────────────────────────────
@@ -952,7 +1240,7 @@ def steer(argv):
                             fwhm_lsf=fwhm_lsf, n_lsf_refits=n_lsf_refits)
         else:
             print('Error: specify a FITS extension name (e.g. SKY_EAST) for XCframe files.')
-            print(__doc__)
+            print(_USAGE)
         return
 
     # ── XCframe mode ──────────────────────────────────────────
@@ -966,4 +1254,4 @@ if __name__ == '__main__':
     if len(sys.argv) > 1:
         steer(sys.argv)
     else:
-        print(__doc__)
+        print(_USAGE)

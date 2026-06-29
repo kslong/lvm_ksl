@@ -280,10 +280,45 @@ extensions.  IVAR is read from the file if present, otherwise estimated.
 
 **Output:**
 
-A FITS file with extensions WAVE, FLUX, LINES, CONT, OH, ATOM, ORC, O2,
-MOON, DIFFUSE, RESID (all float32, shape N_obs × N_pix), plus a DRP_ALL
-table carrying the input metadata and, in sky-file mode, fitted quality
-metrics (chi2_red, r2, t_o2, rms_resid).
+A FITS file named ``palace_<ext>_<stem>.fits`` (XCframe mode) or
+``palace_<stem>.fits`` (Sky-file mode) with the following extensions:
+
+*Spectral image extensions* (float32, N_obs × N_pix):
+
+- ``WAVE`` — wavelength array (Å)
+- ``FLUX`` — input sky spectra
+- ``LINES`` — total emission (OH + ATOM + ORC + O2)
+- ``CONT`` — total continuum (MOON + DIFFUSE)
+- ``OH`` — OH band component
+- ``ATOM`` — atomic airglow (NaI, KI, [NI], OI)
+- ``ORC`` — OI recombination multiplets
+- ``O2`` — O2 A-band component
+- ``MOON`` — Moon/zodiacal continuum
+- ``DIFFUSE`` — diffuse airglow continuum
+- ``RESID`` — fit residuals (FLUX − LINES − CONT)
+
+*Coefficient tables:*
+
+- ``COEF`` — BinTable with 442 named columns (one per design-matrix
+  entry), storing the physical-unit coefficient for each spectrum.
+  Column names match the ``name`` column of COEF_META:
+  ``OH_v{v}_N{nn}_F{f}``, ``Moon_bs{nn}``, ``HO2``, ``FeO``,
+  ``O2Ac``, ``NaI``, ``KI``, ``NI_forb``, ``OI_5577``,
+  ``OI_6300``, ``OI_7774``, ``OI_8446``, ``O2_Aband``.
+
+- ``COEF_META`` — BinTable with 442 rows, one per design-matrix
+  entry, carrying physical identity (``name``, ``component``,
+  ``v_upper``, ``N_upper``, ``F_upper``, ``wave_peak``) and
+  cross-spectrum distribution statistics (``coef_median``,
+  ``coef_mean``, ``coef_nmad``, ``coef_min``, ``coef_max``,
+  ``coef_skew``).
+
+- ``DRP_ALL`` — observation metadata plus 20 compact coefficient
+  summary columns (physical flux units, same names as COEF_META):
+  ``OH_v3``…``OH_v10`` (total OH flux per vibrational band),
+  ``NaI``, ``KI``, ``NI_forb``, ``OI_5577``, ``OI_6300``,
+  ``OI_7774``, ``OI_8446``, ``O2_Aband``, ``HO2``, ``FeO``,
+  ``O2Ac``, ``Moon_med``.
 
 XSkySepIvan_eval.py
 ^^^^^^^^^^^^^^^^^^^

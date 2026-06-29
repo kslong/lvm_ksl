@@ -91,6 +91,23 @@ from scipy.optimize import nnls
 DEFAULT_SOLAR_FILE = Path('/Users/long/Projects/lvm_sky2606/skysub_ivan/'
                           'Spectre_HR_LATMOS_Meftah_V1_350_1000nm.txt')
 
+_USAGE = '''Usage:
+  GetSkyCont.py sky_file.fits -mask mask.fits [row_no ...] [-delta N]
+  GetSkyCont.py xframe.fits ext -mask mask.fits [row_no ...] [-delta N]
+
+Arguments:
+  sky_file.fits  Sky_<name>.fits from GetSky_from_CFrame_sum.py
+  xframe.fits    XCframe or XSFrame summary FITS file
+  ext            FITS extension (FLUX, SKY_EAST, SKY_WEST, ...)
+  row_no         0-based row indices (default: all rows)
+
+Options:
+  -mask file   (required) palace_mask FITS file from palace_make_mask.py
+  -delta N     process every N-th row instead of all
+  -kstep N     B-spline knot spacing in Angstroms (default 100)
+  -out ROOT    output filename root
+'''
+
 _sky_fits_cache = {}
 _xcframe_fits   = None
 
@@ -468,7 +485,7 @@ def steer(argv):
     i = 1
     while i < len(argv):
         if argv[i][:2] == '-h':
-            print(__doc__)
+            print(_USAGE)
             return
         elif argv[i] == '-mask':
             i += 1
@@ -497,12 +514,12 @@ def steer(argv):
         i += 1
 
     if not filename:
-        print(__doc__)
+        print(_USAGE)
         return
 
     if not mask_file:
         print('Error: -mask mask.fits is required.')
-        print(__doc__)
+        print(_USAGE)
         return
 
     mask_wave, mask_arr = load_mask(mask_file)
@@ -515,7 +532,7 @@ def steer(argv):
 
     if not sky_mode and not xcframe_mode:
         print('Error: specify a FITS extension name (e.g. SKY_EAST) for XCframe files.')
-        print(__doc__)
+        print(_USAGE)
         return
 
     if sky_mode:
@@ -532,4 +549,4 @@ if __name__ == '__main__':
     if len(sys.argv) > 1:
         steer(sys.argv)
     else:
-        print(__doc__)
+        print(_USAGE)

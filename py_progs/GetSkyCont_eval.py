@@ -77,7 +77,8 @@ Description:
     Per-spectrum statistics written to DRP_ALL:
 
     For each arm (blue, red, nir) and for all arms combined (all), four
-    float32 columns are added (or updated) in the DRP_ALL table:
+    float32 columns are added (or updated) in the DRP_ALL table::
+
         resid_med_<arm>   — median residual in clean pixels
         resid_nmad_<arm>  — NMAD of residuals in clean pixels
         resid_rms_<arm>   — RMS of residuals in clean pixels
@@ -115,6 +116,18 @@ ARM_DEFS = [
     ('Red',  5900.0, 7600.0, 'rgba(214,39,40,0.6)'),
     ('NIR',  7600.0, 9800.0, 'rgba(44,160,44,0.6)'),
 ]
+
+_USAGE = '''Usage: GetSkyCont_eval.py skycont_file.fits [wmin wmax] [-num N] [-out outroot]
+
+Arguments:
+  skycont_file.fits  FITS file from GetSkyCont.py
+  wmin               minimum wavelength in Angstroms (default 3600)
+  wmax               maximum wavelength in Angstroms (default 9800)
+
+Options:
+  -num N        number of individual spectra to overlay (default 20; 0 = band only)
+  -out outroot  output filename root (default: <stem>_<wmin>_<wmax>)
+'''
 
 _ARM_SOLID = {
     'Blue': 'rgb(31,119,180)',
@@ -735,7 +748,7 @@ def steer(argv):
     i = 1
     while i < len(argv):
         if argv[i][:2] == '-h':
-            print(__doc__)
+            print(_USAGE)
             return
         elif argv[i] == '-num':
             i += 1
@@ -757,7 +770,7 @@ def steer(argv):
         i += 1
 
     if not filename:
-        print(__doc__)
+        print(_USAGE)
         return
 
     wmin = positional_nums[0] if len(positional_nums) > 0 else 3600.0
@@ -770,4 +783,4 @@ if __name__ == '__main__':
     if len(sys.argv) > 1:
         steer(sys.argv)
     else:
-        print(__doc__)
+        print(_USAGE)

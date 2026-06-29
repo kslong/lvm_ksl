@@ -100,6 +100,18 @@ spectrograph (`SummarizeData.py`, `SummarizeCframe.py`,
 subtraction residuals (`Prep4SkyCorr.py`, `RunSkyCorr.py`, `SkySub.py`,
 `eval_sky.py`).
 
+**PALACE-based continuum fitting** — build a sky-line contamination mask from
+the PALACE airglow model, collect stacked sky spectra from repeated
+observations of a field, fit a two-component B-spline continuum (Moon/zodiacal
++ diffuse airglow) restricted to line-free pixels, and evaluate the fit
+interactively (`palace_make_mask.py`, `GetSky_from_CFrame_sum.py`,
+`GetSkyCont.py`, `GetSkyCont_eval.py`).
+
+**PALACE sky decomposition** — full physical decomposition of LVM sky spectra
+into OH, Moon, diffuse, atomic, ORC, and O2 components using the PALACE PMD
+line model and Ivan Katkov's SkyDecomp solver; evaluate the fit interactively
+(`XSkySepIvan.py`, `XSkySepIvan_eval.py`).
+
 **Spectral analysis** — extract spectra, fit Gaussian emission-line
 profiles, and measure fluxes (`GetSpec.py`, `GetRegSpec.py`,
 `lvm_gaussfit.py`, `lvm_flux.py`).

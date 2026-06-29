@@ -126,8 +126,8 @@ def _contiguous_regions(wave, flag):
     if not np.any(flag):
         return []
     change = np.diff(flag.astype(int))
-    starts = np.where(change ==  1)[0] + 1
-    ends   = np.where(change == -1)[0] + 1
+    starts = np.where(change ==  1)[0]      # last clean pixel before masked region
+    ends   = np.where(change == -1)[0] + 1  # first clean pixel after masked region
     if flag[0]:
         starts = np.r_[0, starts]
     if flag[-1]:

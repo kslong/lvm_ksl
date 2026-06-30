@@ -43,6 +43,11 @@ docs/source/api/SkyCalcObs/
 docs/source/api/SkyID/
 docs/source/api/SkyModelObs/
 docs/source/api/SkySub/
+docs/source/api/SkySub_eval/
+docs/source/api/SkySubDev1/
+docs/source/api/SkySubDev2/
+docs/source/api/SkySubDrp/
+docs/source/api/SkySubOrig/
 docs/source/api/SumCframe/
 docs/source/api/SummarizeCframe/
 docs/source/api/SummarizeData/

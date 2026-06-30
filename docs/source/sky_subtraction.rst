@@ -594,6 +594,474 @@ inspection.  The input FITS file is updated in place with the DRP_ALL
 statistics columns.
 
 
+XCframe Sky Subtraction — Alternative Methods and Evaluation
+-------------------------------------------------------------
+
+This group of scripts performs per-spectrum sky subtraction directly on
+XCframe summary FITS files, providing four independent algorithms that can be
+run and compared side by side using ``SkySub_eval.py``.  All four subtraction
+scripts produce output FITS files with WAVE, FLUX (sky-subtracted), SKY, and
+DRP_ALL extensions.  DRP_ALL carries a QA_FLAGS column recording per-row
+quality issues.
+
+**Common QA flag bits**
+
+======  ==========  ===========================================================
+0x01    NANDATA     NaN or inf found in the input flux or sky data.
+0x02    ZEROSKY     Sky line vector is all-zero; scale factor is unreliable.
+0x04    POORFIT     Continuum fit is poorly conditioned (SkySubOrig only).
+0x08    FAILED      Row raised an exception; spectrum filled with NaN.
+======  ==========  ===========================================================
+
+SkySubOrig.py
+^^^^^^^^^^^^^
+
+Perform per-spectrum sky subtraction on an XCframe file using a degree-4
+polynomial continuum and a custom bisection search for the sky-line scale
+factor.
+
+**Usage**::
+
+    SkySubOrig.py [-method METHOD] [-delta N] [-out ROOT] filename
+
+**Arguments:**
+
+filename
+    XCframe FITS file to process.
+
+**Options:**
+
+-method METHOD
+    Sky subtraction method:
+
+    - ``nearest`` — subtract the nearest sky telescope spectrum (continuum
+      and lines from the same telescope).
+    - ``farthest`` — subtract the farthest sky telescope spectrum.
+    - ``farlines_nearcont`` — scale sky emission lines from the far sky
+      telescope and continuum from the near sky telescope (default).
+
+-delta N
+    Process every N-th row; useful for quick tests (default: 1 = all rows).
+
+-out ROOT
+    Output filename root.  Default: ``<stem>_<method>``.
+
+**Description:**
+
+Each spectrum is decomposed into a polynomial continuum (degree 4, fitted
+with sigma clipping on clean pixels) and line residuals.  Near and far sky
+telescopes are identified from RA/Dec separations in DRP_ALL.  A global
+line scale factor *r* is found by bisection minimising::
+
+    sum |sci_lines × (sci_lines − r × sky_lines)| / ‖sky_lines‖²
+
+For ``farlines_nearcont`` the sky model is::
+
+    sky = cont_near + r × lines_far
+
+The sky is then subtracted: ``flux_out = flux_sci − sky``.
+
+**Output:**
+
+A FITS file ``<ROOT>.fits`` with extensions WAVE, FLUX (sky-subtracted),
+SKY, and DRP_ALL (with QA_FLAGS column).
+
+**See Also:** :doc:`api/SkySubOrig/index`
+
+
+SkySubDrp.py
+^^^^^^^^^^^^
+
+Perform per-spectrum sky subtraction using the lvmdrp
+``create_skysub_spectrum`` routine.
+
+**Usage**::
+
+    SkySubDrp.py [-method METHOD] [-delta N] [-out ROOT] filename
+
+**Arguments:**
+
+filename
+    XCframe FITS file to process.
+
+**Options:**
+
+-method METHOD
+    Sky subtraction method: ``nearest`` | ``farlines_nearcont`` (default).
+
+-delta N
+    Process every N-th row (default: 1).
+
+-out ROOT
+    Output filename root.  Default: ``<stem>_drp_<method>``.
+
+**Description:**
+
+For each row a minimal SCI/SKYE/SKYW BinTable HDUList is constructed from
+the per-row FLUX, SKY_EAST, and SKY_WEST spectra together with RA/Dec
+information from DRP_ALL::
+
+    PRIMARY  (empty)
+    SCI      BinTable  WAVE, FLUX, ERROR   RA/DEC from sci_ra/sci_dec
+    SKYE     BinTable  WAVE, FLUX, ERROR   RA/DEC from skye_ra/skye_dec
+    SKYW     BinTable  WAVE, FLUX, ERROR   RA/DEC from skyw_ra/skyw_dec
+
+Flux errors are estimated as ``sqrt(|flux|)`` since XCframe files do not
+carry IVAR.  These errors affect only the internally propagated sky error;
+the sky model itself does not depend on them.  ``create_skysub_spectrum``
+then selects the sky telescope and computes the sky model according to the
+chosen method.
+
+Requires the ``lvmdrp`` conda environment (``lvmdrp26``).
+
+**Output:**
+
+A FITS file ``<ROOT>.fits`` with extensions WAVE, FLUX (sky-subtracted),
+SKY, and DRP_ALL (with QA_FLAGS column).
+
+**See Also:** :doc:`api/SkySubDrp/index`
+
+
+SkySubDev1.py
+^^^^^^^^^^^^^
+
+Perform per-spectrum sky subtraction using the B-spline continuum
+separation from ``GetSkyCont.py`` instead of the polynomial fit used by
+SkySubOrig.  The bisection scale search and sky assembly are otherwise
+identical to SkySubOrig.
+
+**Usage**::
+
+    SkySubDev1.py [-method METHOD] [-delta N] [-kstep N]
+                  [-out ROOT] [-mask mask.fits] filename
+
+**Arguments:**
+
+filename
+    XCframe FITS file to process.
+
+**Options:**
+
+-mask file
+    palace_mask FITS file produced by ``palace_make_mask.py``
+    (MASK extension: 1 = clean, 0 = sky-line affected).
+    If omitted, ``sky_mask.fits`` is searched for in the current directory
+    and then in the ``lvm_ksl data/`` directory.
+
+-method METHOD
+    ``nearest`` | ``farlines_nearcont`` (default).
+
+-delta N
+    Process every N-th row (default: 1).
+
+-kstep N
+    B-spline knot spacing in Angstroms (default: 100).
+
+-out ROOT
+    Output filename root.  Default: ``<stem>_dev1_<method>``.
+
+**Description:**
+
+A two-component B-spline design matrix (DIFFUSE + MOON, same as
+``GetSkyCont.py``) is built once from the full wavelength grid and the
+palace mask, then reused for every row.  For each row:
+
+1. Science and sky spectra are decomposed into continuum (non-negative
+   least squares on clean pixels) and line residuals.
+2. Near/far sky telescopes are identified from RA/Dec separations.
+3. A global line scale factor *r* is found by bisection (same objective
+   function as SkySubOrig).
+4. The sky model is assembled and subtracted::
+
+       farlines_nearcont:  sky = cont_near + r × lines_far
+       nearest:            sky = cont_near + r × lines_near
+
+**Output:**
+
+A FITS file ``<ROOT>.fits`` with extensions WAVE, FLUX (sky-subtracted),
+SKY, and DRP_ALL (with QA_FLAGS column).
+
+**See Also:** :doc:`api/SkySubDev1/index`
+
+
+SkySubDev2.py
+^^^^^^^^^^^^^
+
+Perform per-spectrum sky subtraction using the PALACE spectral
+decomposition (``XSkySepIvan.py``), without any additional scaling.
+
+**Usage**::
+
+    SkySubDev2.py [-method METHOD] [-delta N] [-lsf FWHM]
+                  [-out ROOT] filename
+
+**Arguments:**
+
+filename
+    XCframe FITS file to process.
+
+**Options:**
+
+-method METHOD
+    ``nearest`` | ``farlines_nearcont`` (default).
+
+-delta N
+    Process every N-th row (default: 1).
+
+-lsf FWHM
+    LSF FWHM in Angstroms (default: 1.3).
+
+-out ROOT
+    Output filename root.  Default: ``<stem>_dev2_<method>``.
+
+**Description:**
+
+A PALACE decomposer (``SkyDecomp``) is built once from the full wavelength
+grid and LSF, then reused for every row.  For each row:
+
+1. Near and far sky telescopes are identified from RA/Dec separations.
+2. Each sky spectrum is decomposed by PALACE into emission-line and
+   continuum components::
+
+       LINES = oh + atom + orc + o2
+       CONT  = moon + diffuse
+
+3. The sky model is assembled without any scale factor::
+
+       farlines_nearcont:  sky = CONT_near + LINES_far
+       nearest:            sky = CONT_near + LINES_near
+
+4. ``flux_out = flux_sci − sky``.
+
+Requires the PALACE library (``lvmsky/skysub/sky_decomp``) and the
+PALACE data files; paths are taken from ``XSkySepIvan.py``.
+
+**Output:**
+
+A FITS file ``<ROOT>.fits`` with extensions WAVE, FLUX (sky-subtracted),
+SKY, and DRP_ALL (with QA_FLAGS column).
+
+**See Also:** :doc:`api/SkySubDev2/index`
+
+
+SkySub_eval.py
+^^^^^^^^^^^^^^
+
+Evaluate sky subtraction quality for one or more output FITS files
+produced by SkySubOrig, SkySubDrp, SkySubDev1, or SkySubDev2.  When
+multiple files are given they are overlaid in the same figures for direct
+method comparison.
+
+**Usage**::
+
+    SkySub_eval.py [wmin wmax] [-num N] [-out outroot] filename [filename ...]
+
+**Arguments:**
+
+filename
+    One or more SkySub output FITS files to evaluate.
+
+wmin, wmax
+    Wavelength range in Angstroms for the spectral overview panels
+    (defaults: 3600 and 9800).
+
+**Options:**
+
+-num N
+    Overlay N randomly selected individual spectra on the band panels
+    (default: 20; 0 = band only).
+
+-out outroot
+    Combine all files into one HTML file with this root.  Without ``-out``,
+    each file produces its own ``<stem>_eval.html``.
+
+**Description — HTML output:**
+
+The output HTML file contains four interactive Plotly figures and an
+inline statistics table.
+
+*Figure 1 — spectral overview (3 panels, linear scale):*
+
+All three panels share a y-range of −1×10⁻¹⁴ to 1×10⁻¹³
+erg s⁻¹ cm⁻² Å⁻¹, chosen to make sky-subtracted residuals visible.
+Panel 1 shows FLUX + SKY (before subtraction), Panel 2 shows FLUX
+(after subtraction), and Panel 3 shows the SKY model.  Each panel shows
+the median and 10th/90th percentile band together with up to N individual
+spectra in light grey.  One colour per input file.
+
+*Figure 2 — residual histograms:*
+
+For each of three diagnostic windows ([OI] 5577 Å: 5560–5594 Å,
+[OI] 6300 Å: 6280–6320 Å, IR OH: 9300–9500 Å) the distribution of all
+per-pixel sky-subtracted values is plotted with a Gaussian overlay.
+A statistics box (N, median, NMAD, skewness) appears inside each panel.
+
+*Figure 3 — diagnostic window median spectra:*
+
+For each diagnostic window a wider search region (5400–5750,
+6100–6500, 9000–9800 Å) is plotted showing the median and 10th/90th
+percentile band for the original (dotted) and sky-subtracted (solid)
+spectra.  Red shading marks the diagnostic (signal) window; green shading
+marks mask-selected sky-line-free pixels used to estimate the noise floor.
+
+*Statistics table:*
+
+An HTML table between Figure 3 and Figure 4 reports per-file per-window
+the noise floor, sky-line RMS before and after subtraction, and
+percentiles of the HF RMS ratio (see below).  The same information is
+printed to the terminal.
+
+*Figure 4 — HF RMS ratio per spectrum:*
+
+For each diagnostic window the noise-corrected HF RMS ratio is plotted
+against spectrum index.  The three panels share a linked x-axis so
+zooming one panel pans all three.  See the algorithm description below.
+
+
+**HF RMS quality metric — algorithm:**
+
+The central diagnostic is a per-spectrum, per-window noise-corrected
+high-frequency (HF) RMS ratio.  The following steps are applied
+independently to both the original spectra (FLUX + SKY) and the
+sky-subtracted spectra (FLUX).
+
+*Step 1 — high-frequency residuals.*
+
+A smooth estimate of the underlying continuum is subtracted from each
+spectrum::
+
+    hf(λ) = flux(λ) − smooth(λ)
+
+The smooth is a Gaussian-weighted running average with σ = 50 pixels
+(≈ 25 Å at the LVM pixel scale of 0.5 Å pixel⁻¹).  Sky-line pixels
+(mask = 0 from the palace mask) are excluded by a weighted convolution::
+
+    smooth(λ) = Σ_λ' [ flux(λ') · w(λ') · G_σ(λ−λ') ]
+              / Σ_λ' [ w(λ') · G_σ(λ−λ') ]
+
+where w = 1 for mask-clean pixels and w = 0 for sky-line pixels.
+This prevents bright sky lines from leaking into the smooth estimate and
+artificially reducing the HF amplitude in the diagnostic window.
+
+After this step, ``hf`` retains only structure narrower than ≈25 Å —
+the scale of individual sky emission lines — while broad continuum
+mismatches from polynomial or B-spline fitting are suppressed.
+
+*Step 2 — why RMS, not NMAD.*
+
+Sky lines are spatially sparse.  [OI] 5577 spans roughly 3–4 pixels in
+the 34-pixel diagnostic window; individual OH lines in the IR cover a
+similarly small fraction.  NMAD (the median absolute deviation) is
+dominated by the majority of clean, noise-floor pixels and is nearly
+insensitive to a small number of bright outliers.  RMS responds to the
+squared amplitude, so even 2–4 bright sky-line pixels contribute
+proportionally to their intensity — exactly the signal we want to track.
+
+*Step 3 — noise floor subtraction.*
+
+Even after perfect sky subtraction the HF residuals carry photon and
+detector noise.  This noise contributes to the RMS measured in the
+diagnostic window.  A nearby background region — mask-selected
+line-free pixels (mask = 1) within the broader search range but outside
+the diagnostic window — provides an independent noise estimate
+``rms_bg``.  The sky-line contribution is then isolated in quadrature::
+
+    sky_rms = sqrt( max(0, rms_diag² − rms_bg²) )
+
+For a perfect subtraction ``sky_rms`` approaches zero regardless of the
+noise level.  The assumption is that the noise is approximately stationary
+across the search region, which is valid as long as the continuum level
+does not change drastically within a few hundred ångströms.
+
+*Step 4 — the ratio and its interpretation.*
+
+For each spectrum::
+
+    ratio = sky_rms_sub / sky_rms_orig
+
+.. list-table::
+   :header-rows: 1
+   :widths: 15 85
+
+   * - ratio
+     - Meaning
+   * - 0
+     - Sky lines completely removed.
+   * - 0 – 0.5
+     - Substantial improvement; more than half the sky-line power removed.
+   * - ≈ 1
+     - No improvement; subtraction left sky-line power unchanged.
+   * - > 1
+     - Sky lines made worse; subtraction introduced new residuals.
+   * - NaN
+     - ``sky_rms_orig`` ≈ 0; no detectable sky-line power in the original
+       spectrum — excluded from statistics.
+
+*Step 5 — summary statistics.*
+
+The statistics table reports the following per file and per window:
+
+.. list-table::
+   :header-rows: 1
+   :widths: 20 80
+
+   * - Column
+     - Description
+   * - ``noise_med``
+     - Median of ``rms_bg`` across all spectra — the noise floor
+       (erg s⁻¹ cm⁻² Å⁻¹).  Tells you how sensitive the measurement is.
+   * - ``sky_orig_med``
+     - Median ``sky_rms`` in the original spectra — the typical sky-line
+       amplitude before subtraction.
+   * - ``sky_sub_med``
+     - Median ``sky_rms`` after subtraction — the residual sky-line amplitude.
+       Should be much smaller than ``sky_orig_med`` for a good method.
+   * - ``p50 ratio``
+     - Median ratio across all spectra; characterises typical performance.
+   * - ``p90 ratio``
+     - 90th-percentile ratio; indicates how the worst 10% of spectra behave.
+   * - ``p95 ratio``
+     - 95th-percentile ratio; the tail of poor performance.
+   * - ``frac < 0.5``
+     - Fraction of spectra with ratio < 0.5, i.e. where sky-line power was
+       more than halved.  A simple pass/fail rate at this threshold.
+
+**Output:**
+
+An HTML file named ``<stem>_eval.html`` (one per input file without
+``-out``; a single combined file when ``-out outroot`` is given).
+
+**See Also:** :doc:`api/SkySub_eval/index`
+
+
+Comparing Sky Subtraction Methods
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+A typical workflow for running all four methods on a single XCframe file
+and comparing the results::
+
+    # 1. Build the sky-line mask (if not already present)
+    palace_make_mask.py XCframe_file.fits /path/to/palace/PMD
+
+    # 2. Run the four subtraction methods
+    SkySubOrig.py  XCframe_file.fits
+    SkySubDrp.py   XCframe_file.fits
+    SkySubDev1.py  XCframe_file.fits -mask sky_mask.fits
+    SkySubDev2.py  XCframe_file.fits
+
+    # 3. Evaluate and compare in a single HTML file
+    SkySub_eval.py -out compare \
+        XCframe_file_farlines_nearcont.fits \
+        XCframe_file_drp_farlines_nearcont.fits \
+        XCframe_file_dev1_farlines_nearcont.fits \
+        XCframe_file_dev2_farlines_nearcont.fits
+
+Open ``compare_eval.html`` in a browser.  Figure 1 overlays the
+median spectra for all four methods; Figure 4 shows the per-spectrum HF
+RMS ratio for each diagnostic window, making it straightforward to
+identify which method best suppresses sky lines for the observation.
+
+
 Typical Workflows
 -----------------
 
@@ -679,3 +1147,8 @@ See Also
 - :doc:`api/XSkySepIvan_eval/index` - API documentation
 - :doc:`api/GetSkyCont/index` - API documentation
 - :doc:`api/GetSkyCont_eval/index` - API documentation
+- :doc:`api/SkySubOrig/index` - API documentation
+- :doc:`api/SkySubDrp/index` - API documentation
+- :doc:`api/SkySubDev1/index` - API documentation
+- :doc:`api/SkySubDev2/index` - API documentation
+- :doc:`api/SkySub_eval/index` - API documentation

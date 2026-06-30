@@ -66,6 +66,11 @@ This page contains auto-generated API reference documentation [#f1]_.
    /api/SkyID/index
    /api/SkyModelObs/index
    /api/SkySub/index
+   /api/SkySub_eval/index
+   /api/SkySubDev1/index
+   /api/SkySubDev2/index
+   /api/SkySubDrp/index
+   /api/SkySubOrig/index
    /api/SNRPlot/index
    /api/SumCframe/index
    /api/SummarizeCframe/index

@@ -26,14 +26,17 @@ Command line usage (if any):
 
 Description:
 
-    Creates a three-panel interactive HTML plot from a palace_*.fits file:
+    Creates a four-panel interactive HTML plot from a palace_*.fits file:
 
     Panel 1 (Flux): median spectrum with a shaded 10th/90th percentile band
     and N individual spectra overlaid in light grey.
 
     Panel 2 (Residual): same layout for the RESID extension.
 
-    Panel 3 (Continuum): median CONT spectrum on a log-y scale with the
+    Panel 3 (Lines): same layout for the LINES extension (total fitted
+    emission: OH + Atom + ORC + O2).
+
+    Panel 4 (Continuum): median CONT spectrum on a log-y scale with the
     10th/90th percentile band shaded.
 
     The HTML file can be opened in any browser for interactive exploration
@@ -52,6 +55,7 @@ Notes:
 History:
 
     260628  ksl  Written.
+    260629  ksl  Added Lines panel between Residual and Continuum.
 '''
 
 import sys
@@ -119,7 +123,7 @@ def _sample_traces(wave, arr, idx):
 
 
 def plot_eval(filename, wmin=3600.0, wmax=9800.0, n_sample=20, outroot=''):
-    '''Build a three-panel Plotly evaluation plot from a PALACE output FITS file.
+    '''Build a four-panel Plotly evaluation plot from a PALACE output FITS file.
 
     Parameters
     ----------
@@ -136,22 +140,25 @@ def plot_eval(filename, wmin=3600.0, wmax=9800.0, n_sample=20, outroot=''):
         Output filename root.  Default: <stem>_<wmin>_<wmax>.
     '''
     hdul = fits.open(filename)
-    wave = hdul['WAVE'].data
-    flux = hdul['FLUX'].data
+    wave  = hdul['WAVE'].data
+    flux  = hdul['FLUX'].data
     resid = hdul['RESID'].data
-    cont = hdul['CONT'].data
+    lines = hdul['LINES'].data
+    cont  = hdul['CONT'].data
     hdul.close()
 
     # Normalise to 2-D (N_spec, N_pix)
     if flux.ndim == 1:
         flux  = flux[np.newaxis, :]
         resid = resid[np.newaxis, :]
+        lines = lines[np.newaxis, :]
         cont  = cont[np.newaxis, :]
 
     mask  = (wave >= wmin) & (wave <= wmax)
     wave  = wave[mask]
     flux  = flux[:,  mask]
     resid = resid[:, mask]
+    lines = lines[:, mask]
     cont  = cont[:,  mask]
 
     n_spec = len(flux)
@@ -160,12 +167,13 @@ def plot_eval(filename, wmin=3600.0, wmax=9800.0, n_sample=20, outroot=''):
     sample_idx = rng.choice(n_spec, size=min(n_sample, n_spec), replace=False) if n_sample > 0 else []
 
     fig = make_subplots(
-        rows=3, cols=1,
+        rows=4, cols=1,
         shared_xaxes=True,
-        vertical_spacing=0.06,
+        vertical_spacing=0.04,
         subplot_titles=[
             f'Flux  ({n_spec} spectra)',
             'Residual',
+            'Lines  (OH + Atom + ORC + O2)',
             'Continuum  (log scale)',
         ],
     )
@@ -173,7 +181,8 @@ def plot_eval(filename, wmin=3600.0, wmax=9800.0, n_sample=20, outroot=''):
     panels = [
         (flux,  'Flux',  'rgba(31,119,180,0.2)',  'rgb(31,119,180)',  1, 'legend'),
         (resid, 'Resid', 'rgba(214,39,40,0.2)',   'rgb(214,39,40)',   2, 'legend2'),
-        (cont,  'Cont',  'rgba(44,160,44,0.2)',   'rgb(44,160,44)',   3, 'legend3'),
+        (lines, 'Lines', 'rgba(255,127,14,0.2)',  'rgb(255,127,14)',  3, 'legend3'),
+        (cont,  'Cont',  'rgba(44,160,44,0.2)',   'rgb(44,160,44)',   4, 'legend4'),
     ]
     for arr, name, c_band, c_med, row, leg_ref in panels:
         for tr in _sample_traces(wave, arr, sample_idx):
@@ -187,11 +196,12 @@ def plot_eval(filename, wmin=3600.0, wmax=9800.0, n_sample=20, outroot=''):
     _leg = dict(xanchor='right', yanchor='top', x=0.99, bgcolor='rgba(255,255,255,0.7)')
     fig.update_layout(
         title=f'{stem}  {int(wmin)}–{int(wmax)} Å',
-        height=900,
+        height=1200,
         template='simple_white',
         legend  = dict(**_leg, y=0.99),
-        legend2 = dict(**_leg, y=0.64),
-        legend3 = dict(**_leg, y=0.29),
+        legend2 = dict(**_leg, y=0.74),
+        legend3 = dict(**_leg, y=0.49),
+        legend4 = dict(**_leg, y=0.24),
     )
 
     # Apply box borders and tick formatting to all axes in one sweep
@@ -204,12 +214,14 @@ def plot_eval(filename, wmin=3600.0, wmax=9800.0, n_sample=20, outroot=''):
     fig.update_xaxes(range=[wmin, wmax])
     fig.update_xaxes(showticklabels=False, row=1, col=1)
     fig.update_xaxes(showticklabels=False, row=2, col=1)
-    fig.update_xaxes(title_text='Wavelength (Å)', row=3, col=1)
+    fig.update_xaxes(showticklabels=False, row=3, col=1)
+    fig.update_xaxes(title_text='Wavelength (Å)', row=4, col=1)
 
     # Per-panel y-axis titles and log scale
     fig.update_yaxes(title_text='Flux',       row=1, col=1)
     fig.update_yaxes(title_text='Residual',   row=2, col=1)
-    fig.update_yaxes(title_text='Continuum',  type='log', row=3, col=1)
+    fig.update_yaxes(title_text='Lines',      row=3, col=1)
+    fig.update_yaxes(title_text='Continuum',  type='log', row=4, col=1)
 
     if outroot == '':
         outroot = f'{stem}_{int(wmin)}_{int(wmax)}'

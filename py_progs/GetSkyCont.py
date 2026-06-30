@@ -71,7 +71,7 @@ Notes:
     is printed.
 
     Output FITS extensions: PRIMARY, WAVE, FLUX, CONT, MOON, DIFFUSE, RESID, MASK, DRP_ALL.
-    Default output name: skycont_<stem>.fits or skycont_<ext>_<stem>.fits.
+    Default output name: <stem>_cont.fits or <stem>_<ext>_cont.fits.
 
 History:
 
@@ -383,7 +383,7 @@ def process_skyfile(filename, rows=None, delta=None, mask_wave=None, mask_arr=No
     qtab['n_clean'] = n_clean_list
 
     if outroot == '':
-        outroot = f'skycont_{Path(filename).stem}'
+        outroot = f'{Path(filename).stem}_cont'
 
     hdr = fits.Header()
     hdr['INPUT']  = str(filename)
@@ -452,7 +452,7 @@ def process_many(filename, ext, rows=None, delta=None, mask_wave=None, mask_arr=
     qtab['n_clean'] = n_clean_list
 
     if outroot == '':
-        outroot = f'skycont_{ext}_{Path(filename).stem}'
+        outroot = f'{Path(filename).stem}_{ext}_cont'
 
     hdr = fits.Header()
     hdr['INPUT']  = str(filename)

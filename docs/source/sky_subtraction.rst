@@ -280,8 +280,8 @@ extensions.  IVAR is read from the file if present, otherwise estimated.
 
 **Output:**
 
-A FITS file named ``palace_<ext>_<stem>.fits`` (XCframe mode) or
-``palace_<stem>.fits`` (Sky-file mode) with the following extensions:
+A FITS file named ``<stem>_<ext>_ivan.fits`` (XCframe mode) or
+``<stem>_ivan.fits`` (Sky-file mode) with the following extensions:
 
 *Spectral image extensions* (float32, N_obs × N_pix):
 
@@ -333,7 +333,8 @@ in grey so outliers and systematic trends are immediately visible:
 
 - **Panel 1 (Flux)** — input sky spectra
 - **Panel 2 (Residual)** — fit residuals (FLUX − model)
-- **Panel 3 (Continuum)** — smooth Moon/zodiacal + diffuse continuum, log scale
+- **Panel 3 (Lines)** — total fitted emission (OH + Atom + ORC + O2)
+- **Panel 4 (Continuum)** — smooth Moon/zodiacal + diffuse continuum, log scale
 
 Each panel carries its own legend.  The individual-spectrum alpha is set
 automatically as ``min(0.7, 3/√N)`` so traces remain legible regardless of
@@ -342,18 +343,18 @@ how many spectra are in the file.
 **Usage**::
 
     # Full wavelength range
-    XSkySepIvan_eval.py palace_file.fits
+    XSkySepIvan_eval.py Sky_WHAM_south_08_ivan.fits
 
     # Specific window
-    XSkySepIvan_eval.py palace_file.fits 9300 9600
+    XSkySepIvan_eval.py Sky_WHAM_south_08_ivan.fits 9300 9600
 
     # Limit random sample overlay
-    XSkySepIvan_eval.py palace_file.fits 6000 7000 -num 10
+    XSkySepIvan_eval.py Sky_WHAM_south_08_ivan.fits 6000 7000 -num 10
 
 **Output:**
 
 An HTML file named ``<stem>_<wmin>_<wmax>.html`` (e.g.
-``palace_Sky_WHAM_south_08_9300_9600.html``) that can be opened in any
+``Sky_WHAM_south_08_ivan_9300_9600.html``) that can be opened in any
 browser for interactive zoom, pan, and hover inspection.
 
 palace_make_mask.py
@@ -396,14 +397,14 @@ palace_dir
 
 **Output:**
 
-A FITS file (``palace_mask_<stem>.fits``) containing:
+A FITS file (``<stem>_mask.fits``) containing:
 
 - ``WAVE`` — wavelength array (Å)
 - ``SKY`` — median observed sky spectrum (FACTOR-scaled)
 - ``CONTINUUM`` — sky spectrum with contaminated pixels set to NaN
 - ``MASK`` — boolean mask (1 = clean, 0 = contaminated)
 
-A PNG diagnostic plot (``palace_mask_<stem>.png``) showing all three
+A PNG diagnostic plot (``<stem>_mask.png``) showing all three
 spectrograph arms on a log flux scale with the PALACE model, threshold line,
 the full sky spectrum, and the clean continuum pixels highlighted.
 
@@ -486,7 +487,7 @@ row_no
 **Key options:**
 
 -mask file
-    (required) palace_mask FITS file from ``palace_make_mask.py``
+    (required) mask FITS file from ``palace_make_mask.py``
     (MASK extension: 1 = clean, 0 = line-affected).
 
 -delta N
@@ -501,7 +502,7 @@ row_no
 
 **Output:**
 
-A FITS file (``skycont_<stem>.fits``) containing:
+A FITS file (``<stem>_cont.fits``) containing:
 
 - ``WAVE`` — wavelength array (Å)
 - ``FLUX`` — input sky spectra (N_obs × N_pix)
@@ -577,13 +578,13 @@ For each arm (``blue``, ``red``, ``nir``) and for all arms combined
 **Usage**::
 
     # Full wavelength range
-    GetSkyCont_eval.py skycont_file.fits
+    GetSkyCont_eval.py Sky_WHAM_south_08_cont.fits
 
     # Specific window
-    GetSkyCont_eval.py skycont_file.fits 6000 7000
+    GetSkyCont_eval.py Sky_WHAM_south_08_cont.fits 6000 7000
 
     # Limit the random sample overlay
-    GetSkyCont_eval.py skycont_file.fits 6000 7000 -num 10
+    GetSkyCont_eval.py Sky_WHAM_south_08_cont.fits 6000 7000 -num 10
 
 **Output:**
 
@@ -643,7 +644,7 @@ Fitting and Evaluating the Sky Continuum
 
 3. Fit the two-component B-spline continuum::
 
-       GetSkyCont.py Sky_WHAM_south_08.fits -mask palace_mask_XCframe.fits
+       GetSkyCont.py Sky_WHAM_south_08.fits -mask XCframe_file_mask.fits
 
 4. Evaluate the fit interactively::
 

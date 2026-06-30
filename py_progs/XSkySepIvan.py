@@ -192,7 +192,7 @@ Options:
   -delta N    process every N-th row instead of all
   -lsf FWHM   LSF FWHM in Angstroms (default 1.3)
   -refits N   number of iterative LSF kernel refits (default 0)
-  -out ROOT   output filename root (default: palace_<ext>_<stem>)
+  -out ROOT   output filename root (default: <stem>_ivan or <stem>_<ext>_ivan)
 '''
 
 # Maps PALACE internal atom/ORC names to spectroscopic FITS column names
@@ -958,7 +958,7 @@ def process_many(filename, ext, rows=None, delta=None, outroot='',
         Row stride: process rows 0, delta, 2*delta, ...  Ignored if rows
         is not None.
     outroot : str
-        Output filename root.  Default: palace_<ext>_<stem>.
+        Output filename root.  Default: <stem>_<ext>_ivan.
     fwhm_lsf : float or None
     n_lsf_refits : int
     base_dir : Path or str
@@ -1020,7 +1020,7 @@ def process_many(filename, ext, rows=None, delta=None, outroot='',
     xtab_final = qtab
 
     if outroot == '':
-        outroot = f'palace_{ext}_{Path(filename).stem}'
+        outroot = f'{Path(filename).stem}_{ext}_ivan'
 
     spec_cols = ['FLUX', 'LINES', 'CONT', 'OH', 'ATOM', 'ORC', 'O2',
                  'MOON', 'DIFFUSE', 'RESID']
@@ -1074,7 +1074,7 @@ def process_skyfile(filename, rows=None, delta=None, outroot='',
         Row stride: process rows 0, delta, 2*delta, ...  Ignored if rows
         is not None.
     outroot : str
-        Output filename root.  Defaults to palace_<stem>.
+        Output filename root.  Defaults to <stem>_ivan.
     fwhm_lsf : float or None
     n_lsf_refits : int
     base_dir : Path or str
@@ -1150,7 +1150,7 @@ def process_skyfile(filename, rows=None, delta=None, outroot='',
     xtab_final = qtab
 
     if outroot == '':
-        outroot = 'palace_%s' % Path(filename).stem
+        outroot = f'{Path(filename).stem}_ivan'
 
     spec_cols = ['FLUX', 'LINES', 'CONT', 'OH', 'ATOM', 'ORC', 'O2',
                  'MOON', 'DIFFUSE', 'RESID']

@@ -40,7 +40,7 @@ Command line usage (if any):
 
     --lsf-sigma S     fixed Gaussian LSF sigma in Å (default: 0.65).
 
-    --output PATH     output FITS path (default: palace_mask_<stem>.fits).
+    --output PATH     output FITS path (default: <stem>_mask.fits).
 
     --min-window W    minimum clean window width in Å for the printed table
                       (default: 5).
@@ -705,7 +705,7 @@ def main():
     p.add_argument("--lsf-sigma",  type=float, default=LSF_SIGMA_DEFAULT,
                    help="Fixed Gaussian LSF sigma in Å (used with --no-lsf)")
     p.add_argument("--output",     default=None,
-                   help="Output FITS path (default: palace_mask_<stem>.fits)")
+                   help="Output FITS path (default: <stem>_mask.fits)")
     p.add_argument("--min-window", type=float, default=5.0,
                    help="Minimum window width in Å for the printed window table")
     p.add_argument("--plot",       action="store_true",
@@ -713,7 +713,7 @@ def main():
     args = p.parse_args()
 
     # default output filename
-    outpath = args.output or f"palace_mask_{Path(args.fits_file).stem}.fits"
+    outpath = args.output or f"{Path(args.fits_file).stem}_mask.fits"
 
     # ------------------------------------------------------------------
     # Load data

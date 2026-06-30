@@ -10,6 +10,10 @@ docs/html/
 docs/doctrees/
 
 # Sphinx AutoAPI generated RST (regenerated on every make html)
+docs/source/api/index.rst
+docs/source/api/find_obs/
+docs/source/api/fourier_offset_check/
+docs/source/api/SummarizeSpec/
 docs/source/api/CheckData/
 docs/source/api/CheckReduced/
 docs/source/api/CleanAncillary/

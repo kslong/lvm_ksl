@@ -38,7 +38,7 @@ every exposure that was rejected, with columns indicating which
 spectrographs were present and which were absent.
 
 Options: -h prints this documentation; -sf reads SFrame instead of CFrame
-files; -ver drp_ver sets the DRP version (default 1.2.0); -percent N sets
+files; -ver drp_ver sets the DRP version (default 1.2.1); -percent N sets
 the percentile to compute (default 50 = median); -emin N sets the minimum
 exposure time in seconds to include (default 900); -out name sets the root
 name of the output files.
@@ -124,14 +124,14 @@ def augment_drp_all(xtab):
     return drp_all
 
 
-def read_drpall(drp_ver='1.2.0'):
+def read_drpall(drp_ver='1.2.1'):
     '''
     Read the drpall FITS file and return an augmented metadata table.
 
     Looks for the file locally first, then falls back to the Utah path.
 
     Parameters:
-        drp_ver (str): DRP version string (default '1.2.0').
+        drp_ver (str): DRP version string (default '1.2.1').
 
     Returns:
         astropy.table.Table: drpall table with survey classification
@@ -455,7 +455,7 @@ def make_spec_specs(xtab, data_dir, outfile='', percentile=50, file_type='CFrame
 
 
 def doit(exp_start=4000, exp_stop=8000, delta=5, exp_min=900., out_name='',
-         drp_ver='1.2.0', percentile=50, file_type='CFrame'):
+         drp_ver='1.2.1', percentile=50, file_type='CFrame'):
     '''
     Top-level driver: read drpall, select exposures, compute spectrograph spectra.
 
@@ -500,7 +500,7 @@ def steer(argv):
     exp_min = 900
     percent = 50
     out_name = ''
-    ver = '1.2.0'
+    ver = '1.2.1'
     file_type = 'CFrame'
 
     i = 1

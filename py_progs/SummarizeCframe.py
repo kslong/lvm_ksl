@@ -26,7 +26,7 @@ Description:
 
     Options: -h prints out this help and quits; -out file_out changes the output
     filename from the default; -ver drp_ver selects a specific DRP version
-    (default 1.1.1); -emin sets minimum exposure time to include (default 900);
+    (default 1.2.1); -emin sets minimum exposure time to include (default 900);
     -percent N sets the percentile to use instead of median (default 50).
 
     Positional arguments: exp_start is the starting exposure number to consider;
@@ -101,7 +101,7 @@ def augment_drp_all(xtab):
     return drp_all
 
 
-def read_drpall(drp_ver='1.1.0'):
+def read_drpall(drp_ver='1.2.1'):
     DRPFILE='drpall-%s.fits' % (drp_ver)
     # First try to locate the DRP file locally, otherwise
     if os.path.isfile(DRPFILE):
@@ -310,7 +310,7 @@ def make_med_spec(xtab,data_dir,outfile='',percentile=50):
 
 
 
-def doit(exp_start=4000,exp_stop=8000,delta=5,exp_min=900.,out_name='',drp_ver='1.1.0',percentile=50):
+def doit(exp_start=4000,exp_stop=8000,delta=5,exp_min=900.,out_name='',drp_ver='1.2.1',percentile=50):
     xtop=find_top()
     xtab=read_drpall(drp_ver)
     ztab=select(xtab,exp_start,exp_stop,delta)
@@ -331,7 +331,7 @@ def steer(argv):
     percent=50
     out_name=''
 
-    ver='1.2.0'
+    ver='1.2.1'
 
     i=1
     while i<len(argv):

@@ -288,12 +288,17 @@ def _robust_mean(flux_window, sigma=3.0, maxiters=5):
 
     flux_window : ndarray, shape (n_fib_in_window, n_pix)
 
-    Returns a 1-D array of length n_pix.
+    Returns a 1-D array of length n_pix.  Pixels where every fiber in the
+    window is NaN (e.g. a detector column masked bad for all fibers) come
+    back as NaN; numpy's "empty slice"/"all-NaN slice" RuntimeWarnings for
+    those columns are expected and suppressed here, along with the
+    AstropyWarning sigma_clipped_stats raises for the same reason.
     '''
     if flux_window.shape[0] == 1:
         return flux_window[0].copy()
     with warnings.catch_warnings():
         warnings.simplefilter('ignore', AstropyWarning)
+        warnings.simplefilter('ignore', RuntimeWarning)
         mean, _, _ = sigma_clipped_stats(flux_window, sigma=sigma,
                                          maxiters=maxiters, axis=0)
     return np.asarray(mean)

@@ -30,7 +30,7 @@ Command line usage (if any):
     -emin N       minimum exposure time to include (default 900)
     -ver VER      DRP version, used to locate drpall-VER.fits (default 1.2.1)
     -drp_all FILE explicit drpall table to read instead of drpall-VER.fits
-                  (FITS or ascii; passed straight to SumCframe.read_drpall)
+                  (FITS, or ascii if the name contains "txt"/".tab")
     -low PCT      percentile rank (0-100) of the faint/sky-like fiber
                   window (default 10)
     -high PCT     percentile rank (0-100) of the bright/science-like
@@ -51,12 +51,15 @@ Description:
     This script exists so the science-fiber-based sky estimate in
     SkySubSci.py can be run unattended over many exposures (e.g. at
     Utah) without having to hand it a file list. Exposure selection and
-    file-path resolution follow SummarizeCframe.py: read_drpall/xselect/
-    find_top (imported from SumCframe.py, which additionally supports an
-    explicit -drp_all override) pick out rows in [exp_start, exp_stop]
-    with exptime >= -emin, every delta-th one, and resolve each row's
-    "location" column to an actual file under find_top()'s data
-    directory (Utah / Rainbow / Muskie), renaming SFrame -> CFrame.
+    file-path resolution follow the same pattern as SummarizeCframe.py's
+    read_drpall/select/find_top, re-implemented locally here (with an
+    added -drp_all override) rather than imported from SumCframe.py or
+    SummarizeCframe.py, so this script has no dependency on the optional
+    "dask" package that SumCframe.py requires for an unrelated function.
+    read_drpall/select_exps/find_top pick out rows in [exp_start,
+    exp_stop] with exptime >= -emin, every delta-th one, and resolve
+    each row's "location" column to an actual file under find_top()'s
+    data directory (Utah / Rainbow / Muskie), renaming SFrame -> CFrame.
 
     For each resolved exposure, the same algorithm as SkySubSci.py is
     applied (re-implemented locally here -- this script is intentionally
@@ -118,7 +121,11 @@ Notes:
 
     This script deliberately duplicates a small amount of logic from
     SkySubSci.py (rank-window selection and the sigma-clipped robust
-    mean) instead of importing it, so it can run standalone.
+    mean) and from SummarizeCframe.py/SumCframe.py (drpall selection and
+    file-path resolution) instead of importing it, so it can run
+    standalone with no dependency beyond astropy/numpy/scipy -- in
+    particular it avoids SumCframe.py's "dask" import, which is only
+    needed there for a different (unused) function.
 
 History:
 
@@ -139,7 +146,7 @@ from astropy.table import Table
 from astropy.stats import sigma_clipped_stats
 from astropy.utils.exceptions import AstropyWarning
 
-from SumCframe import read_drpall, xselect as select_exps, find_top
+from astropy.io import ascii as apy_ascii
 from SummarizeCframe import scifib
 from GetSkyCont import load_mask, _interp_mask_to_wave
 
@@ -171,6 +178,91 @@ Options:
   -out ROOT     output filename root (default:
                 SummarizeSciSky_<ver>_<exp_start>_<exp_stop>_<delta>)
 '''
+
+
+# ──────────────────────────────────────────────────────────────
+# Standalone copies of the SummarizeCframe.py / SumCframe.py drpall
+# selection logic (avoids SumCframe.py's "dask" dependency, which is
+# only needed there for a different, unused function)
+# ──────────────────────────────────────────────────────────────
+
+def read_drpall(filename='', drp_ver='1.2.1'):
+    '''Read a drpall FITS file, or an ascii table, and return the table.
+
+    Parameters
+    ----------
+    filename : str
+        Explicit drpall table to read (FITS, or ascii if the name
+        contains "txt" or ".tab"). If empty, drpall-<drp_ver>.fits is
+        looked for locally, then under the Utah redux tree.
+    drp_ver : str
+        DRP version, used to build the default filename.
+
+    Returns
+    -------
+    astropy.table.Table, or an empty list if the file cannot be found
+    or read.
+    '''
+    if filename.count('txt') or filename.count('.tab'):
+        try:
+            return apy_ascii.read(filename)
+        except Exception:
+            print('Error: Could not locate : ', filename)
+            return []
+
+    if filename == '':
+        DRPFILE = 'drpall-%s.fits' % (drp_ver)
+    else:
+        DRPFILE = filename
+
+    if os.path.isfile(DRPFILE):
+        xfile = DRPFILE
+    else:
+        BASEDIR = '/uufs/chpc.utah.edu/common/home/sdss51/sdsswork/lvm/spectro/redux/%s/' % (drp_ver)
+        xfile = '%s/%s' % (BASEDIR, DRPFILE)
+        if not os.path.isfile(xfile):
+            print('Error: Could not locate : ', xfile)
+            return []
+
+    try:
+        drpall = fits.open(xfile)
+        print('Successfully opened ', xfile)
+    except Exception:
+        print('Error: Located but could not read : ', xfile)
+        return []
+
+    return Table(drpall[1].data)
+
+
+def select_exps(ztab, exp_start=4000, exp_stop=8000, delta=5, exp_min=900.):
+    '''Select every delta-th exposure between exp_start and exp_stop.'''
+    xtab = ztab[ztab['expnum'] >= exp_start]
+    xtab = xtab[xtab['expnum'] <= exp_stop]
+    if exp_min > 0:
+        xtab = xtab[xtab['exptime'] >= exp_min]
+    if delta > 1:
+        xtab = xtab[::delta]
+    return xtab
+
+
+_XTOP     = '/uufs/chpc.utah.edu/common/home/sdss51/'
+_XRAINBOW = '/Users/long/Projects/lvm_data/sas'
+_XMUSKIE  = '/home/long/Projects/lvm_data/sas'
+
+
+def find_top():
+    '''Locate the top of the local redux data tree (Utah / Rainbow / Muskie).'''
+    if os.path.isdir(_XTOP):
+        loc, topdir = 'Utah', _XTOP
+    elif os.path.isdir(_XRAINBOW):
+        loc, topdir = 'Rainbow', _XRAINBOW
+    elif os.path.isdir(_XMUSKIE):
+        loc, topdir = 'Muskie', _XMUSKIE
+    else:
+        print('Error: I do not know where I am:', os.getcwd())
+        return ''
+    print('We are on : ', loc)
+    return topdir
 
 
 # ──────────────────────────────────────────────────────────────

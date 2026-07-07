@@ -14,7 +14,7 @@ Synopsis:
     a scale factor for the sky lines is found by bisection, and the
     scaled sky is subtracted.
 
-    Two methods are supported:
+    Two methods are supported::
 
         nearest           continuum and lines both from the nearest
                           sky telescope
@@ -23,29 +23,31 @@ Synopsis:
 
     Produces a FITS file with WAVE, FLUX (sky-subtracted), SKY, and
     DRP_ALL extensions.  The DRP_ALL table carries a QA_FLAGS column
-    that records per-row quality issues.
+    that records per-row quality issues, and a LINE_SCALE column
+    recording the bisection factor r used to scale the sky lines (see
+    Description).
 
 Command line usage (if any):
 
     usage: SkySubDev1.py [-method METHOD] [-delta N] [-kstep N]
                          [-out ROOT] -mask mask.fits filename
 
-    Arguments:
+    Arguments::
 
-    filename    XCframe FITS file to process
+        filename    XCframe FITS file to process
 
-    Options:
+    Options::
 
-    -mask file       palace_mask FITS file from palace_make_mask.py
-                     (MASK extension: 1=clean).  If omitted the script
-                     searches for sky_mask.fits in the current directory
-                     then in the lvm_ksl data/ directory.
-    -method METHOD   sky subtraction method: nearest |
-                     farlines_nearcont  (default: farlines_nearcont)
-    -delta N         process every N-th row; useful for quick tests
-                     (default: 1 = all rows)
-    -kstep N         B-spline knot spacing in Angstroms (default 100)
-    -out ROOT        output filename root; default is <stem>_dev1_<method>
+        -mask file       palace_mask FITS file from palace_make_mask.py
+                         (MASK extension: 1=clean).  If omitted the script
+                         searches for sky_mask.fits in the current directory
+                         then in the lvm_ksl data/ directory.
+        -method METHOD   sky subtraction method: nearest |
+                         farlines_nearcont  (default: farlines_nearcont)
+        -delta N         process every N-th row; useful for quick tests
+                         (default: 1 = all rows)
+        -kstep N         B-spline knot spacing in Angstroms (default 100)
+        -out ROOT        output filename root; default is <stem>_dev1_<method>
 
 Description:
 
@@ -66,9 +68,22 @@ Description:
 
     5. For farlines_nearcont: sky = cont_near + r * lines_far
        For nearest:           sky = cont_near + r * lines_near
+       Only the lines are scaled by r; cont_near is used exactly as
+       fitted, with no additional scaling.
     6. sky-subtracted science = flux_sci - sky
 
-    QA flag bits stored in DRP_ALL['QA_FLAGS']:
+    Since the continuum itself is never rescaled, its fit quality
+    against the RAW (pre-subtraction) science and sky spectra is
+    evaluated directly and recorded per row via
+    GetSkyCont.arm_continuum_stats: per spectrograph arm (B/R/Z), the
+    median/NMAD/RMS/skew of lines_sci in clean pixels (SCI_MED_B etc.)
+    and of lines_near in clean pixels (SKY_MED_B etc. -- cont_near is
+    always the continuum used in the final SKY, for both methods).
+    This is unrelated to the final sky-subtracted SCI_FLUX -- see
+    SkySub_eval.py's Figures 5/6 for that (post-subtraction) residual,
+    which measures leftover source continuum rather than fit quality.
+
+    QA flag bits stored in DRP_ALL['QA_FLAGS']::
 
         0x01  NANDATA   NaN/inf found in input flux or sky data
         0x02  ZEROSKY   sky line vector is all-zero; scale unreliable
@@ -84,10 +99,20 @@ Notes:
     in the current working directory, then in the lvm_ksl ``data/``
     directory (sibling of ``py_progs/``).
 
-History:
+History::
 
     260630 ksl Coding begun; imports continuum separation from
                GetSkyCont.py and bisection from SkySubOrig.py
+    260706 ksl DRP_ALL['mjd'] now recomputed precisely from 'obstime' via
+               SkySubOrig.obstime_to_mjd(), instead of the truncated
+               integer carried through from the input file.
+    260706 ksl one_drp() now also returns the bisection line-scale factor;
+               do_all() records it as DRP_ALL['LINE_SCALE'].
+    260706 ksl Added per-arm continuum-fit-quality columns (SCI_*/SKY_* for
+               med/nmad/rms/skew x b/r/z), evaluated against the raw
+               pre-subtraction science and near-sky spectra using
+               GetSkyCont.arm_continuum_stats() (reuses the mask already
+               required by -mask).
 
 '''
 
@@ -104,8 +129,9 @@ from astropy.coordinates import SkyCoord
 import astropy.units as u
 
 from GetSkyCont import (build_design_matrix, fit_continuum,
-                        load_mask, load_solar, _interp_mask_to_wave)
-from SkySubOrig import fit_func, ksl_bisection
+                        load_mask, load_solar, _interp_mask_to_wave,
+                        arm_continuum_stats, flatten_arm_stats)
+from SkySubOrig import fit_func, ksl_bisection, obstime_to_mjd
 
 # ──────────────────────────────────────────────────────────────
 # QA flag bits
@@ -151,8 +177,20 @@ def one_drp(xfits, drp_all, row, wave, clean, A, n_b,
     mask to separate continuum and lines in sci, near-sky, and far-sky
     spectra, then scales and subtracts the sky.
 
-    Returns (result_table, qa_flags).  result_table has columns WAVE,
-    SCI_FLUX, SKY.  Returns (None, QA_FAILED) on error.
+    Returns (result_table, qa_flags, line_scale, cont_stats).
+    result_table has columns WAVE, SCI_FLUX, SKY.  line_scale is the
+    ksl_bisection factor r applied to the sky lines (SKY = cont_near +
+    r*use_lines; the continuum itself is not scaled).
+
+    cont_stats is a flat dict of per-arm continuum-fit-quality stats
+    (GetSkyCont.arm_continuum_stats/flatten_arm_stats) evaluated on the
+    RAW pre-subtraction science spectrum (lines_sci against clean
+    pixels) and the near-sky spectrum (lines_near; cont_near is always
+    the continuum used in the final SKY, for both methods here) --
+    this tests the continuum fit itself, not the final sky-subtracted
+    result.  Keys are 'sci_<stat>_<arm>' and 'sky_<stat>_<arm>'.
+
+    Returns (None, QA_FAILED, nan, {}) on error.
     '''
     qa_flags = 0
 
@@ -164,9 +202,14 @@ def one_drp(xfits, drp_all, row, wave, clean, A, n_b,
             np.all(np.isfinite(skye_flux)) and
             np.all(np.isfinite(skyw_flux))):
         qa_flags |= QA_NANDATA
-        flux      = np.nan_to_num(flux)
-        skye_flux = np.nan_to_num(skye_flux)
-        skyw_flux = np.nan_to_num(skyw_flux)
+        # nan_to_num's default replaces +-inf with +-1.8e308 (float64 max),
+        # not 0 -- that "poison" value overflows through the NNLS continuum
+        # fit's matrix operations, corrupting the row (and, in some numpy/
+        # scipy builds, segfaulting inside the BLAS routine).  Zero all
+        # non-finite pixels explicitly instead.
+        flux      = np.nan_to_num(flux,      nan=0.0, posinf=0.0, neginf=0.0)
+        skye_flux = np.nan_to_num(skye_flux, nan=0.0, posinf=0.0, neginf=0.0)
+        skyw_flux = np.nan_to_num(skyw_flux, nan=0.0, posinf=0.0, neginf=0.0)
 
     # determine near/far sky from angular separation
     sci_coord  = SkyCoord(ra=drp_all['sci_ra'][row]  * u.degree,
@@ -195,7 +238,7 @@ def one_drp(xfits, drp_all, row, wave, clean, A, n_b,
         use_lines = lines_near
     else:
         print('Error: unknown method "%s"' % method)
-        return None, QA_FAILED
+        return None, QA_FAILED, np.nan, {}
 
     if np.dot(use_lines, use_lines) == 0:
         qa_flags |= QA_ZEROSKY
@@ -206,8 +249,14 @@ def one_drp(xfits, drp_all, row, wave, clean, A, n_b,
     sky         = cont_near + r * use_lines
     sci_flux_sub = flux - sky
 
+    cont_stats = {}
+    cont_stats.update(flatten_arm_stats(
+        'sci', arm_continuum_stats(wave, lines_sci, clean)))
+    cont_stats.update(flatten_arm_stats(
+        'sky', arm_continuum_stats(wave, lines_near, clean)))
+
     result = Table([wave, sci_flux_sub, sky], names=['WAVE', 'SCI_FLUX', 'SKY'])
-    return result, qa_flags
+    return result, qa_flags, r, cont_stats
 
 
 # ──────────────────────────────────────────────────────────────
@@ -250,20 +299,24 @@ def do_all(filename, mask_file, method='farlines_nearcont',
 
     nan_spectrum = np.full(len(wave), np.nan)
 
-    final_flux    = []
-    final_sky     = []
-    select        = []
-    qa_flags_list = []
+    final_flux      = []
+    final_sky       = []
+    select          = []
+    qa_flags_list   = []
+    line_scale_list = []
+    cont_stats_list = []
 
     i = 0
     while i < len(drp_all):
         try:
-            ftab, row_flags = one_drp(x, drp_all, i, wave, clean, A, n_b,
-                                      method=method)
+            ftab, row_flags, line_scale, cont_stats = one_drp(
+                x, drp_all, i, wave, clean, A, n_b, method=method)
         except Exception as e:
             print('Row %d: exception (%s)' % (i, e))
             ftab = None
             row_flags = 0
+            line_scale = np.nan
+            cont_stats = {}
 
         if ftab is None:
             row_flags |= QA_FAILED
@@ -275,6 +328,8 @@ def do_all(filename, mask_file, method='farlines_nearcont',
 
         select.append(i)
         qa_flags_list.append(row_flags)
+        cont_stats_list.append(cont_stats)
+        line_scale_list.append(line_scale)
         i += idelta
         if i % 100 == 0:
             print('Completed %6d of %d in steps of %d' % (i, len(drp_all), idelta))
@@ -302,7 +357,16 @@ def do_all(filename, mask_file, method='farlines_nearcont',
     hdu4 = fits.ImageHDU(data=np.array(final_sky),             name='SKY')
 
     xtab = drp_all[select].copy()
-    xtab['QA_FLAGS'] = np.array(qa_flags_list, dtype=np.int32)
+    xtab['QA_FLAGS']   = np.array(qa_flags_list, dtype=np.int32)
+    xtab['LINE_SCALE'] = np.array(line_scale_list, dtype=float)
+    # Continuum-fit-quality columns (raw pre-subtraction sci/sky spectra,
+    # not the final sky-subtracted result -- see one_drp() docstring).
+    _cont_keys = sorted({k for d in cont_stats_list for k in d})
+    for _key in _cont_keys:
+        xtab[_key.upper()] = np.array(
+            [d.get(_key, np.nan) for d in cont_stats_list], dtype=np.float32)
+    if 'obstime' in xtab.colnames and 'mjd' in xtab.colnames:
+        xtab['mjd'] = obstime_to_mjd(xtab['obstime'])
     hdu5 = fits.BinTableHDU(xtab, name='DRP_ALL')
 
     from astropy.wcs import WCS

@@ -13,7 +13,7 @@ Synopsis:
     line and continuum components are then combined and subtracted from
     the science spectrum without any additional scaling.
 
-    Two methods are supported:
+    Two methods are supported::
 
         nearest           continuum and lines both from the nearest
                           sky telescope
@@ -29,18 +29,18 @@ Command line usage (if any):
     usage: SkySubDev2.py [-method METHOD] [-delta N] [-lsf FWHM]
                          [-out ROOT] filename
 
-    Arguments:
+    Arguments::
 
-    filename    XCframe FITS file to process
+        filename    XCframe FITS file to process
 
-    Options:
+    Options::
 
-    -method METHOD   sky subtraction method: nearest |
-                     farlines_nearcont  (default: farlines_nearcont)
-    -delta N         process every N-th row; useful for quick tests
-                     (default: 1 = all rows)
-    -lsf FWHM        LSF FWHM in Angstroms (default: 1.3)
-    -out ROOT        output filename root; default is <stem>_dev2_<method>
+        -method METHOD   sky subtraction method: nearest |
+                         farlines_nearcont  (default: farlines_nearcont)
+        -delta N         process every N-th row; useful for quick tests
+                         (default: 1 = all rows)
+        -lsf FWHM        LSF FWHM in Angstroms (default: 1.3)
+        -out ROOT        output filename root; default is <stem>_dev2_<method>
 
 Description:
 
@@ -56,14 +56,14 @@ Description:
            LINES = oh + atom + orc + o2
            CONT  = moon + diffuse
 
-    4. The sky model is assembled without scaling:
+    4. The sky model is assembled without scaling::
 
-       farlines_nearcont:  sky = CONT_near + LINES_far
-       nearest:            sky = CONT_near + LINES_near
+           farlines_nearcont:  sky = CONT_near + LINES_far
+           nearest:            sky = CONT_near + LINES_near
 
     5. sky-subtracted science = flux_sci - sky
 
-    QA flag bits stored in DRP_ALL['QA_FLAGS']:
+    QA flag bits stored in DRP_ALL['QA_FLAGS']::
 
         0x01  NANDATA   NaN/inf found in input flux or sky data
         0x08  FAILED    row raised an exception; spectrum filled with NaN
@@ -77,9 +77,12 @@ Notes:
     Requires the PALACE library (lvmsky/skysub/sky_decomp) and the
     palace data files; the paths are taken from XSkySepIvan.py.
 
-History:
+History::
 
     260630 ksl Coding begun; imports PALACE decomposer from XSkySepIvan.py
+    260706 ksl DRP_ALL['mjd'] now recomputed precisely from 'obstime' via
+               SkySubOrig.obstime_to_mjd(), instead of the truncated
+               integer carried through from the input file.
 
 '''
 
@@ -97,6 +100,7 @@ from astropy.wcs import WCS
 import astropy.units as u
 
 from XSkySepIvan import _get_decomposer, estimate_ivar, DEFAULT_BASE_DIR
+from SkySubOrig import obstime_to_mjd
 
 # ──────────────────────────────────────────────────────────────
 # QA flag bits
@@ -169,9 +173,13 @@ def one_drp(xfits, drp_all, row, wave, decomposer,
             np.all(np.isfinite(skye_flux)) and
             np.all(np.isfinite(skyw_flux))):
         qa_flags |= QA_NANDATA
-        flux      = np.nan_to_num(flux)
-        skye_flux = np.nan_to_num(skye_flux)
-        skyw_flux = np.nan_to_num(skyw_flux)
+        # nan_to_num's default replaces +-inf with +-1.8e308 (float64 max),
+        # not 0 -- that "poison" value overflows through the PALACE
+        # decomposer's internal fit, corrupting the row.  Zero all
+        # non-finite pixels explicitly instead.
+        flux      = np.nan_to_num(flux,      nan=0.0, posinf=0.0, neginf=0.0)
+        skye_flux = np.nan_to_num(skye_flux, nan=0.0, posinf=0.0, neginf=0.0)
+        skyw_flux = np.nan_to_num(skyw_flux, nan=0.0, posinf=0.0, neginf=0.0)
 
     # determine near/far sky from angular separation
     sci_coord  = SkyCoord(ra=drp_all['sci_ra'][row]   * u.degree,
@@ -284,6 +292,8 @@ def do_all(filename, method='farlines_nearcont', idelta=1,
 
     xtab = drp_all[select].copy()
     xtab['QA_FLAGS'] = np.array(qa_flags_list, dtype=np.int32)
+    if 'obstime' in xtab.colnames and 'mjd' in xtab.colnames:
+        xtab['mjd'] = obstime_to_mjd(xtab['obstime'])
     hdu5 = fits.BinTableHDU(xtab, name='DRP_ALL')
 
     dwave = float(wave[1] - wave[0]) if len(wave) > 1 else 0.5

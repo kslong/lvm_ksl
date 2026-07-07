@@ -12,7 +12,8 @@ Command line usage (if any):
 
     usage: MakeVideo.py [-h] [-out outroot] [-fps N] boat_load of pngs
 
-    where:
+    where::
+
         -h        print this help and exit
         -out root root name for output mp4 file (default: test.mp4)
         -fps N    frames per second (default: 4 = 0.25 s/frame); lower = slower, higher = faster
@@ -30,9 +31,9 @@ Primary routines:
 
 Notes:
                                        
-History:
+History::
 
-250409 ksl Coding begun
+    250409 ksl Coding begun
 
 '''
 

@@ -73,10 +73,16 @@ Notes:
     Output FITS extensions: PRIMARY, WAVE, FLUX, CONT, MOON, DIFFUSE, RESID, MASK, DRP_ALL.
     Default output name: <stem>_cont.fits or <stem>_<ext>_cont.fits.
 
-History:
+History::
 
     260628  ksl  Written; solar component optional.
     260628  ksl  Solar made default; MOON and DIFFUSE always written as separate extensions.
+    260706  ksl  Added ARM_EVAL_RANGES and arm_continuum_stats(): a shared,
+                 per-spectrum per-arm continuum-fit-residual evaluator, so
+                 SkySubOrig.py/SkySubDev1.py/SkySepESO.py can each record
+                 continuum-fit quality (against the raw, pre-subtraction
+                 science and sky spectra) in their own DRP_ALL, without
+                 duplicating the arm-band definitions or the stats math.
 '''
 
 import sys
@@ -158,6 +164,98 @@ def _interp_mask_to_wave(mask_wave, mask_bool, spec_wave):
     f = interp1d(mask_wave, mask_bool.astype(float), kind='nearest',
                  bounds_error=False, fill_value=0.0)
     return f(spec_wave) > 0.5
+
+
+# Spectrograph arm ranges for continuum-quality evaluation (arm_continuum_stats
+# below), trimmed to exclude the B/R and R/Z overlap zones (5775-5800 and
+# 7520-7570) and the outer edges below 3650 / above 9600.  This is the single
+# canonical definition used by SkySub_eval.py and by the individual SkySub*.py
+# routines; it is distinct from palace_make_mask.py's ARM_RANGES, which is a
+# full-coverage (no-gap) split for a different purpose (PALACE line-model mask
+# construction).
+ARM_EVAL_RANGES = [
+    ('B', 3650.0, 5775.0),
+    ('R', 5800.0, 7520.0),
+    ('Z', 7570.0, 9600.0),
+]
+
+
+def arm_continuum_stats(wave, resid, clean=None, arm_ranges=ARM_EVAL_RANGES):
+    '''
+    Per-arm statistics of a continuum-fit residual for a SINGLE spectrum.
+
+    Intended to be called at the point a continuum fit is computed (e.g.
+    inside a SkySub*.py one_drp()-style routine) to evaluate, per
+    spectrograph arm, how well the fit tracks the true continuum in the
+    RAW spectrum -- before any sky-line scaling or subtraction is
+    applied.  Restricting to clean (sky-line-free) pixels isolates
+    continuum-level residual from sky-line-level residual.
+
+    Parameters
+    ----------
+    wave : 1-D array (n_wave,)
+        Wavelength grid.
+    resid : 1-D array (n_wave,)
+        Residual, typically flux - continuum, for one spectrum.
+    clean : 1-D bool array (n_wave,) or None
+        True = sky-line-free pixel.  If None, all pixels in range are used.
+    arm_ranges : list of (label, lo, hi), optional
+        Evaluation bands; defaults to ARM_EVAL_RANGES (B/R/Z, overlaps
+        and outer edges already excluded).
+
+    Returns
+    -------
+    dict keyed by arm label, each value a dict with keys n, med, nmad,
+    rms, skew (n=0 and the rest nan if no clean pixels fall in that
+    arm's range) -- always all requested arm labels are present, so
+    downstream code can index by a fixed set of keys regardless of
+    per-row data availability.
+    '''
+    wave = np.asarray(wave, dtype=float)
+    resid = np.asarray(resid, dtype=float)
+    out = {}
+    for label, lo, hi in arm_ranges:
+        sel = (wave >= lo) & (wave <= hi)
+        if clean is not None:
+            sel = sel & clean
+        vals = resid[sel]
+        vals = vals[np.isfinite(vals)]
+        if len(vals) < 3:
+            out[label] = dict(n=0, med=np.nan, nmad=np.nan, rms=np.nan, skew=np.nan)
+            continue
+        med  = float(np.median(vals))
+        nmad = float(1.4826 * np.median(np.abs(vals - med)))
+        rms  = float(np.sqrt(np.mean(vals ** 2)))
+        mn, sd = float(np.mean(vals)), float(np.std(vals))
+        skew = float(np.mean(((vals - mn) / sd) ** 3)) if sd > 0 else 0.0
+        out[label] = dict(n=len(vals), med=med, nmad=nmad, rms=rms, skew=skew)
+    return out
+
+
+def flatten_arm_stats(prefix, stats_by_arm):
+    '''
+    Flatten an arm_continuum_stats() result into a flat dict of scalar
+    columns, named ``<prefix>_<stat>_<arm>`` in lowercase (e.g.
+    'sci_med_b', 'sky_rms_z'), ready to accumulate per row and write as
+    DRP_ALL columns.
+
+    Parameters
+    ----------
+    prefix : str
+        e.g. 'sci' or 'sky'.
+    stats_by_arm : dict
+        Output of arm_continuum_stats().
+
+    Returns
+    -------
+    dict of float, keys '<prefix>_<stat>_<arm_lower>'.
+    '''
+    out = {}
+    for arm_label, st in stats_by_arm.items():
+        suffix = arm_label.lower()
+        for stat_name in ('med', 'nmad', 'rms', 'skew'):
+            out[f'{prefix}_{stat_name}_{suffix}'] = st[stat_name]
+    return out
 
 
 def load_solar(wave_out):

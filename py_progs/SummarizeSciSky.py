@@ -19,32 +19,32 @@ Command line usage (if any):
                               [-maxiters 5] [-mask FILE] [-stat median|mean]
                               [-out ROOT] exp_start exp_stop [delta]
 
-    Arguments:
+    Arguments::
 
-    exp_start   starting exposure number
-    exp_stop    stopping exposure number
-    delta       process every delta-th exposure in range (default 1)
+        exp_start   starting exposure number
+        exp_stop    stopping exposure number
+        delta       process every delta-th exposure in range (default 1)
 
-    Options:
+    Options::
 
-    -emin N       minimum exposure time to include (default 900)
-    -ver VER      DRP version, used to locate drpall-VER.fits (default 1.2.1)
-    -drp_all FILE explicit drpall table to read instead of drpall-VER.fits
-                  (FITS, or ascii if the name contains "txt"/".tab")
-    -low PCT      percentile rank (0-100) of the faint/sky-like fiber
-                  window (default 10)
-    -high PCT     percentile rank (0-100) of the bright/science-like
-                  fiber window (default 90)
-    -navg N       number of nearest-rank fibers to combine per percentile,
-                  via a sigma-clipped mean (default 10; use 1 for a
-                  single nearest-rank fiber)
-    -sigma S      sigma-clipping threshold for the robust mean (default 3.0)
-    -maxiters K   sigma-clipping iteration limit (default 5)
-    -mask FILE    palace_mask FITS file (default: sky_mask.fits searched
-                  in cwd then the lvm_ksl data/ directory)
-    -stat STAT    median (default) or mean, ranking statistic
-    -out ROOT     output filename root; default is
-                  SummarizeSciSky_<ver>_<exp_start>_<exp_stop>_<delta>
+        -emin N       minimum exposure time to include (default 900)
+        -ver VER      DRP version, used to locate drpall-VER.fits (default 1.2.1)
+        -drp_all FILE explicit drpall table to read instead of drpall-VER.fits
+                      (FITS, or ascii if the name contains "txt"/".tab")
+        -low PCT      percentile rank (0-100) of the faint/sky-like fiber
+                      window (default 10)
+        -high PCT     percentile rank (0-100) of the bright/science-like
+                      fiber window (default 90)
+        -navg N       number of nearest-rank fibers to combine per percentile,
+                      via a sigma-clipped mean (default 10; use 1 for a
+                      single nearest-rank fiber)
+        -sigma S      sigma-clipping threshold for the robust mean (default 3.0)
+        -maxiters K   sigma-clipping iteration limit (default 5)
+        -mask FILE    palace_mask FITS file (default: sky_mask.fits searched
+                      in cwd then the lvm_ksl data/ directory)
+        -stat STAT    median (default) or mean, ranking statistic
+        -out ROOT     output filename root; default is
+                      SummarizeSciSky_<ver>_<exp_start>_<exp_stop>_<delta>
 
 Description:
 
@@ -127,9 +127,12 @@ Notes:
     particular it avoids SumCframe.py's "dask" import, which is only
     needed there for a different (unused) function.
 
-History:
+History::
 
     260703  ksl  Coding begun
+    260706  ksl  DRP_ALL['mjd'] now recomputed precisely from 'obstime' via
+                 SkySubOrig.obstime_to_mjd(), instead of the truncated
+                 integer carried through from the master drpall table.
 
 '''
 
@@ -149,6 +152,7 @@ from astropy.utils.exceptions import AstropyWarning
 from astropy.io import ascii as apy_ascii
 from SummarizeCframe import scifib
 from GetSkyCont import load_mask, _interp_mask_to_wave
+from SkySubOrig import obstime_to_mjd
 
 _USAGE = '''Usage:
   SummarizeSciSky.py [-emin N] [-ver VER] [-drp_all FILE] [-low PCT]
@@ -497,6 +501,8 @@ def process_drpall(exp_start, exp_stop, delta=1, exp_min=900., drp_ver='1.2.1',
     ztab_final = ztab[good_rows]
     for col in meta_list[0]:
         ztab_final[col] = [m[col] for m in meta_list]
+    if 'obstime' in ztab_final.colnames and 'mjd' in ztab_final.colnames:
+        ztab_final['mjd'] = obstime_to_mjd(ztab_final['obstime'])
 
     if outroot == '':
         outroot = 'SummarizeSciSky_%s_%d_%d_%d' % (drp_ver, exp_start, exp_stop, delta)

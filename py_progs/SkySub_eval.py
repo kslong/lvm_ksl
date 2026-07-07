@@ -13,8 +13,10 @@ Synopsis:
     are supplied they are overlaid in the same figures, making it easy
     to compare sky subtraction methods on a common footing.
 
-    Writes a single interactive HTML file containing four Plotly figures
-    and an inline statistics table.
+    Writes a single interactive HTML file containing six Plotly figures
+    and two inline statistics tables.  Also writes per-arm continuum-
+    residual statistics back into each evaluated file's own DRP_ALL
+    table, in place, for detailed analysis (see Figure 5/6 below).
 
 Command line usage (if any):
 
@@ -54,12 +56,18 @@ Description:
 
     Diagnostic windows: [OI] 5577 (5560–5594 Å), [OI] 6300
     (6280–6320 Å), and IR OH (9300–9500 Å).  For each window the
-    distribution of all per-pixel sky-subtracted flux values across every
-    spectrum is plotted as a bar histogram.  A Gaussian with the same
-    median and NMAD is overlaid as a dotted curve.  A statistics box
-    (N, median, NMAD, skewness) is placed inside each panel; boxes stack
-    vertically when multiple files are given.  The histogram range is
-    clipped to median ± 5·NMAD.
+    distribution of per-pixel HF (high-frequency) residual values across
+    every spectrum is plotted as a bar histogram.  The HF residual is
+    each spectrum minus a Gaussian-smoothed (clean-pixel-weighted)
+    version of itself (see ``_hf_residual``), so leftover continuum in
+    the window does not bias the histogram — only sky-line-scale
+    structure remains.  A Gaussian with the same median and NMAD is
+    overlaid as a dotted curve.  A statistics box (N, median, NMAD,
+    skewness) is placed inside each panel; boxes stack vertically when
+    multiple files are given.  The histogram range is clipped to
+    median ± 5·NMAD, and the reported skewness is computed on that same
+    clipped range so it matches what's plotted rather than being
+    dominated by a handful of outlier pixels beyond the display range.
 
     **Figure 3 (Figure 4 in HTML) — diagnostic window median spectra:**
 
@@ -90,7 +98,13 @@ Description:
     **Figure 4 (Figure 3 in HTML) — HF RMS ratio per spectrum:**
 
     For each diagnostic window the noise-corrected high-frequency RMS
-    ratio (sky-subtracted / original) is plotted against spectrum index.
+    ratio (sky-subtracted / original) is plotted against spectrum index,
+    or against MJD if there are more than 100 spectra and a DRP_ALL
+    OBSTIME column is available (e.g. the per-exposure rows written by
+    SkySubSci.py) — MJD is derived from OBSTIME rather than the table's
+    own MJD column, since that is stored as a truncated integer.  If any
+    file in the run lacks this information, all files fall back to plain
+    spectrum index so every trace stays on a common axis.
     The ratio is computed as follows:
 
     1. A Gaussian smooth (σ = 50 pixels ≈ 25 Å) using only mask-selected
@@ -108,6 +122,63 @@ Description:
        change.  The panels share a linked x-axis (spectrum index) so
        zooming one panel pans all three.
 
+    **Figure 5 — per-arm continuum-quality histograms (3 rows x 3 cols):**
+
+    Three columns, one per spectrograph arm (B 3650-5775, R 5800-7520,
+    Z 7570-9600 Å — the B/R and R/Z overlap zones and the outer edges
+    are excluded).  Same annotation style throughout (N, median, NMAD,
+    skew; Gaussian overlay), but each row plots a different quantity,
+    and they answer different questions:
+
+    Row 1 -- distribution (across spectra) of DRP_ALL['SCI_MED_<arm>'],
+    i.e. the per-spectrum median of (raw science flux − sci_cont) in
+    clean pixels of the *raw, pre-subtraction* science spectrum.  This
+    **is** the science-side continuum-fit-quality test.
+
+    Row 2 -- distribution of DRP_ALL['SKY_MED_<arm>'], the per-spectrum
+    median of (raw sky flux − sky_cont) in clean pixels of the *raw,
+    pre-subtraction* sky-telescope spectrum whose CONT was actually used
+    in the final SKY.  This **is** the sky-side continuum-fit-quality
+    test, and is the one that matters directly for the final result's
+    continuum level, since sky_cont is literally part of SKY.
+
+    Row 3 -- distribution (across spectra) of the per-spectrum median of
+    the *raw* sky-subtracted FLUX (not the HF residual used by Figure 2)
+    in clean (sky-line-free) pixels -- one value per spectrum, exactly
+    like rows 1/2, so all three rows are directly comparable (not a pooled
+    per-pixel distribution).  This is the final, post-subtraction leftover
+    signal.  It does **not** test continuum-fit quality: the science
+    spectrum's own continuum fit (sci_cont) is only ever used to derive
+    the bisection line-scale target and never enters the subtracted
+    result, so this row reflects real source (stellar) continuum
+    entangled with any net error in the sky-side continuum estimate --
+    see Notes.
+
+    Rows 1/2 require SCI_MED_<arm>/SKY_MED_<arm> columns already present
+    in the input file's DRP_ALL (written by SkySubOrig.py/SkySubDev1.py/
+    SkySepESO.py); a file without them (SkySubDev2.py/SkySubDrp.py output,
+    or an older file predating this feature) leaves those panels empty.
+
+    **Continuum-quality stats table**, and **Figure 6 — per-arm,
+    per-spectrum continuum residual (same row order: SCI, SKY, Subtracted):**
+
+    A table (screen + HTML) reports per-file, per-arm N/median/NMAD/skew
+    of the pooled clean-pixel residual (row 3 above).  Figure 6 plots the
+    per-spectrum SCI_MED_<arm>/SKY_MED_<arm> (rows 1/2) and the per-spectrum
+    median of the row-3 residual (row 3), each against spectrum index or
+    MJD (same x-axis logic as Figure 4), so specific bad exposures/fibers
+    are visible rather than just an aggregate number.  For row 3, a
+    nonzero residual can reflect real source continuum as well as a sky
+    error; comparing this panel across overlaid methods on the same
+    input isolates sky-continuum quality, since source continuum is
+    identical across methods.
+
+    The same per-spectrum statistics (resid_med_<arm>, resid_nmad_<arm>,
+    resid_rms_<arm>, resid_skew_<arm> for arm in b, r, z) are written
+    back into each evaluated file's own DRP_ALL table, in place, for
+    detailed analysis (matching GetSkyCont_eval.py's convention of
+    updating the input file rather than only reporting in the HTML).
+
 Notes:
 
     Requires plotly (pip install plotly) and scipy.
@@ -115,11 +186,76 @@ Notes:
     automatically from the current directory or the lvm_ksl data/
     directory; without the mask the Gaussian smooth is unweighted.
 
-History:
+    Figures 5/6 and the DRP_ALL update require a DRP_ALL extension in
+    the input file; files without one are skipped for this diagnostic
+    only (the other figures still work).  Input files are modified in
+    place when DRP_ALL is updated; no backup is created.
+
+History::
 
     260630 ksl  Initial version (matplotlib, mode-based: eval/xplot/bigplot).
     260630 ksl  Rewritten to Plotly HTML with multi-file overlay.
     260630 ksl  Added HF RMS ratio analysis, diagnostic window spectra, stats table.
+    260704 ksl  Figure 2 histograms now use the HF (continuum-subtracted)
+                residual instead of raw FLUX, so leftover continuum in the
+                diagnostic window no longer biases the reported median/NMAD.
+    260704 ksl  Figure 2 skewness is now computed on the same median ± 5·NMAD
+                clipped range as the histogram, instead of all pixels, so it
+                is not dominated by a few outliers invisible in the plot.
+    260704 ksl  Figure 3 (HF RMS ratio) plots against MJD (from DRP_ALL's
+                OBSTIME) instead of spectrum index when n_spec > 100 and
+                the information is available in every file, falling back
+                to spectrum index otherwise.
+    260706 ksl  Added Figures 5/6 and a stats table for per-arm (B/R/Z)
+                continuum-quality: raw (not HF) sky-subtracted flux in
+                clean pixels, since only sky lines were scaled by any
+                SkySub* method -- the continuum is used exactly as
+                fitted, so this is the diagnostic that can actually catch
+                a bad continuum estimate.  Per-spectrum stats are written
+                back into each evaluated file's DRP_ALL, in place.
+    260707 ksl  Correction: Figure 5 row 1 (raw sky-subtracted flux in clean
+                pixels) does NOT test continuum-fit quality -- the science
+                spectrum's own continuum fit never enters the subtracted
+                result, only the sky-side one does, and even that is
+                entangled with real source continuum.  Added Figure 5 rows
+                2/3: histograms of the DRP_ALL SCI_MED_<arm>/SKY_MED_<arm>
+                columns across spectra (written by SkySubOrig.py/
+                SkySubDev1.py/SkySepESO.py) -- these are the actual
+                continuum-fit-quality metrics, evaluated against the raw
+                pre-subtraction science/sky spectra respectively.  Figure 5
+                is now 3 rows x 3 cols; row-1 histogram/annotation logic
+                factored into a shared _add_hist_panel() helper.
+    260707 ksl  Reordered Figure 5's rows to SCI, SKY, Subtracted (was
+                Subtracted, SCI, SKY) -- continuum-fit-quality tests first,
+                the net post-subtraction diagnostic last.  Figure 6 expanded
+                from 1 row to the same 3-row x 3-col layout/order, plotting
+                SCI_MED_<arm>/SKY_MED_<arm> per-spectrum (not just the
+                Subtracted-row residual) against index/MJD.  Legend
+                visibility is now tracked explicitly per file (first panel
+                that actually has data), since SCI/SKY rows can be empty for
+                files lacking those columns -- no longer tied to a fixed
+                row/col.
+    260707 ksl  Increased Figure 5/6 vertical_spacing (0.08/0.06 -> 0.14) and
+                heights so rows no longer crowd each other.  Added top-level
+                "Sky Line Subtraction" / "Continuum Separation" HTML section
+                headers.  Replaced Figures 5/6's floating Plotly legend
+                (which sat on top of a subplot in the 3x3 grid) with a
+                colour-coded suptitle above each figure (_suptitle_text()).
+                Extended the continuum-quality stats table/printout to cover
+                SCI/SKY (not just the Subtracted row), with a Kind column.
+    260707 ksl  Figure 5/6 row 3 (Subtracted) now histograms/plots the
+                per-spectrum median of the raw sky-subtracted flux in clean
+                pixels (one value per spectrum), not the pooled per-pixel
+                distribution -- matches rows 1/2 (SCI_MED/SKY_MED are
+                already per-spectrum medians), so all three rows are
+                directly comparable.  Removed the now-unused pooled
+                _window_stats() call in this loop.
+    260707 ksl  Added an overall page title "Sky Subtraction Quality Check"
+                (HTML <title> + top-of-page <h1>).  Moved the "Sky Line
+                Subtraction" section header to sit directly above Figure 2
+                (residual histograms) rather than above Figure 1 (spectral
+                overview, which isn't part of either named section).
+                Section headers demoted to <h2> under the new page <h1>.
 
 '''
 
@@ -129,6 +265,8 @@ import warnings
 import numpy as np
 from pathlib import Path
 from astropy.io import fits
+from astropy.table import Table
+from astropy.time import Time
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 from scipy.ndimage import gaussian_filter1d
@@ -148,6 +286,17 @@ _DIAG_WINDOWS = [
     ('OI 5577',  5560.0, 5594.0,  5400.0, 5750.0),
     ('OI 6300',  6280.0, 6320.0,  6100.0, 6500.0),
     ('IR 9300',  9300.0, 9500.0,  9000.0, 9800.0),
+]
+
+# Spectrograph arm ranges used for continuum-quality evaluation, trimmed to
+# exclude the B/R and R/Z overlap zones (5775-5800 and 7520-7570) and the
+# outer edges below 3650 / above 9600.  Distinct from palace_make_mask.py's
+# ARM_RANGES, which is a full-coverage (no-gap) split for a different
+# purpose (PALACE line-model mask construction).
+_ARM_EVAL_RANGES = [
+    ('B', 3650.0, 5775.0),
+    ('R', 5800.0, 7520.0),
+    ('Z', 7570.0, 9600.0),
 ]
 
 # Per-file colour pairs: (solid line, shaded band)
@@ -178,7 +327,31 @@ Options:
 # Analysis helpers
 # ──────────────────────────────────────────────────────────────
 
-def _window_stats(flux, wave, wmin, wmax):
+def _read_mjd(hdul, n_spec):
+    '''Precise per-row MJD from the DRP_ALL table's OBSTIME column.
+
+    OBSTIME is an ISO-format timestamp string (e.g. from SkySubSci.py's
+    per-exposure DRP_ALL rows); it is used instead of the table's MJD
+    column because that MJD is stored as a truncated integer.
+
+    Returns a 1-D float array of length n_spec, or None if DRP_ALL is
+    missing, has no OBSTIME-like column, row count doesn't match
+    n_spec, or the timestamps can't be parsed.
+    '''
+    if 'DRP_ALL' not in hdul:
+        return None
+    data = hdul['DRP_ALL'].data
+    names = {n.lower(): n for n in data.columns.names}
+    if 'obstime' not in names or len(data) != n_spec:
+        return None
+    try:
+        obstime = np.asarray(data[names['obstime']], dtype=str)
+        return Time(obstime, format='isot', scale='utc').mjd.astype(float)
+    except Exception:
+        return None
+
+
+def _window_stats(flux, wave, wmin, wmax, clean=None):
     '''Pixel-level residual statistics within a wavelength window.
 
     Parameters
@@ -186,12 +359,18 @@ def _window_stats(flux, wave, wmin, wmax):
     flux : 2-D array (n_spec, n_wave), sky-subtracted flux
     wave : 1-D array (n_wave,)
     wmin, wmax : float
+    clean : 1-D boolean array (n_wave,), optional
+        If given, True = sky-line-free pixel; only these pixels within
+        the window are used (e.g. for continuum-quality statistics,
+        where sky-line pixels must be excluded).
 
     Returns
     -------
     dict with keys n, med, nmad, skew, p10, p90, vals — or None if no data.
     '''
     sel  = (wave >= wmin) & (wave <= wmax)
+    if clean is not None:
+        sel = sel & clean
     if not sel.any():
         return None
     vals = flux[:, sel].astype(float).flatten()
@@ -274,6 +453,46 @@ def _per_spec_hf_rms_sel(hf_2d, sel):
     return rms
 
 
+def _per_spec_arm_stats(wave, clean, flux, wlo, whi):
+    '''Per-spectrum continuum-residual statistics within [wlo, whi].
+
+    Unlike the HF-residual helpers above, this operates on the raw
+    (not Gaussian-smoothed) sky-subtracted flux, restricted to
+    sky-line-free (clean) pixels — i.e. it measures continuum-level
+    residual, not line-level residual.  Mirrors GetSkyCont_eval.py's
+    _per_spec_stats.
+
+    Parameters
+    ----------
+    wave  : 1-D array (n_wave,), full-resolution wavelength
+    clean : 1-D bool array (n_wave,) or None, True = sky-line-free pixel
+    flux  : 2-D array (n_spec, n_wave), sky-subtracted flux
+    wlo, whi : float, wavelength bounds
+
+    Returns
+    -------
+    dict with 1-D float arrays of length n_spec: med, nmad, rms, skew
+    or None if no clean pixels fall within the range.
+    '''
+    sel = (wave >= wlo) & (wave <= whi)
+    if clean is not None:
+        sel = sel & clean
+    if not sel.any():
+        return None
+    r = flux[:, sel].astype(float)
+    r[~np.isfinite(r)] = np.nan
+    with warnings.catch_warnings():
+        warnings.simplefilter('ignore', RuntimeWarning)
+        med  = np.nanmedian(r, axis=1)
+        nmad = 1.4826 * np.nanmedian(np.abs(r - med[:, np.newaxis]), axis=1)
+        rms  = np.sqrt(np.nanmean(r ** 2, axis=1))
+        mn   = np.nanmean(r, axis=1)
+        sd   = np.nanstd(r, axis=1)
+        skew = np.where(sd > 0, np.nanmean(((r - mn[:, np.newaxis])
+                                            / sd[:, np.newaxis]) ** 3, axis=1), 0.0)
+    return dict(med=med, nmad=nmad, rms=rms, skew=skew)
+
+
 # ──────────────────────────────────────────────────────────────
 # Plotly trace helpers
 # ──────────────────────────────────────────────────────────────
@@ -315,6 +534,109 @@ def _fmt(v):
     if not np.isfinite(v) or abs(v) < 1e-30:
         return '0'
     return f'{v:.2e}'
+
+
+def _suptitle_text(file_legend):
+    '''
+    Build an HTML colour-swatch legend string ("<sq> label   <sq> label ...")
+    from a list of (label, colour) pairs, for use as a figure-level suptitle.
+
+    Used instead of Plotly's floating legend box for figures with a dense
+    subplot grid, where the floating legend (positioned in the figure's
+    top-right corner regardless of subplot boundaries) ends up sitting on
+    top of -- and obscuring -- whichever subplot happens to be there.
+    '''
+    parts = [f'<span style="color:{c}">&#9632;</span> {lbl}' for lbl, c in file_legend]
+    return '&nbsp;&nbsp;&nbsp;'.join(parts)
+
+
+def _add_hist_panel(fig, row, col, n_cols, vals, label, c_med, c_hist, k,
+                    show_legend, stat_label='Med'):
+    '''
+    Histogram + Gaussian overlay + stats annotation in one subplot panel,
+    from a 1-D array of values already collected for one file.  Shared by
+    Figure 5's three rows (SCI_MED, SKY_MED, pooled pixel residual) so the
+    stats/annotation logic isn't tripled.
+
+    row, col : 1-based subplot position.
+    n_cols : number of columns in the subplot grid (for annotation axis refs).
+    vals : 1-D array; non-finite values are dropped internally.
+    k : file index, used to stack annotation boxes vertically for
+        multiple overlaid files.
+    show_legend : whether this panel's bar trace shows the file's legend
+        entry.  Caller's responsibility -- since some rows can be empty
+        for a given file (e.g. SCI_MED/SKY_MED absent for SkySubDev2.py/
+        SkySubDrp.py output), the legend must be shown on the first panel
+        that actually has data, not hardcoded to a fixed row/col.
+    stat_label : label for the central-tendency stat in the annotation
+        (e.g. 'Med').
+
+    Returns a stats dict (n, med, nmad, skew), or None if too few
+    finite values to plot (caller should not count this as "shown").
+    '''
+    vals = np.asarray(vals, dtype=float)
+    vals = vals[np.isfinite(vals)]
+    if len(vals) < 3:
+        return None
+
+    med  = float(np.median(vals))
+    nmad = float(1.4826 * np.median(np.abs(vals - med)))
+    n    = len(vals)
+
+    lo = med - 5.0 * nmad
+    hi = med + 5.0 * nmad
+    if lo >= hi:
+        p10, p90 = np.percentile(vals, [10, 90])
+        lo, hi = p10 - 1e-20, p90 + 1e-20
+
+    vals_disp = vals[(vals >= lo) & (vals <= hi)]
+    if len(vals_disp) > 2:
+        mn_d, sd_d = np.mean(vals_disp), np.std(vals_disp, ddof=0)
+        skew_disp = (float(np.mean(((vals_disp - mn_d) / sd_d) ** 3))
+                    if sd_d > 0 else 0.0)
+    else:
+        mn, sd = np.mean(vals), np.std(vals)
+        skew_disp = float(np.mean(((vals - mn) / sd) ** 3)) if sd > 0 else 0.0
+
+    counts, edges = np.histogram(vals, bins=60, range=(lo, hi))
+    centers = 0.5 * (edges[:-1] + edges[1:])
+    bw      = edges[1] - edges[0]
+
+    fig.add_trace(
+        go.Bar(x=centers, y=counts, name=label, legendgroup=label,
+              showlegend=show_legend,
+              marker_color=c_hist, marker_line_width=0),
+        row=row, col=col,
+    )
+    xg  = np.linspace(lo, hi, 300)
+    sig = max(nmad, 1e-30)
+    yg  = (n * bw / (np.sqrt(2 * np.pi) * sig)
+          * np.exp(-0.5 * ((xg - med) / sig) ** 2))
+    fig.add_trace(
+        go.Scatter(x=xg, y=yg, mode='lines',
+                  line=dict(color=c_med, width=1.5, dash='dot'),
+                  showlegend=False, hoverinfo='skip'),
+        row=row, col=col,
+    )
+
+    subplot_idx = (row - 1) * n_cols + col
+    ax_sfx = '' if subplot_idx == 1 else str(subplot_idx)
+    y_top  = 0.97 - k * 0.23
+    if y_top > 0.08:
+        fig.add_annotation(
+            x=0.97, y=y_top,
+            xref=f'x{ax_sfx} domain', yref=f'y{ax_sfx} domain',
+            xanchor='right', yanchor='top',
+            showarrow=False, align='right',
+            font=dict(size=9, family='monospace'),
+            bgcolor='rgba(255,255,255,0.80)',
+            bordercolor=c_med, borderwidth=1,
+            text=(f'N    = {n}<br>'
+                  f'{stat_label}  = {_fmt(med)}<br>'
+                  f'NMAD = {_fmt(nmad)}<br>'
+                  f'Skew = {skew_disp:.2f}'),
+        )
+    return dict(n=n, med=med, nmad=nmad, skew=skew_disp)
 
 
 # ──────────────────────────────────────────────────────────────
@@ -418,10 +740,52 @@ def plot_eval(filenames, wmin=3600.0, wmax=9800.0, n_sample=20, outroot=''):
                         for lbl, *_, slo, shi in _DIAG_WINDOWS],
     )
 
+    # ══════════════════════════════════════════════════════════
+    # Figure 5 — per-arm continuum-quality histograms (3 rows × 3 cols)
+    # Row 1: distribution of SCI_MED_<arm> across spectra (science-side
+    #        continuum-fit quality, against the raw pre-subtraction spectrum)
+    # Row 2: distribution of SKY_MED_<arm> across spectra (sky-side
+    #        continuum-fit quality, against the raw pre-subtraction spectrum)
+    # Row 3: pooled raw sky-subtracted flux in clean pixels (post-subtraction
+    #        leftover signal -- source continuum + any net sky-continuum error)
+    # Rows 1/2 read columns written by SkySubOrig.py/SkySubDev1.py/SkySepESO.py;
+    # a file without them just leaves those panels empty (see main loop).
+    # ══════════════════════════════════════════════════════════
+    fig5 = make_subplots(
+        rows=3, cols=3,
+        horizontal_spacing=0.08, vertical_spacing=0.14,
+        subplot_titles=(
+            [f'SCI {arm}  continuum-fit quality' for arm, *_ in _ARM_EVAL_RANGES]
+            + [f'SKY {arm}  continuum-fit quality' for arm, *_ in _ARM_EVAL_RANGES]
+            + [f'{arm}  ({int(lo)}–{int(hi)} Å)' for arm, lo, hi in _ARM_EVAL_RANGES]
+        ),
+    )
+
+    # ══════════════════════════════════════════════════════════
+    # Figure 6 — per-arm, per-spectrum continuum residual vs index/MJD
+    # (3 rows × 3 cols, same row order as Figure 5: SCI, SKY, Subtracted)
+    # ══════════════════════════════════════════════════════════
+    fig6 = make_subplots(
+        rows=3, cols=3,
+        horizontal_spacing=0.08, vertical_spacing=0.14,
+        subplot_titles=(
+            [f'SCI {arm}  continuum residual' for arm, *_ in _ARM_EVAL_RANGES]
+            + [f'SKY {arm}  continuum residual' for arm, *_ in _ARM_EVAL_RANGES]
+            + [f'{arm}  continuum residual (median)' for arm, *_ in _ARM_EVAL_RANGES]
+        ),
+    )
+
     all_n_spec   = []
+    all_used_mjd = []      # per-file: True if Figure 3 x-axis used MJD
+    all_mjd_vals = []      # collected MJD values, for tight axis range
     all_hf_ratio = {lbl: [] for lbl, *_ in _DIAG_WINDOWS}  # for y-range
+    all_arm_resid = {arm: [] for arm, *_ in _ARM_EVAL_RANGES}  # for y-range (row 3)
+    all_arm_sci   = {arm: [] for arm, *_ in _ARM_EVAL_RANGES}  # for y-range (row 1)
+    all_arm_sky   = {arm: [] for arm, *_ in _ARM_EVAL_RANGES}  # for y-range (row 2)
     _fig4_shaded = False   # add background/signal shading once (first file)
     _stats_rows  = []      # collected stats for screen + HTML output
+    _arm_stats_rows = []   # per-file, per-arm continuum stats
+    _file_legend = []      # (label, colour) pairs, for Figures 5/6 suptitles
 
     for k, filename in enumerate(filenames):
         c_med, c_band = _FILE_COLORS[k % len(_FILE_COLORS)]
@@ -434,10 +798,15 @@ def plot_eval(filenames, wmin=3600.0, wmax=9800.0, n_sample=20, outroot=''):
             wave = hdul['WAVE'].data.astype(float)
             flux = hdul['FLUX'].data.astype(float)
             sky  = hdul['SKY'].data.astype(float)
+            mjd_col = _read_mjd(hdul, flux.shape[0] if flux.ndim > 1 else 1)
+            drp_all = (Table(hdul['DRP_ALL'].data)
+                      if 'DRP_ALL' in hdul else None)
             hdul.close()
         except Exception as e:
             print(f'Warning: could not read {filename} ({e}), skipping.')
             continue
+
+        _file_legend.append((label, c_med))
 
         if flux.ndim == 1:
             flux = flux[np.newaxis, :]
@@ -445,6 +814,10 @@ def plot_eval(filenames, wmin=3600.0, wmax=9800.0, n_sample=20, outroot=''):
 
         n_spec = len(flux)
         all_n_spec.append(n_spec)
+        use_mjd = n_spec > 100 and mjd_col is not None
+        all_used_mjd.append(use_mjd)
+        if use_mjd:
+            all_mjd_vals.append(mjd_col)
 
         # Wavelength window + downsample to ~2000 display pixels for Figure 1
         wmask  = (wave >= wmin) & (wave <= wmax)
@@ -456,6 +829,124 @@ def plot_eval(filenames, wmin=3600.0, wmax=9800.0, n_sample=20, outroot=''):
 
         sample_idx = (rng.choice(n_spec, size=min(n_sample, n_spec), replace=False)
                       if n_sample > 0 else [])
+
+        # ── HF residuals: build clean_mask and Gaussian-smooth-subtract ─
+        # (needed by Figure 2 histograms as well as Figures 3 & 4)
+        clean_mask_full = (_interp_mask_to_wave(_raw_mask[0], _raw_mask[1], wave)
+                           if _raw_mask is not None and _HAVE_MASK else None)
+        # Also on the downsampled grid used for Figure 1
+        clean_mask = (_interp_mask_to_wave(_raw_mask[0], _raw_mask[1], w)
+                      if _raw_mask is not None and _HAVE_MASK else None)
+
+        hf_orig = _hf_residual(f_disp + s_disp, clean_mask=clean_mask)
+        hf_sub  = _hf_residual(f_disp,           clean_mask=clean_mask)
+        # Figure 3 x-axis: MJD (from OBSTIME) when there are enough spectra
+        # to make a time trend meaningful and the information is available;
+        # otherwise fall back to plain spectrum index.
+        spec_x  = mjd_col if use_mjd else np.arange(n_spec)
+
+        # ── Figures 5 & 6: per-arm continuum-quality diagnostics ──
+        # Row order (both figures): SCI, SKY, Subtracted -- science-side and
+        # sky-side continuum-fit quality first (the actual "did we separate
+        # continuum from lines well" tests), post-subtraction leftover signal
+        # last (a different, net diagnostic -- see module docstring).
+        # Legend visibility is tracked explicitly per file rather than tied to
+        # a fixed row/col, since SCI/SKY panels can be empty for files that
+        # lack those DRP_ALL columns (e.g. SkySubDev2.py/SkySubDrp.py output).
+        _arm_drp_cols = {}
+        _shown5 = False
+        _shown6 = False
+        for col_idx, (arm, alo, ahi) in enumerate(_ARM_EVAL_RANGES, start=1):
+            per_spec = _per_spec_arm_stats(wave, clean_mask_full, flux, alo, ahi)
+
+            if per_spec is not None:
+                _arm_drp_cols['resid_med_'  + arm.lower()] = per_spec['med']
+                _arm_drp_cols['resid_nmad_' + arm.lower()] = per_spec['nmad']
+                _arm_drp_cols['resid_rms_'  + arm.lower()] = per_spec['rms']
+                _arm_drp_cols['resid_skew_' + arm.lower()] = per_spec['skew']
+
+            # Figures 5 & 6, rows 1/2: distribution / trend of the per-spectrum
+            # SCI_MED_<arm>/SKY_MED_<arm> DRP_ALL columns -- the actual
+            # continuum-fit-quality metrics (against the raw pre-subtraction
+            # science/sky spectra), written by SkySubOrig.py/SkySubDev1.py/
+            # SkySepESO.py.  Absent for other methods, or files predating this
+            # feature -- panels just stay empty in that case.
+            for row_idx, side, arm_bucket in [(1, 'SCI', all_arm_sci),
+                                              (2, 'SKY', all_arm_sky)]:
+                col_name = f'{side}_MED_{arm}'
+                if drp_all is not None and col_name in drp_all.colnames:
+                    vals = np.asarray(drp_all[col_name], dtype=float)
+                    hstats = _add_hist_panel(fig5, row_idx, col_idx, 3, vals,
+                                             label, c_med, c_hist, k,
+                                             show_legend=not _shown5)
+                    if hstats is not None:
+                        _shown5 = True
+                        _arm_stats_rows.append(dict(
+                            file=label, arm=arm, kind=side, n=hstats['n'],
+                            med=hstats['med'], nmad=hstats['nmad'],
+                            skew=hstats['skew'],
+                        ))
+                    good = vals[np.isfinite(vals)]
+                    arm_bucket[arm].extend(good.tolist())
+                    fig6.add_trace(
+                        go.Scatter(
+                            x=spec_x, y=vals,
+                            mode='markers',
+                            marker=dict(color=c_med, size=4),
+                            name=label, legendgroup=label,
+                            showlegend=not _shown6,
+                        ),
+                        row=row_idx, col=col_idx,
+                    )
+                    _shown6 = True
+
+            # Figures 5 & 6, row 3: per-spectrum median of the raw
+            # sky-subtracted flux in clean pixels (post-subtraction leftover
+            # signal).  Histogrammed as per-spectrum medians -- one value per
+            # spectrum -- like rows 1/2 (SCI_MED/SKY_MED), not pooled
+            # per-pixel values, so all three rows are directly comparable.
+            if per_spec is not None:
+                good_med = per_spec['med'][np.isfinite(per_spec['med'])]
+                all_arm_resid[arm].extend(good_med.tolist())
+                row3_stats = _add_hist_panel(fig5, 3, col_idx, 3, per_spec['med'],
+                                             label, c_med, c_hist, k,
+                                             show_legend=not _shown5)
+                if row3_stats is not None:
+                    _shown5 = True
+                    _arm_stats_rows.append(dict(
+                        file=label, arm=arm, kind='Subtracted', n=row3_stats['n'],
+                        med=row3_stats['med'], nmad=row3_stats['nmad'],
+                        skew=row3_stats['skew'],
+                    ))
+
+                fig6.add_trace(
+                    go.Scatter(
+                        x=spec_x, y=per_spec['med'],
+                        mode='markers',
+                        marker=dict(color=c_med, size=4),
+                        name=label, legendgroup=label,
+                        showlegend=not _shown6,
+                    ),
+                    row=3, col=col_idx,
+                )
+                _shown6 = True
+
+        # ── Write continuum-quality stats back into this file's DRP_ALL ──
+        if drp_all is not None and _arm_drp_cols:
+            for col, vals in _arm_drp_cols.items():
+                drp_all[col] = np.asarray(vals, dtype=np.float32)
+            try:
+                with fits.open(filename, mode='update') as hdul_upd:
+                    new_drp = fits.table_to_hdu(drp_all)
+                    new_drp.name = 'DRP_ALL'
+                    for i, h in enumerate(hdul_upd):
+                        if h.name == 'DRP_ALL':
+                            hdul_upd[i] = new_drp
+                            break
+                    hdul_upd.flush()
+                print(f'Updated DRP_ALL in {filename} with continuum-residual stats')
+            except Exception as e:
+                print(f'Warning: could not update DRP_ALL in {filename} ({e})')
 
         # ── Figure 1, Panel 1: original flux (FLUX+SKY, linear) ─
         orig_disp = f_disp + s_disp
@@ -478,8 +969,11 @@ def plot_eval(filenames, wmin=3600.0, wmax=9800.0, n_sample=20, outroot=''):
             fig1.add_trace(tr, row=3, col=1)
 
         # ── Figure 2: diagnostic histograms ───────────────────
+        # Histogram the HF (continuum-subtracted) residual, not raw FLUX,
+        # so leftover continuum in the diagnostic window doesn't bias the
+        # median/NMAD away from genuine sky-line residuals.
         for col_idx, (win_lbl, win_lo, win_hi, *_) in enumerate(_DIAG_WINDOWS, start=1):
-            st = _window_stats(flux, wave, win_lo, win_hi)
+            st = _window_stats(hf_sub, w, win_lo, win_hi)
             if st is None:
                 continue
 
@@ -487,6 +981,20 @@ def plot_eval(filenames, wmin=3600.0, wmax=9800.0, n_sample=20, outroot=''):
             hi = st['med'] + 5.0 * st['nmad']
             if lo >= hi:
                 lo, hi = st['p10'] - 1e-20, st['p90'] + 1e-20
+
+            # Skew of the moment-based estimator is dominated by rare
+            # outliers beyond the display clip, so recompute it on the
+            # same clipped pixels shown in the histogram — this is what
+            # the eye actually judges "symmetric" or "skewed" against.
+            vals_disp = st['vals']
+            vals_disp = vals_disp[(vals_disp >= lo) & (vals_disp <= hi)]
+            if len(vals_disp) > 2:
+                mn_disp = np.mean(vals_disp)
+                sd_disp = np.std(vals_disp, ddof=0)
+                skew_disp = (float(np.mean(((vals_disp - mn_disp) / sd_disp) ** 3))
+                             if sd_disp > 0 else 0.0)
+            else:
+                skew_disp = st['skew']
 
             counts, edges = np.histogram(st['vals'], bins=60, range=(lo, hi))
             centers = 0.5 * (edges[:-1] + edges[1:])
@@ -524,25 +1032,13 @@ def plot_eval(filenames, wmin=3600.0, wmax=9800.0, n_sample=20, outroot=''):
                     font=dict(size=9, family='monospace'),
                     bgcolor='rgba(255,255,255,0.80)',
                     bordercolor=c_med, borderwidth=1,
-                    text=(f'<b>{label}</b><br>'
-                          f'N    = {st["n"]}<br>'
+                    text=(f'N    = {st["n"]}<br>'
                           f'Med  = {_fmt(st["med"])}<br>'
                           f'NMAD = {_fmt(st["nmad"])}<br>'
-                          f'Skew = {st["skew"]:.2f}'),
+                          f'Skew = {skew_disp:.2f}'),
                 )
 
         # ── Figures 3 & 4: HF RMS ratio and median spectra ────
-        # Build clean_mask on the full wave grid for this file
-        clean_mask_full = (_interp_mask_to_wave(_raw_mask[0], _raw_mask[1], wave)
-                           if _raw_mask is not None and _HAVE_MASK else None)
-        # Also on the downsampled grid used for Figure 1
-        clean_mask = (_interp_mask_to_wave(_raw_mask[0], _raw_mask[1], w)
-                      if _raw_mask is not None and _HAVE_MASK else None)
-
-        hf_orig = _hf_residual(f_disp + s_disp, clean_mask=clean_mask)
-        hf_sub  = _hf_residual(f_disp,           clean_mask=clean_mask)
-        spec_x  = np.arange(n_spec)
-
         for col_idx, (win_lbl, win_lo, win_hi, slo, shi) in \
                 enumerate(_DIAG_WINDOWS, start=1):
 
@@ -576,8 +1072,8 @@ def plot_eval(filenames, wmin=3600.0, wmax=9800.0, n_sample=20, outroot=''):
             fig3.add_trace(
                 go.Scatter(
                     x=spec_x, y=ratio,
-                    mode='lines',
-                    line=dict(color=c_med, width=1.5),
+                    mode='markers',
+                    marker=dict(color=c_med, size=4),
                     name=label, legendgroup=label,
                     showlegend=(col_idx == 1),
                     text=hover,
@@ -667,6 +1163,22 @@ def plot_eval(filenames, wmin=3600.0, wmax=9800.0, n_sample=20, outroot=''):
         fig3.add_hline(y=1.0, line_dash='dot', line_color='grey',
                        line_width=1, row=1, col=col_idx)
 
+    # Figure 6: symmetric linear y-range per row from the 1st/99th pct of
+    # that row's values; reference line at 0 (no continuum bias) on every
+    # panel.  Row order matches Figure 5: SCI, SKY, Subtracted.
+    for row_idx, arm_dict in [(1, all_arm_sci), (2, all_arm_sky), (3, all_arm_resid)]:
+        for col_idx, (arm, *_) in enumerate(_ARM_EVAL_RANGES, start=1):
+            vals = arm_dict[arm]
+            if vals:
+                v = np.array(vals)
+                v = v[np.isfinite(v)]
+                if len(v):
+                    y_lo, y_hi = np.nanpercentile(v, [1, 99])
+                    pad = 0.1 * max(abs(y_lo), abs(y_hi), 1e-30)
+                    fig6.update_yaxes(range=[y_lo - pad, y_hi + pad], row=row_idx, col=col_idx)
+            fig6.add_hline(y=0.0, line_dash='dot', line_color='grey',
+                           line_width=1, row=row_idx, col=col_idx)
+
     # ── Figure 1 layout ───────────────────────────────────────
     _lin_range = [-1e-14, 1e-13]   # common linear scale for all three panels
 
@@ -696,17 +1208,29 @@ def plot_eval(filenames, wmin=3600.0, wmax=9800.0, n_sample=20, outroot=''):
         legend=dict(**_leg_style, y=0.99),
     )
     fig2.update_xaxes(**_ax, exponentformat='e', showexponent='all',
-                      title_text='Sky-subtracted flux')
+                      title_text='HF residual flux')
     fig2.update_yaxes(**_ax, exponentformat='none', title_text='N')
 
     # ── Figure 3 layout ───────────────────────────────────────
     max_n = max(all_n_spec) if all_n_spec else 1
+    # Use MJD only if every file plotted it that way; a mix would put
+    # index- and MJD-based traces on the same numeric axis.
+    use_mjd_axis = bool(all_used_mjd) and all(all_used_mjd)
     fig3.update_layout(
         height=420, template='simple_white',
         legend=dict(**_leg_style, y=0.99),
     )
-    fig3.update_xaxes(**_ax, title_text='Spectrum index',
-                      range=[-0.5, max_n - 0.5], matches='x')
+    if use_mjd_axis:
+        mjd_all = np.concatenate(all_mjd_vals)
+        mjd_lo, mjd_hi = float(np.min(mjd_all)), float(np.max(mjd_all))
+        pad = 0.01 * (mjd_hi - mjd_lo) if mjd_hi > mjd_lo else 0.5
+        fig3.update_xaxes(**_ax, title_text='MJD', matches='x',
+                          exponentformat='none', tickformat='.1f',
+                          range=[mjd_lo - pad, mjd_hi + pad])
+    else:
+        fig3.update_xaxes(**_ax, title_text='Spectrum index',
+                          range=[-0.5, max_n - 0.5], matches='x',
+                          exponentformat='none')
     fig3.update_yaxes(**_ax, title_text='HF RMS ratio (sub/orig)')
 
     # ── Figure 4 layout ───────────────────────────────────────
@@ -717,6 +1241,44 @@ def plot_eval(filenames, wmin=3600.0, wmax=9800.0, n_sample=20, outroot=''):
     fig4.update_xaxes(**_ax, title_text='Wavelength (Å)')
     fig4.update_yaxes(**_ax, exponentformat='e', showexponent='all',
                       title_text='Flux')
+
+    # ── Figure 5 layout ───────────────────────────────────────
+    # No floating legend (it would sit on top of the top-right subplot in a
+    # 3x3 grid); a colour-coded suptitle above the whole grid replaces it.
+    fig5.update_layout(
+        height=1450, template='simple_white',
+        barmode='overlay',
+        showlegend=False,
+        margin=dict(t=110),
+        title=dict(text=_suptitle_text(_file_legend), x=0.5, xanchor='center',
+                  y=0.99, yanchor='top', font=dict(size=13)),
+    )
+    fig5.update_xaxes(**_ax, exponentformat='e', showexponent='all')
+    fig5.update_yaxes(**_ax, exponentformat='none', title_text='N')
+    fig5.update_xaxes(title_text='SCI continuum residual (per-spectrum median)', row=1)
+    fig5.update_xaxes(title_text='SKY continuum residual (per-spectrum median)', row=2)
+    fig5.update_xaxes(title_text='Sky-subtracted flux (clean pixels)', row=3)
+
+    # ── Figure 6 layout ───────────────────────────────────────
+    fig6.update_layout(
+        height=1250, template='simple_white',
+        showlegend=False,
+        margin=dict(t=110),
+        title=dict(text=_suptitle_text(_file_legend), x=0.5, xanchor='center',
+                  y=0.99, yanchor='top', font=dict(size=13)),
+    )
+    if use_mjd_axis:
+        fig6.update_xaxes(**_ax, title_text='MJD', matches='x',
+                          exponentformat='none', tickformat='.1f',
+                          range=[mjd_lo - pad, mjd_hi + pad])
+    else:
+        fig6.update_xaxes(**_ax, title_text='Spectrum index',
+                          range=[-0.5, max_n - 0.5], matches='x',
+                          exponentformat='none')
+    fig6.update_yaxes(**_ax, exponentformat='e', showexponent='all')
+    fig6.update_yaxes(title_text='SCI continuum residual', row=1)
+    fig6.update_yaxes(title_text='SKY continuum residual', row=2)
+    fig6.update_yaxes(title_text='Sky-subtracted flux residual', row=3)
 
     # ── Print statistics to screen and build HTML stats block ─
     _hdr = (f'{"File":<55} {"Window":<10} {"N":>5} {"Noise":>10} '
@@ -758,6 +1320,64 @@ Ratio columns: 50th (median), 90th, 95th percentile across spectra.<br>
 </tr>
 ''' + '\n'.join(_html_rows) + '\n</table></div>\n'
 
+    _kind_order = {'SCI': 0, 'SKY': 1, 'Subtracted': 2}
+    _arm_stats_rows.sort(key=lambda r: (r['file'], _kind_order.get(r['kind'], 9), r['arm']))
+
+    _arm_hdr = (f'{"File":<55} {"Kind":<11} {"Arm":<5} {"N":>8} '
+               f'{"Med":>10} {"NMAD":>10} {"Skew":>6}')
+    print()
+    print('Continuum separation quality (SCI/SKY vs raw pre-subtraction spectra; '
+         'Subtracted = post-subtraction leftover):')
+    print(_arm_hdr)
+    print('-' * len(_arm_hdr))
+    _arm_html_rows = []
+    for r in _arm_stats_rows:
+        line = (f'{r["file"]:<55} {r["kind"]:<11} {r["arm"]:<5} {r["n"]:>8} '
+                f'{_fmt(r["med"]):>10} {_fmt(r["nmad"]):>10} {r["skew"]:>6.2f}')
+        print(line)
+        _arm_html_rows.append(
+            f'<tr><td>{r["file"]}</td><td>{r["kind"]}</td><td>{r["arm"]}</td>'
+            f'<td>{r["n"]}</td>'
+            f'<td>{_fmt(r["med"])}</td><td>{_fmt(r["nmad"])}</td>'
+            f'<td>{r["skew"]:.2f}</td></tr>'
+        )
+    print()
+
+    _arm_stats_html = '''
+<div style="font-family:monospace; font-size:13px; margin:10px 20px;">
+<h3>Continuum separation quality — per file, per arm</h3>
+<p><b>Kind = SCI</b>: science-side continuum-fit quality, against the raw
+pre-subtraction science spectrum (DRP_ALL['SCI_MED_&lt;arm&gt;']).<br>
+<b>Kind = SKY</b>: sky-side continuum-fit quality, against the raw
+pre-subtraction sky-telescope spectrum whose fit was used in SKY
+(DRP_ALL['SKY_MED_&lt;arm&gt;']).<br>
+<b>Kind = Subtracted</b>: per-spectrum median of the raw sky-subtracted flux
+in clean (sky-line-free) pixels -- the final post-subtraction leftover
+signal, <i>not</i> a continuum-fit-quality test (see Figure 5 caption).</p>
+<p>A median near zero for Kind=SCI/SKY indicates that side's continuum fit
+tracked the true continuum well in that arm. Per-spectrum values of all
+three are also written to this file's own DRP_ALL table for detailed
+analysis (resid_med_&lt;arm&gt; etc. for Subtracted; SCI_MED_&lt;arm&gt;/
+SKY_MED_&lt;arm&gt; etc. already present in the input, for SCI/SKY).</p>
+<table border="1" cellpadding="4" cellspacing="0" style="border-collapse:collapse;">
+<tr style="background:#ddd;">
+  <th>File</th><th>Kind</th><th>Arm</th><th>N</th><th>Med</th><th>NMAD</th><th>Skew</th>
+</tr>
+''' + '\n'.join(_arm_html_rows) + '\n</table></div>\n'
+
+    _fig2_html_header = '''
+<div style="margin:10px 20px;">
+<b>Residual histograms</b> — distribution of per-pixel HF (high-frequency)
+residual flux within each diagnostic sky-line window, pooled across all
+spectra. Each spectrum has a Gaussian-smoothed, clean-pixel-weighted
+continuum estimate subtracted first (see Notes), so the histogram
+reflects leftover sky-line-scale structure rather than continuum level.
+A distribution centred on zero with small NMAD indicates good sky-line
+removal; the dotted curve is a Gaussian with the same median and NMAD
+for reference.
+</div>
+'''
+
     _fig4_html_header = '''
 <div style="margin:10px 20px;">
 <b>Diagnostic window spectra</b> — median with 10–90% band.
@@ -770,6 +1390,44 @@ Background (mask-selected clean pixels, used for noise RMS).
 </div>
 '''
 
+    _fig5_html_header = '''
+<div style="margin:10px 20px;">
+<b>Continuum-quality histograms</b> — three rows, one per diagnostic:<br>
+<b>Row 1 (SCI)</b> — distribution of DRP_ALL['SCI_MED_&lt;arm&gt;'] across
+spectra: the actual science-side continuum-fit-quality metric, evaluated
+against the raw pre-subtraction science spectrum.<br>
+<b>Row 2 (SKY)</b> — distribution of DRP_ALL['SKY_MED_&lt;arm&gt;'] across
+spectra: the actual sky-side continuum-fit-quality metric, evaluated against
+the raw pre-subtraction sky-telescope spectrum whose continuum fit was used
+in SKY.<br>
+<b>Row 3 (Subtracted)</b> — distribution of the per-spectrum median of raw
+sky-subtracted FLUX in clean (sky-line-free) pixels, per spectrograph arm
+(overlap zones and outer edges excluded) — one value per spectrum, same as
+rows 1/2, so all three rows are directly comparable. This is the final
+post-subtraction leftover signal — real source continuum entangled with any
+net sky-continuum error, <i>not</i> a test of continuum-fit quality (the
+science-side continuum fit never enters the subtracted result).<br>
+A distribution centred on zero in rows 1/2 indicates that side's continuum
+fit tracked the true continuum well in that arm. Rows 1/2 require
+SkySubOrig.py/SkySubDev1.py/SkySepESO.py output (blank otherwise).
+</div>
+'''
+
+    _fig6_html_header = '''
+<div style="margin:10px 20px;">
+<b>Per-arm continuum residual per spectrum</b> — same three rows and same
+quantities as the histograms above (SCI, SKY, Subtracted), but plotted
+per-spectrum against spectrum index or MJD instead of pooled into a
+histogram, so specific bad exposures/fibers are visible rather than just an
+aggregate number. Rows 1/2 require SkySubOrig.py/SkySubDev1.py/SkySepESO.py
+output. For row 3 (Subtracted), a nonzero value can also reflect real
+source continuum rather than a sky-subtraction defect -- comparing this
+row across overlaid methods on the same input isolates sky-continuum
+quality specifically, since real source continuum is identical across
+methods.
+</div>
+'''
+
     # ── Write combined HTML ───────────────────────────────────
     if outroot == '':
         outroot = Path(filenames[0]).stem + '_eval'
@@ -779,11 +1437,33 @@ Background (mask-selected clean pixels, used for noise RMS).
     html2 = fig2.to_html(full_html=False, include_plotlyjs=False)
     html3 = fig3.to_html(full_html=False, include_plotlyjs=False)
     html4 = fig4.to_html(full_html=False, include_plotlyjs=False)
+    html5 = fig5.to_html(full_html=False, include_plotlyjs=False)
+    html6 = fig6.to_html(full_html=False, include_plotlyjs=False)
+
+    _page_title = 'Sky Subtraction Quality Check'
+    _page_header = f'''
+<div style="margin:20px 20px 10px 20px;">
+<h1 style="margin-bottom:4px;">{_page_title}</h1>
+</div>
+'''
+    _section_header_sky = '''
+<div style="margin:30px 20px 10px 20px; border-bottom:3px solid #333;">
+<h2 style="margin-bottom:6px;">Sky Line Subtraction</h2>
+</div>
+'''
+    _section_header_cont = '''
+<div style="margin:50px 20px 10px 20px; border-bottom:3px solid #333;">
+<h2 style="margin-bottom:6px;">Continuum Separation</h2>
+</div>
+'''
 
     with open(outfile, 'w') as fh:
-        fh.write('<!DOCTYPE html>\n<html>\n<body>\n')
+        fh.write(f'<!DOCTYPE html>\n<html>\n<head><title>{_page_title}</title></head>\n<body>\n')
+        fh.write(_page_header)
         fh.write(html1)
         fh.write('\n')
+        fh.write(_section_header_sky)
+        fh.write(_fig2_html_header)
         fh.write(html2)
         fh.write('\n')
         fh.write(_fig4_html_header)
@@ -791,6 +1471,14 @@ Background (mask-selected clean pixels, used for noise RMS).
         fh.write('\n')
         fh.write(_stats_html)
         fh.write(html3)
+        fh.write('\n')
+        fh.write(_section_header_cont)
+        fh.write(_fig5_html_header)
+        fh.write(html5)
+        fh.write('\n')
+        fh.write(_arm_stats_html)
+        fh.write(_fig6_html_header)
+        fh.write(html6)
         fh.write('\n</body>\n</html>\n')
 
     print(f'Wrote {outfile}')

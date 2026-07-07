@@ -18,6 +18,12 @@ data products:
 - ``SummarizeRings.py`` - Summarize SFrame spectra by fiber ring position
 - ``SummarizeSpec.py`` - Summarize CFrame or SFrame spectra by spectrograph
 
+A sixth, drpall-driven script, ``SummarizeSciSky.py``, follows the same
+exposure-selection pattern as ``SummarizeCframe.py`` but computes a
+science-fiber-based sky estimate rather than a plain median spectrum; see
+:doc:`sky_subtraction` for its documentation, alongside its file-list-driven
+counterpart ``SkySubSci.py``.
+
 
 SummarizeData.py - Cataloging Raw Data
 --------------------------------------

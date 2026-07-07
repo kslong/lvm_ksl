@@ -15,31 +15,31 @@ Command line usage (if any):
                         [-maxiters K] [-mask FILE] [-stat median|mean]
                         [-out ROOT] filename [filename ...]
 
-    Arguments:
+    Arguments::
 
-    filename    one or more lvmCFrame FITS files (one row is written per
-                file, in the order given)
+        filename    one or more lvmCFrame FITS files (one row is written per
+                    file, in the order given)
 
-    Options:
+    Options::
 
-    -low PCT    percentile rank (0-100) of the faint/sky-like fiber
-                (default 10)
-    -high PCT   percentile rank (0-100) of the bright/science-like fiber
-                (default 90)
-    -navg N     number of fibers, ranked closest to -low/-high, to combine
-                with a sigma-clipped (robust) mean (default 10; use 1 to
-                reproduce the original single-fiber behaviour)
-    -sigma S    sigma-clipping threshold for the robust mean (default 3.0)
-    -maxiters K sigma-clipping iteration limit (default 5)
-    -mask FILE  palace_mask FITS file from palace_make_mask.py (WAVE/MASK
-                extensions, MASK=1 means clean/sky-line-free).  If omitted
-                the script searches for sky_mask.fits in the current
-                directory, then in the lvm_ksl data/ directory.
-    -stat STAT  statistic used to rank fibers by continuum flux: median
-                (default) or mean
-    -out ROOT   output filename root; default is
-                SkySubSci_<first_expnum>_<last_expnum> (or
-                SkySubSci_<expnum> for a single file)
+        -low PCT    percentile rank (0-100) of the faint/sky-like fiber
+                    (default 10)
+        -high PCT   percentile rank (0-100) of the bright/science-like fiber
+                    (default 90)
+        -navg N     number of fibers, ranked closest to -low/-high, to combine
+                    with a sigma-clipped (robust) mean (default 10; use 1 to
+                    reproduce the original single-fiber behaviour)
+        -sigma S    sigma-clipping threshold for the robust mean (default 3.0)
+        -maxiters K sigma-clipping iteration limit (default 5)
+        -mask FILE  palace_mask FITS file from palace_make_mask.py (WAVE/MASK
+                    extensions, MASK=1 means clean/sky-line-free).  If omitted
+                    the script searches for sky_mask.fits in the current
+                    directory, then in the lvm_ksl data/ directory.
+        -stat STAT  statistic used to rank fibers by continuum flux: median
+                    (default) or mean
+        -out ROOT   output filename root; default is
+                    SkySubSci_<first_expnum>_<last_expnum> (or
+                    SkySubSci_<expnum> for a single file)
 
 Description:
 
@@ -109,12 +109,15 @@ Notes:
     fibers, are skipped with a warning; the run continues with the
     remaining files.
 
-History:
+History::
 
     260702  ksl  Coding begun
     260702  ksl  Added -navg sigma-clipped robust mean over a window of
                  fibers around each percentile rank, instead of a single
                  nearest-rank fiber
+    260706  ksl  DRP_ALL['mjd'] now computed precisely from 'obstime' via
+                 SkySubOrig.obstime_to_mjd(), instead of the truncated
+                 integer header keyword MJD.
 
 '''
 
@@ -134,6 +137,7 @@ from astropy.utils.exceptions import AstropyWarning
 
 from SummarizeCframe import scifib
 from GetSkyCont import load_mask, _interp_mask_to_wave
+from SkySubOrig import obstime_to_mjd
 
 _USAGE = '''Usage:
   SkySubSci.py [-low PCT] [-high PCT] [-navg N] [-sigma S] [-maxiters K]
@@ -280,12 +284,13 @@ def pick_sky_sci(filename, low=10, high=90, navg=10, sigma=3.0, maxiters=5,
             return int(np.bincount(arr).argmax())
 
         hdr = x[0].header
+        obstime_str = str(hdr.get('OBSTIME', ''))
         meta = dict(
             filename           = os.path.basename(filename),
             expnum             = _expnum_from_filename(filename),
             exptime            = float(hdr.get('EXPTIME', np.nan)),
-            obstime            = str(hdr.get('OBSTIME', '')),
-            mjd                = int(hdr.get('MJD', -1)),
+            obstime            = obstime_str,
+            mjd                = float(obstime_to_mjd(obstime_str)) if obstime_str else -1.0,
             n_sci_fibers       = n,
             n_avg_sci          = len(win_sci),
             n_avg_sky          = len(win_sky),

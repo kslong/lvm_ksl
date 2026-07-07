@@ -13,7 +13,7 @@ Synopsis:
     together with the RA/Dec information from the DRP_ALL table, then
     calls the DRP function to determine the sky model.
 
-    Two methods are supported:
+    Two methods are supported::
 
         nearest           continuum and lines both from the nearest
                           sky telescope
@@ -28,17 +28,17 @@ Command line usage (if any):
 
     usage: SkySubDrp.py [-method METHOD] [-delta N] [-out ROOT] filename
 
-    Arguments:
+    Arguments::
 
-    filename    XCframe FITS file to process
+        filename    XCframe FITS file to process
 
-    Options:
+    Options::
 
-    -method METHOD   sky subtraction method: nearest |
-                     farlines_nearcont  (default: farlines_nearcont)
-    -delta N         process every N-th row; useful for quick tests
-                     (default: 1 = all rows)
-    -out ROOT        output filename root; default is <stem>_<method>
+        -method METHOD   sky subtraction method: nearest |
+                         farlines_nearcont  (default: farlines_nearcont)
+        -delta N         process every N-th row; useful for quick tests
+                         (default: 1 = all rows)
+        -out ROOT        output filename root; default is <stem>_<method>
 
 Description:
 
@@ -50,11 +50,11 @@ Description:
         SKYE     BinTable  WAVE, FLUX, ERROR   RA/DEC from skye_ra/skye_dec
         SKYW     BinTable  WAVE, FLUX, ERROR   RA/DEC from skyw_ra/skyw_dec
 
-    Errors are estimated as sqrt(|flux|) since the XCframe format
+    Errors are estimated as ``sqrt(abs(flux))`` since the XCframe format
     does not carry IVAR.  They affect only the propagated sky error
     stored internally; the sky model itself does not depend on them.
 
-    QA flag bits stored in DRP_ALL['QA_FLAGS']:
+    QA flag bits stored in DRP_ALL['QA_FLAGS']::
 
         0x01  NANDATA   NaN/inf found in input flux or sky data
         0x08  FAILED    row raised an exception; spectrum filled with NaN
@@ -67,22 +67,30 @@ Notes:
 
     Requires the lvmdrp26 conda environment.
 
-History:
+History::
 
     260630 ksl Coding begun, modelled on SkySubOrig.py; fakes the
                sky_hdu per-row from XCframe FLUX/SKY_EAST/SKY_WEST
                and DRP_ALL RA/Dec columns
+    260706 ksl DRP_ALL['mjd'] now recomputed precisely from 'obstime' via
+               SkySubOrig.obstime_to_mjd(), instead of the truncated
+               integer carried through from the input file.
 
 '''
 
 import sys
 import os
+
+# ensure py_progs siblings are importable when running directly
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
 import numpy as np
 from astropy.io import fits
 from astropy.table import Table
 from astropy.wcs import WCS
 
 from lvmdrp.functions.skyMethod import create_skysub_spectrum
+from SkySubOrig import obstime_to_mjd
 
 # ──────────────────────────────────────────────────────────────
 # QA flag bits
@@ -153,10 +161,12 @@ def one_drp(xfits, drp_all, row, wave, wmin=None, wmax=None,
             np.all(np.isfinite(skye_flux)) and
             np.all(np.isfinite(skyw_flux))):
         qa_flags |= QA_NANDATA
-        # replace NaN so the DRP function can still run
-        flux      = np.nan_to_num(flux)
-        skye_flux = np.nan_to_num(skye_flux)
-        skyw_flux = np.nan_to_num(skyw_flux)
+        # replace NaN so the DRP function can still run; nan_to_num's
+        # default replaces +-inf with +-1.8e308 (float64 max) rather than 0,
+        # which can overflow downstream arithmetic -- zero it explicitly.
+        flux      = np.nan_to_num(flux,      nan=0.0, posinf=0.0, neginf=0.0)
+        skye_flux = np.nan_to_num(skye_flux, nan=0.0, posinf=0.0, neginf=0.0)
+        skyw_flux = np.nan_to_num(skyw_flux, nan=0.0, posinf=0.0, neginf=0.0)
 
     sci_ra   = drp_all['sci_ra'][row]
     sci_dec  = drp_all['sci_dec'][row]
@@ -263,6 +273,8 @@ def do_all(filename, method='farlines_nearcont', idelta=1, outroot=''):
 
     xtab = drp_all[select].copy()
     xtab['QA_FLAGS'] = np.array(qa_flags_list, dtype=np.int32)
+    if 'obstime' in xtab.colnames and 'mjd' in xtab.colnames:
+        xtab['mjd'] = obstime_to_mjd(xtab['obstime'])
     hdu5 = fits.BinTableHDU(xtab, name='DRP_ALL')
 
     dwave = float(out_wave[1] - out_wave[0]) if len(out_wave) > 1 else 0.5

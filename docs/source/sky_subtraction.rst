@@ -19,9 +19,14 @@ sky spectra to subtract the sky from the science fibers.
 The tools in lvm_ksl allow you to:
 
 - Evaluate sky subtraction quality in DRP-processed data
-- Run alternative sky subtraction using ESO's SkyCorr tool
+- Run alternative sky subtraction using ESO's SkyCorr tool, a polynomial or
+  B-spline continuum fit (SkySubOrig/SkySubDev1), a PALACE decomposition
+  (SkySubDev2), the lvmdrp routine directly (SkySubDrp), or the ESO Sky
+  Model itself (SkySepESO)
 - Generate theoretical sky models for comparison
-- Visualize sky residuals and identify problems
+- Visualize sky residuals and identify problems, including separately
+  evaluating sky *line* subtraction quality and continuum *separation*
+  quality (SkySub_eval.py)
 
 
 Evaluating Sky Subtraction
@@ -598,20 +603,41 @@ XCframe Sky Subtraction — Alternative Methods and Evaluation
 -------------------------------------------------------------
 
 This group of scripts performs per-spectrum sky subtraction directly on
-XCframe summary FITS files, providing four independent algorithms that can be
-run and compared side by side using ``SkySub_eval.py``.  All four subtraction
+XCframe summary FITS files, providing five independent algorithms that can be
+run and compared side by side using ``SkySub_eval.py``.  All five subtraction
 scripts produce output FITS files with WAVE, FLUX (sky-subtracted), SKY, and
-DRP_ALL extensions.  DRP_ALL carries a QA_FLAGS column recording per-row
-quality issues.
+DRP_ALL extensions (SkySepESO adds MOON/ZODI/DIFFUSE; see below).  DRP_ALL
+carries a QA_FLAGS column recording per-row quality issues.
 
 **Common QA flag bits**
 
 ======  ==========  ===========================================================
 0x01    NANDATA     NaN or inf found in the input flux or sky data.
 0x02    ZEROSKY     Sky line vector is all-zero; scale factor is unreliable.
-0x04    POORFIT     Continuum fit is poorly conditioned (SkySubOrig only).
+0x04    POORFIT     Continuum fit is poorly conditioned (SkySubOrig, SkySubDev1).
+0x04    MODELFAIL   ESO sky model (local SM-01 binary + SkyCalc web-service
+                    fallback) both failed for this row (SkySepESO only).
 0x08    FAILED      Row raised an exception; spectrum filled with NaN.
 ======  ==========  ===========================================================
+
+**Common DRP_ALL columns beyond QA_FLAGS**
+
+- ``mjd`` — precise MJD recomputed from the ``obstime`` ISO timestamp string
+  via ``SkySubOrig.obstime_to_mjd()``, replacing the truncated-integer MJD
+  carried through from the input file (all five scripts, plus SkySubSci.py/
+  SummarizeSciSky.py below).
+- ``LINE_SCALE`` — the bisection factor *r* used to scale the sky lines
+  (SkySubOrig, SkySubDev1, SkySepESO only; SkySubDev2 applies no scale factor,
+  and SkySubDrp wraps an external lvmdrp routine that does not expose its
+  internal factor).
+- ``SCI_MED_<arm>``/``SCI_NMAD_<arm>``/``SCI_RMS_<arm>``/``SCI_SKEW_<arm>`` and
+  the equivalent ``SKY_*`` columns (arm = ``B``, ``R``, ``Z``) — per-arm
+  continuum-fit-quality statistics (SkySubOrig, SkySubDev1, SkySepESO only;
+  requires ``sky_mask.fits``, searched for automatically).  These test the
+  continuum fit *itself* against the raw, pre-subtraction science and sky
+  spectra, independent of the line-scaling step — see
+  ``GetSkyCont.arm_continuum_stats()`` and the ``SkySub_eval.py``
+  "Continuum Separation" figures below for how they are used.
 
 SkySubOrig.py
 ^^^^^^^^^^^^^
@@ -659,12 +685,15 @@ For ``farlines_nearcont`` the sky model is::
 
     sky = cont_near + r × lines_far
 
-The sky is then subtracted: ``flux_out = flux_sci − sky``.
+The sky is then subtracted: ``flux_out = flux_sci − sky``.  Only the sky
+lines are scaled by *r*; the continuum (``cont_near``) is used exactly as
+fitted, with no additional scaling.
 
 **Output:**
 
 A FITS file ``<ROOT>.fits`` with extensions WAVE, FLUX (sky-subtracted),
-SKY, and DRP_ALL (with QA_FLAGS column).
+SKY, and DRP_ALL (with QA_FLAGS, ``mjd``, ``LINE_SCALE``, and per-arm
+continuum-fit-quality columns — see "Common DRP_ALL columns" above).
 
 **See Also:** :doc:`api/SkySubOrig/index`
 
@@ -717,7 +746,9 @@ Requires the ``lvmdrp`` conda environment (``lvmdrp26``).
 **Output:**
 
 A FITS file ``<ROOT>.fits`` with extensions WAVE, FLUX (sky-subtracted),
-SKY, and DRP_ALL (with QA_FLAGS column).
+SKY, and DRP_ALL (with QA_FLAGS and precise ``mjd``).  ``create_skysub_spectrum``
+only returns the sky spectrum and its error, not an internal scale factor, so
+no ``LINE_SCALE`` or continuum-fit-quality columns are written here.
 
 **See Also:** :doc:`api/SkySubDrp/index`
 
@@ -776,10 +807,18 @@ palace mask, then reused for every row.  For each row:
        farlines_nearcont:  sky = cont_near + r × lines_far
        nearest:            sky = cont_near + r × lines_near
 
+   ``cont_near`` is always the continuum used in the final SKY (both
+   methods), used exactly as fitted with no additional scaling.
+5. If ``sky_mask.fits`` is available, per-arm continuum-fit-quality stats
+   (``SCI_*``/``SKY_*`` columns) are computed from the raw pre-subtraction
+   science spectrum (``lines_sci``) and the near-sky spectrum
+   (``lines_near``), via ``GetSkyCont.arm_continuum_stats()``.
+
 **Output:**
 
 A FITS file ``<ROOT>.fits`` with extensions WAVE, FLUX (sky-subtracted),
-SKY, and DRP_ALL (with QA_FLAGS column).
+SKY, and DRP_ALL (with QA_FLAGS, precise ``mjd``, ``LINE_SCALE``, and
+per-arm continuum-fit-quality columns — see "Common DRP_ALL columns" above).
 
 **See Also:** :doc:`api/SkySubDev1/index`
 
@@ -839,18 +878,106 @@ PALACE data files; paths are taken from ``XSkySepIvan.py``.
 **Output:**
 
 A FITS file ``<ROOT>.fits`` with extensions WAVE, FLUX (sky-subtracted),
-SKY, and DRP_ALL (with QA_FLAGS column).
+SKY, and DRP_ALL (with QA_FLAGS and precise ``mjd``).  No scale factor is
+applied here (see docstring: "no scaling"), so there is no ``LINE_SCALE``
+column or continuum-fit-quality columns to record.
 
 **See Also:** :doc:`api/SkySubDev2/index`
+
+
+SkySepESO.py
+^^^^^^^^^^^^
+
+Perform per-spectrum sky subtraction using the **ESO Sky Model** to separate
+the sky continuum into its physical MOON, ZODI, and DIFFUSE components,
+using the same bisection line-scale search as SkySubOrig.  Ported from a
+prototype developed in ``lvm_sky2506`` (``SkySepMod.py`` +
+``SkySubModDev250624.ipynb``).
+
+**Usage**::
+
+    SkySepESO.py [-method METHOD] [-delta N] [-out ROOT] filename
+
+**Arguments:**
+
+filename
+    XCframe FITS file to process.
+
+**Options:**
+
+-method METHOD
+    ``nearest`` | ``farthest`` | ``farlines_nearcont`` (default) — same
+    meaning as SkySubOrig.
+
+-delta N
+    Process every N-th row (default: 1).  Each row requires 2–3 ESO sky
+    model fetches (science fiber, plus one or two sky fibers depending on
+    method), so this script is far slower per row than the other four —
+    measured at ~2.5s/row for ``farlines_nearcont`` (3 model fetches + 3
+    continuum fits), i.e. roughly an hour for a full ~1750-fiber exposure.
+    Use ``-delta`` liberally for quick tests.
+
+-out ROOT
+    Output filename root.  Default: ``<stem>_eso_<method>``.
+
+**Description:**
+
+For each row, the ESO sky model is fetched for the relevant fiber's
+coordinates and observation time (``SkyModelObs.do_one``, using the local
+ESO SM-01 binary; falls back automatically to the SkyCalc web service via
+``SkyCalcObs.py`` if the local model call fails — e.g. because the model
+rejects the target/Moon geometry).  The model gives MOON/ZODI/DIFFUSE
+continuum templates, which are fit to the observed flux as a non-negative,
+iteratively-downweighted 3-component linear combination
+(``CONT = a·MOON + b·ZODI + c·DIFFUSE``) so that sky/airglow line pixels do
+not bias the continuum fit upward.  The resulting line residual is then
+scaled against the science spectrum's own line residual by the same
+bisection search used in SkySubOrig, and the sky is subtracted::
+
+    sky = sky_CONT + r × sky_LINES
+    flux_out = flux_sci − sky
+
+Only the sky lines are scaled by *r*; ``sky_CONT`` (whichever sky fiber's
+ESO-model fit produced it — near for ``nearest``/``farlines_nearcont``, far
+for ``farthest``) is used exactly as fitted.
+
+Each ESO-model fetch writes a small per-call FITS file
+(``SkyM_*.fits``/``SkyC_*.fits``) to the current working directory; this
+file is read and deleted immediately, so nothing accumulates on disk across
+a run.
+
+**Output:**
+
+A FITS file ``<ROOT>.fits`` with extensions WAVE, FLUX (sky-subtracted),
+SKY, **MOON**, **ZODI**, **DIFFUSE** (the *scaled* ESO-model components of
+whichever sky fit produced SKY's continuum term — they sum to SKY's
+continuum; the remaining line term is ``SKY − (MOON+ZODI+DIFFUSE)``), and
+DRP_ALL.  DRP_ALL carries QA_FLAGS (with the additional ``MODELFAIL`` bit
+0x04 — both the local ESO model and the SkyCalc fallback failed for this
+row), precise ``mjd``, ``LINE_SCALE``, the fitted ESO-model coefficients
+(``SCI_MOON``/``SCI_ZODI``/``SCI_DIFFUSE``, ``SKY_MOON``/``SKY_ZODI``/
+``SKY_DIFFUSE``), per-arm continuum-fit-quality columns (see "Common
+DRP_ALL columns" above), and ``ERROR_MSG`` — a per-row failure-reason
+string (truncated to 200 characters) for any row with a non-zero QA_FLAGS
+value.  A summary of flagged rows is printed at the end of the run and also
+written to ``<ROOT>_errors.txt``.
+
+**Requirements:**
+
+The local ESO SM-01 sky model binary, gated by the ``ESO_SKY_MODEL``
+environment variable (see ``SkyModelObs.py`` above); without it, every row
+falls back to the SkyCalc web service (slower, needs network access).
+
+**See Also:** :doc:`api/SkySepESO/index`
 
 
 SkySub_eval.py
 ^^^^^^^^^^^^^^
 
 Evaluate sky subtraction quality for one or more output FITS files
-produced by SkySubOrig, SkySubDrp, SkySubDev1, or SkySubDev2.  When
-multiple files are given they are overlaid in the same figures for direct
-method comparison.
+produced by SkySubOrig, SkySubDrp, SkySubDev1, SkySubDev2, or SkySepESO.
+When multiple files are given they are overlaid in the same figures for
+direct method comparison.
 
 **Usage**::
 
@@ -877,8 +1004,11 @@ wmin, wmax
 
 **Description — HTML output:**
 
-The output HTML file contains four interactive Plotly figures and an
-inline statistics table.
+The output HTML file is titled "Sky Subtraction Quality Check" and is
+organized into two named sections: **Sky Line Subtraction** (Figures 1–4
+plus a statistics table) and **Continuum Separation** (Figures 5–6 plus a
+second statistics table).  In total there are six interactive Plotly
+figures and two inline statistics tables.
 
 *Figure 1 — spectral overview (3 panels, linear scale):*
 
@@ -887,14 +1017,21 @@ erg s⁻¹ cm⁻² Å⁻¹, chosen to make sky-subtracted residuals visible.
 Panel 1 shows FLUX + SKY (before subtraction), Panel 2 shows FLUX
 (after subtraction), and Panel 3 shows the SKY model.  Each panel shows
 the median and 10th/90th percentile band together with up to N individual
-spectra in light grey.  One colour per input file.
+spectra in light grey.  One colour per input file.  This figure sits above
+the "Sky Line Subtraction" section header (it isn't part of either named
+section).
 
 *Figure 2 — residual histograms:*
 
 For each of three diagnostic windows ([OI] 5577 Å: 5560–5594 Å,
-[OI] 6300 Å: 6280–6320 Å, IR OH: 9300–9500 Å) the distribution of all
-per-pixel sky-subtracted values is plotted with a Gaussian overlay.
-A statistics box (N, median, NMAD, skewness) appears inside each panel.
+[OI] 6300 Å: 6280–6320 Å, IR OH: 9300–9500 Å) the distribution of the
+per-pixel **HF (high-frequency, continuum-subtracted) residual** — not
+raw FLUX — is plotted with a Gaussian overlay.  Using the HF residual
+means leftover continuum in the window does not bias the reported
+median/NMAD away from genuine sky-line residuals.  A statistics box (N,
+median, NMAD, skewness) appears inside each panel; skewness is computed
+on the same median ± 5·NMAD clipped range shown in the plot, so it isn't
+dominated by a handful of outliers invisible in the display.
 
 *Figure 3 — diagnostic window median spectra:*
 
@@ -914,8 +1051,13 @@ printed to the terminal.
 *Figure 4 — HF RMS ratio per spectrum:*
 
 For each diagnostic window the noise-corrected HF RMS ratio is plotted
-against spectrum index.  The three panels share a linked x-axis so
-zooming one panel pans all three.  See the algorithm description below.
+against spectrum index, or against MJD (recomputed precisely from
+``obstime`` rather than the truncated-integer ``mjd`` column) when there
+are more than 100 spectra and every overlaid file has that information —
+otherwise all files fall back to spectrum index so every trace stays on a
+common axis.  Points are plotted as markers (not connected lines).  The
+three panels share a linked x-axis so zooming one panel pans all three.
+See the algorithm description below.
 
 
 **HF RMS quality metric — algorithm:**
@@ -1026,10 +1168,64 @@ The statistics table reports the following per file and per window:
      - Fraction of spectra with ratio < 0.5, i.e. where sky-line power was
        more than halved.  A simple pass/fail rate at this threshold.
 
+
+**Continuum Separation section — Figures 5 & 6 and the second statistics table:**
+
+Unlike the HF RMS metric above (which targets sky *line* residuals), this
+section evaluates *continuum* separation quality, using three
+spectrograph-arm bands with the B/R/Z overlap zones and outer edges
+excluded — B (3650–5775 Å), R (5800–7520 Å), Z (7570–9600 Å).  Both
+figures share the same three-row layout and row order:
+
+- **Row 1 (SCI)** — DRP_ALL['SCI_MED_<arm>']: the per-spectrum median of
+  (raw science flux − sci_cont) in clean (sky-line-free) pixels of the
+  *raw, pre-subtraction* science spectrum.  This is the actual
+  science-side continuum-fit-quality test.
+- **Row 2 (SKY)** — DRP_ALL['SKY_MED_<arm>']: the same, but for the raw
+  sky-telescope spectrum whose continuum fit was actually used in SKY.
+  This is the actual sky-side continuum-fit-quality test, and is the one
+  that matters directly for the final result's continuum level.
+- **Row 3 (Subtracted)** — the per-spectrum median of the *raw*
+  sky-subtracted FLUX (not the HF residual used by Figure 2) in clean
+  pixels.  This is the final, post-subtraction leftover signal.  It does
+  **not** test continuum-fit quality — the science-side continuum fit is
+  only ever used to derive the bisection line-scale target and never
+  enters the subtracted result — so this row instead reflects real source
+  (stellar) continuum entangled with any net error in the sky-side
+  continuum estimate.  Comparing this row across overlaid methods on the
+  same input isolates sky-continuum quality specifically, since real
+  source continuum is identical across methods.
+
+Rows 1/2 require the ``SCI_MED_<arm>``/``SKY_MED_<arm>`` DRP_ALL columns
+already present in the input file (written by SkySubOrig.py, SkySubDev1.py,
+or SkySepESO.py); a file without them (SkySubDev2.py/SkySubDrp.py output,
+or an older file predating this feature) simply leaves those panels empty.
+
+*Figure 5* histograms all three rows (pooled/distribution across spectra,
+same N/median/NMAD/skew annotation style as Figure 2).  *Figure 6* plots
+the same three quantities per spectrum against spectrum index or MJD
+(same x-axis logic as Figure 4), so specific bad exposures/fibers are
+visible rather than just an aggregate number.  Both figures use a
+colour-coded suptitle above the plot grid (rather than a floating legend,
+which would otherwise sit on top of a subplot in the 3×3 grid).
+
+The second statistics table (screen + HTML) reports, per file/arm/kind
+(SCI, SKY, Subtracted), the N/median/NMAD/skew of the row's distribution.
+
+**DRP_ALL write-back:** the per-spectrum Subtracted-row statistics
+(``resid_med_<arm>``, ``resid_nmad_<arm>``, ``resid_rms_<arm>``,
+``resid_skew_<arm>``) are written back into each evaluated file's own
+DRP_ALL table, in place — the same convention used by
+``GetSkyCont_eval.py`` for its own fit-quality columns.  (The SCI_MED/
+SKY_MED columns themselves are not written by this script — they already
+exist in the input file, written by whichever SkySub* script produced it.)
+
 **Output:**
 
 An HTML file named ``<stem>_eval.html`` (one per input file without
-``-out``; a single combined file when ``-out outroot`` is given).
+``-out``; a single combined file when ``-out outroot`` is given).  Any
+evaluated file with a DRP_ALL table is updated in place with the
+Subtracted-row statistics above; no backup is created.
 
 **See Also:** :doc:`api/SkySub_eval/index`
 
@@ -1037,29 +1233,201 @@ An HTML file named ``<stem>_eval.html`` (one per input file without
 Comparing Sky Subtraction Methods
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-A typical workflow for running all four methods on a single XCframe file
+A typical workflow for running all five methods on a single XCframe file
 and comparing the results::
 
     # 1. Build the sky-line mask (if not already present)
     palace_make_mask.py XCframe_file.fits /path/to/palace/PMD
 
-    # 2. Run the four subtraction methods
+    # 2. Run the five subtraction methods
     SkySubOrig.py  XCframe_file.fits
     SkySubDrp.py   XCframe_file.fits
     SkySubDev1.py  XCframe_file.fits -mask sky_mask.fits
     SkySubDev2.py  XCframe_file.fits
+    SkySepESO.py   XCframe_file.fits -delta 50   # slow; use -delta for a quick look
 
     # 3. Evaluate and compare in a single HTML file
     SkySub_eval.py -out compare \
         XCframe_file_farlines_nearcont.fits \
         XCframe_file_drp_farlines_nearcont.fits \
         XCframe_file_dev1_farlines_nearcont.fits \
-        XCframe_file_dev2_farlines_nearcont.fits
+        XCframe_file_dev2_farlines_nearcont.fits \
+        XCframe_file_eso_farlines_nearcont.fits
 
-Open ``compare_eval.html`` in a browser.  Figure 1 overlays the
-median spectra for all four methods; Figure 4 shows the per-spectrum HF
-RMS ratio for each diagnostic window, making it straightforward to
-identify which method best suppresses sky lines for the observation.
+Open ``compare_eval.html`` in a browser.  Figure 1 overlays the median
+spectra for all five methods; Figure 4 (Sky Line Subtraction section) shows
+the per-spectrum HF RMS ratio for each diagnostic window; Figures 5/6
+(Continuum Separation section) show per-arm continuum-fit quality for the
+three methods that record it (SkySubOrig, SkySubDev1, SkySepESO) — together
+these make it straightforward to identify which method best suppresses
+sky lines *and* which best separates continuum from lines for the
+observation.
+
+
+Science-Fiber-Based Sky Estimation
+------------------------------------
+
+Unlike the XCframe methods above (which use the dedicated SKY_EAST/SKY_WEST
+sky telescopes), these two scripts estimate a sky spectrum directly from the
+science IFU itself.  At a typical LVM pointing most of the 1801 science
+fibers see mostly sky rather than an astronomical source; ranking fibers by
+sky-line-free continuum flux and averaging the faintest fibers gives a sky
+proxy without needing a sky telescope pointing at all.  No scale factor is
+applied to emission lines here, so the method is best suited to fields
+where a genuinely sky-dominated tail of faint fibers exists (e.g. diffuse
+or extended sources, not compact point sources filling the IFU).
+
+Both scripts write output with WAVE/SCI/SKY/FLUX/DRP_ALL extensions
+compatible with ``SkySub_eval.py`` (FLUX = sky-subtracted, SKY = sky
+model), so they can be evaluated and compared alongside the four XCframe
+methods above.
+
+SkySubSci.py
+^^^^^^^^^^^^
+
+Estimate a sky spectrum for one or more LVM CFrame exposures directly from
+the science fibers, without using the dedicated sky telescopes.
+
+**Usage**::
+
+    SkySubSci.py [-low PCT] [-high PCT] [-navg N] [-sigma S] [-maxiters K]
+                [-mask FILE] [-stat median|mean] [-out ROOT]
+                filename [filename ...]
+
+**Arguments:**
+
+filename
+    One or more lvmCFrame FITS files.  One output row is written per file,
+    in the order given.
+
+**Options:**
+
+-low PCT
+    Percentile rank (0-100) of the faint/sky-like fiber (default 10).
+
+-high PCT
+    Percentile rank (0-100) of the bright/science-like fiber (default 90).
+
+-navg N
+    Number of fibers, ranked closest to ``-low``/``-high``, combined with a
+    sigma-clipped (robust) mean (default 10; use 1 to reproduce the
+    original single-fiber behaviour).
+
+-sigma S
+    Sigma-clipping threshold for the robust mean (default 3.0).
+
+-maxiters K
+    Sigma-clipping iteration limit (default 5).
+
+-mask FILE
+    palace_mask FITS file from ``palace_make_mask.py`` (WAVE/MASK
+    extensions, MASK=1 means clean/sky-line-free).  If omitted,
+    ``sky_mask.fits`` is searched for in the current directory, then in
+    the ``lvm_ksl data/`` directory.
+
+-stat STAT
+    Statistic used to rank fibers by continuum flux: ``median`` (default)
+    or ``mean``.
+
+-out ROOT
+    Output filename root.  Default:
+    ``SkySubSci_<first_expnum>_<last_expnum>`` (or ``SkySubSci_<expnum>``
+    for a single file).
+
+**Description:**
+
+For each exposure, science fibers are selected from SLITMAP (``scifib``,
+imported from ``SummarizeCframe.py``).  Each fiber's continuum flux is
+measured as the median (or mean) FLUX over sky-line-free pixels (from the
+palace mask, resampled onto the file's own wavelength grid).  Fibers are
+sorted by that continuum level; around each of the ``-low``/``-high``
+percentile ranks, a window of the ``-navg`` fibers whose rank is closest to
+that target is combined pixel-by-pixel with a sigma-clipped mean
+(``astropy.stats.sigma_clipped_stats``).  The ``-low`` window is the sky
+estimate; the ``-high`` window is a bright/science-like reference; their
+difference is the sky-subtracted result.  Averaging several fibers per
+percentile trades spatial locality in rank-space for lower per-pixel noise
+(~1/√navg for clean pixels); sigma clipping keeps a fiber with a faint
+source or a defect from dominating the average.
+
+**Output:**
+
+A FITS file with WAVE, SCI (robust mean of the high-percentile window,
+reference only), SKY (robust mean of the low-percentile window, the sky
+model), FLUX (SCI − SKY, sky-subtracted), and DRP_ALL (one row per
+exposure: filename, expnum, exptime, obstime, mjd, fiber counts and IDs
+used, RA/Dec, spectrograph IDs, and continuum flux for both windows)
+extensions.
+
+**See Also:** :doc:`api/SkySubSci/index`
+
+
+SummarizeSciSky.py
+^^^^^^^^^^^^^^^^^^
+
+Drpall-driven, remote-friendly version of ``SkySubSci.py``: runs the same
+science-fiber sky estimate over a range of exposure numbers selected from a
+drpall table (as ``SummarizeCframe.py`` does) instead of an explicit file
+list, so it can be run unattended over many exposures (e.g. at Utah).
+
+**Usage**::
+
+    SummarizeSciSky.py [-emin 900] [-ver 1.2.1] [-drp_all FILE]
+                       [-low 10] [-high 90] [-navg 10] [-sigma 3.0]
+                       [-maxiters 5] [-mask FILE] [-stat median|mean]
+                       [-out ROOT] exp_start exp_stop [delta]
+
+**Arguments:**
+
+exp_start
+    Starting exposure number.
+
+exp_stop
+    Stopping exposure number.
+
+delta
+    Process every delta-th exposure in range (default 1).
+
+**Options:**
+
+-emin N
+    Minimum exposure time to include (default 900).
+
+-ver VER
+    DRP version, used to locate ``drpall-VER.fits`` (default 1.2.1).
+
+-drp_all FILE
+    Explicit drpall table to read instead of ``drpall-VER.fits`` (FITS, or
+    ascii if the name contains ``txt``/``.tab``).
+
+-low PCT, -high PCT, -navg N, -sigma S, -maxiters K, -mask FILE, -stat STAT
+    Same meaning as in ``SkySubSci.py``.
+
+-out ROOT
+    Output filename root.  Default:
+    ``SummarizeSciSky_<ver>_<exp_start>_<exp_stop>_<delta>``.
+
+**Description:**
+
+Exposure selection and file-path resolution follow the same pattern as
+``SummarizeCframe.py``'s ``read_drpall``/``select_exps``/``find_top``, but
+are re-implemented locally here (with an added ``-drp_all`` override)
+rather than imported from ``SumCframe.py``, so this script has no
+dependency on the optional ``dask`` package that ``SumCframe.py`` requires
+for an unrelated function.  The per-exposure algorithm is identical to
+``SkySubSci.py`` (also re-implemented locally rather than imported, so the
+script is standalone).  Rather than building a fresh metadata table, the
+calculated values (continuum flux, fiber IDs used, positions, spectrograph
+IDs) are added as new columns directly onto the selected drpall rows, which
+become the DRP_ALL extension of the output.
+
+**Output:**
+
+Same extension structure as ``SkySubSci.py`` (WAVE, SCI, SKY, FLUX,
+DRP_ALL), with DRP_ALL being the selected drpall rows plus the added
+columns.
+
+**See Also:** :doc:`api/SummarizeSciSky/index`
 
 
 Typical Workflows
@@ -1151,4 +1519,8 @@ See Also
 - :doc:`api/SkySubDrp/index` - API documentation
 - :doc:`api/SkySubDev1/index` - API documentation
 - :doc:`api/SkySubDev2/index` - API documentation
+- :doc:`api/SkySepESO/index` - API documentation
 - :doc:`api/SkySub_eval/index` - API documentation
+- :doc:`api/SkySubSci/index` - API documentation
+- :doc:`api/SummarizeSciSky/index` - API documentation
+- :doc:`summarize` - SummarizeCframe.py, whose drpall selection logic SummarizeSciSky.py mirrors

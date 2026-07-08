@@ -34,7 +34,7 @@ Command line usage (if any):
                          farlines_nearcont  (default: farlines_nearcont)
         -delta N         process every N-th row; useful for quick tests
                          (default: 1 = all rows)
-        -out ROOT        output filename root; default is <stem>_<method>
+        -out ROOT        output filename root; default is <stem>_orig_<method>
 
 Description:
 
@@ -73,9 +73,9 @@ Description:
 Notes:
 
     Output filename is ``<ROOT>.fits``.  If -out is omitted the name
-    is derived as ``<stem>_<method>.fits`` where ``<stem>`` is the
+    is derived as ``<stem>_orig_<method>.fits`` where ``<stem>`` is the
     input filename without extension (e.g.
-    ``XCframe_1.2.1_7325_48860_1_50_farlines_nearcont.fits``).
+    ``XCframe_1.2.1_7325_48860_1_50_orig_farlines_nearcont.fits``).
 
     The RankWarning emitted by numpy.polyfit is caught portably across
     NumPy 1.x and 2.x.
@@ -103,6 +103,10 @@ History::
                med/nmad/rms/skew x b/r/z), evaluated against the raw
                pre-subtraction science and sky spectra using
                GetSkyCont.arm_continuum_stats(); requires sky_mask.fits.
+    260708 ksl Default output name is now <stem>_orig_<method>.fits (was
+               <stem>_<method>.fits) -- brings it in line with
+               SkySubDrp/Dev1/Dev2/SepESO, which all include their own
+               method tag (_drp_/_dev1_/_dev2_/_eso_) in the default name.
 
 '''
 
@@ -163,7 +167,7 @@ Options:
   -method METHOD   nearest | farthest | farlines_nearcont
                    (default: farlines_nearcont)
   -delta N         step size through rows for quick tests (default: 1)
-  -out ROOT        output filename root (default: <stem>_<method>)
+  -out ROOT        output filename root (default: <stem>_orig_<method>)
 '''
 
 
@@ -530,7 +534,7 @@ def do_all(filename, method='farlines_nearcont', idelta=1, outroot=''):
 
     if outroot == '':
         stem = os.path.splitext(os.path.basename(filename))[0]
-        outroot = '%s_%s' % (stem, method)
+        outroot = '%s_orig_%s' % (stem, method)
     outfile = '%s.fits' % outroot
     hdul.writeto(outfile, overwrite=True)
     print('Wrote results to %s' % outfile)

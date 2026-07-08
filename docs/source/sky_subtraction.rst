@@ -632,8 +632,10 @@ carries a QA_FLAGS column recording per-row quality issues.
   internal factor).
 - ``SCI_MED_<arm>``/``SCI_NMAD_<arm>``/``SCI_RMS_<arm>``/``SCI_SKEW_<arm>`` and
   the equivalent ``SKY_*`` columns (arm = ``B``, ``R``, ``Z``) — per-arm
-  continuum-fit-quality statistics (SkySubOrig, SkySubDev1, SkySepESO only;
-  requires ``sky_mask.fits``, searched for automatically).  These test the
+  continuum-fit-quality statistics (SkySubOrig, SkySubDev1, SkySepESO,
+  SkySubDev2 only; requires ``sky_mask.fits``, searched for automatically —
+  SkySubDrp does not have these, since it wraps an external lvmdrp routine
+  that doesn't expose an internal continuum fit).  These test the
   continuum fit *itself* against the raw, pre-subtraction science and sky
   spectra, independent of the line-scaling step — see
   ``GetSkyCont.arm_continuum_stats()`` and the ``SkySub_eval.py``
@@ -670,7 +672,7 @@ filename
     Process every N-th row; useful for quick tests (default: 1 = all rows).
 
 -out ROOT
-    Output filename root.  Default: ``<stem>_<method>``.
+    Output filename root.  Default: ``<stem>_orig_<method>``.
 
 **Description:**
 
@@ -871,6 +873,12 @@ grid and LSF, then reused for every row.  For each row:
        nearest:            sky = CONT_near + LINES_near
 
 4. ``flux_out = flux_sci − sky``.
+5. If ``sky_mask.fits`` is available, an extra PALACE decomposition is
+   run on the raw science flux (purely for the check below; the
+   subtraction itself never needs a science-side continuum fit), and
+   per-arm continuum-fit-quality stats are computed from it and from
+   the near-sky spectrum's own decomposition, via
+   ``GetSkyCont.arm_continuum_stats()``.
 
 Requires the PALACE library (``lvmsky/skysub/sky_decomp``) and the
 PALACE data files; paths are taken from ``XSkySepIvan.py``.
@@ -878,9 +886,11 @@ PALACE data files; paths are taken from ``XSkySepIvan.py``.
 **Output:**
 
 A FITS file ``<ROOT>.fits`` with extensions WAVE, FLUX (sky-subtracted),
-SKY, and DRP_ALL (with QA_FLAGS and precise ``mjd``).  No scale factor is
-applied here (see docstring: "no scaling"), so there is no ``LINE_SCALE``
-column or continuum-fit-quality columns to record.
+SKY, and DRP_ALL (with QA_FLAGS, precise ``mjd``, and per-arm
+continuum-fit-quality columns — see "Common DRP_ALL columns" above).  No
+scale factor is applied anywhere in this method (see docstring: "no
+scaling"), so there is still no ``LINE_SCALE`` column, unlike SkySubOrig/
+SkySubDev1/SkySepESO.
 
 **See Also:** :doc:`api/SkySubDev2/index`
 
@@ -1248,7 +1258,7 @@ and comparing the results::
 
     # 3. Evaluate and compare in a single HTML file
     SkySub_eval.py -out compare \
-        XCframe_file_farlines_nearcont.fits \
+        XCframe_file_orig_farlines_nearcont.fits \
         XCframe_file_drp_farlines_nearcont.fits \
         XCframe_file_dev1_farlines_nearcont.fits \
         XCframe_file_dev2_farlines_nearcont.fits \

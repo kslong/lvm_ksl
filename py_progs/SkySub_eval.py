@@ -64,10 +64,14 @@ Description:
     structure remains.  A Gaussian with the same median and NMAD is
     overlaid as a dotted curve.  A statistics box (N, median, NMAD,
     skewness) is placed inside each panel; boxes stack vertically when
-    multiple files are given.  The histogram range is clipped to
-    median ± 5·NMAD, and the reported skewness is computed on that same
-    clipped range so it matches what's plotted rather than being
-    dominated by a handful of outlier pixels beyond the display range.
+    multiple files are given.  The histogram range is a fixed
+    ``_LINE_HIST_XLIM`` (-2e-15 to 2e-15), the same for every overlaid
+    file, rather than each file's own median ± 5·NMAD -- this way
+    differences in histogram width/shape between models are real, not
+    an artifact of each file being binned over a different range.  The
+    reported skewness is computed on that same fixed, clipped range so
+    it matches what's plotted rather than being dominated by a handful
+    of outlier pixels beyond the display range.
 
     **Figure 3 (Figure 4 in HTML) — diagnostic window median spectra:**
 
@@ -128,7 +132,14 @@ Description:
     Z 7570-9600 Å — the B/R and R/Z overlap zones and the outer edges
     are excluded).  Same annotation style throughout (N, median, NMAD,
     skew; Gaussian overlay), but each row plots a different quantity,
-    and they answer different questions:
+    and they answer different questions.  All nine panels share the
+    same fixed x-axis range (``_CONT_HIST_XLIM``, -5e-15 to 5e-15)
+    rather than each file's own median ± 5·NMAD, so overlaid files are
+    binned identically and differences in width/shape between models
+    are real rather than a range artifact (as with Figure 2's
+    ``_LINE_HIST_XLIM``).  As with Figure 2, N/median/NMAD reflect the
+    full underlying distribution; only the reported skewness is
+    recomputed on the clipped/displayed range.
 
     Row 1 -- distribution (across spectra) of DRP_ALL['SCI_MED_<arm>'],
     i.e. the per-spectrum median of (raw science flux − sci_cont) in
@@ -172,6 +183,15 @@ Description:
     error; comparing this panel across overlaid methods on the same
     input isolates sky-continuum quality, since source continuum is
     identical across methods.
+
+    Every panel shares the same fixed y-axis range (``_CONT_TREND_YLIM``,
+    -2e-14 to 2e-14) rather than an adaptive per-panel range, for the same
+    cross-file-comparability reason as Figures 2/5's fixed x-axis ranges.
+    Since a fixed range means real outliers are simply off-scale and
+    invisible, each panel's annotation reports N and the percentage of
+    that file's exposures falling below/above the range in each
+    direction (``_add_trend_panel``), so an exposure that's off the
+    visible plot is still accounted for.
 
     The same per-spectrum statistics (resid_med_<arm>, resid_nmad_<arm>,
     resid_rms_<arm>, resid_skew_<arm> for arm in b, r, z) are written
@@ -256,6 +276,28 @@ History::
                 (residual histograms) rather than above Figure 1 (spectral
                 overview, which isn't part of either named section).
                 Section headers demoted to <h2> under the new page <h1>.
+    260708 ksl  Figure 2's per-window histograms now use a fixed x-axis
+                range (_LINE_HIST_XLIM, -2e-15 to 2e-15) instead of each
+                file's own median +/- 5*NMAD, so overlaid files are binned
+                identically and differences in width/shape between models
+                are directly comparable rather than range-dependent.
+    260708 ksl  Same fix applied to Figure 5's continuum-quality histograms
+                (SCI/SKY/Subtracted rows): _add_hist_panel() now accepts an
+                optional fixed xlim, used here as _CONT_HIST_XLIM (-5e-15 to
+                5e-15). N/median/NMAD still reflect the full distribution;
+                only the displayed skewness is clipped, unchanged from
+                before.
+    260708 ksl  Figure 6 (continuum quantities vs index/MJD) now uses a
+                fixed y-axis range too (_CONT_TREND_YLIM, -2e-14 to 2e-14,
+                wider than _CONT_HIST_XLIM since per-spectrum values scatter
+                more than the histogrammed bulk), replacing the previous
+                adaptive 1st/99th-percentile-per-panel range. Since a fixed
+                range hides real outliers off-scale, each panel now reports
+                the percentage of exposures below/above the range via a new
+                shared _add_trend_panel() helper (replacing the inlined
+                fig6.add_trace() calls). Removed the now-unused
+                all_arm_sci/all_arm_sky/all_arm_resid accumulators that only
+                existed to feed the old adaptive range.
 
 '''
 
@@ -298,6 +340,25 @@ _ARM_EVAL_RANGES = [
     ('R', 5800.0, 7520.0),
     ('Z', 7570.0, 9600.0),
 ]
+
+# Fixed x-axis range for Figure 2's per-window HF (line) residual histograms.
+# A common, fixed range (rather than each file's own median +/- 5*NMAD) means
+# every overlaid file is binned identically, so differences in histogram
+# width/shape between models are directly comparable rather than an artifact
+# of each file having its own auto-scaled range.
+_LINE_HIST_XLIM = (-2e-15, 2e-15)
+
+# Same idea for Figure 5's continuum-separation histograms (SCI_MED/SKY_MED/
+# Subtracted); wider than _LINE_HIST_XLIM since these are per-spectrum
+# medians rather than per-pixel residuals.
+_CONT_HIST_XLIM = (-5e-15, 5e-15)
+
+# Fixed y-axis range for Figure 6 (the same quantities as Figure 5, plotted
+# per-spectrum against index/MJD instead of histogrammed).  Wider than
+# _CONT_HIST_XLIM: individual per-spectrum values scatter more than the bulk
+# histogrammed distribution, so a wider window is needed to keep most
+# exposures visible while still excluding genuine outliers.
+_CONT_TREND_YLIM = (-2e-14, 2e-14)
 
 # Per-file colour pairs: (solid line, shaded band)
 _FILE_COLORS = [
@@ -551,7 +612,7 @@ def _suptitle_text(file_legend):
 
 
 def _add_hist_panel(fig, row, col, n_cols, vals, label, c_med, c_hist, k,
-                    show_legend, stat_label='Med'):
+                    show_legend, stat_label='Med', xlim=None):
     '''
     Histogram + Gaussian overlay + stats annotation in one subplot panel,
     from a 1-D array of values already collected for one file.  Shared by
@@ -570,9 +631,18 @@ def _add_hist_panel(fig, row, col, n_cols, vals, label, c_med, c_hist, k,
         that actually has data, not hardcoded to a fixed row/col.
     stat_label : label for the central-tendency stat in the annotation
         (e.g. 'Med').
+    xlim : optional (lo, hi) tuple giving a fixed histogram/display range,
+        the same for every overlaid file, so differences in width/shape
+        between files are real rather than an artifact of each file being
+        binned over its own adaptive range.  If omitted, falls back to
+        this file's own median +/- 5*NMAD (or p10/p90 if that's degenerate).
 
     Returns a stats dict (n, med, nmad, skew), or None if too few
     finite values to plot (caller should not count this as "shown").
+    N/med/nmad always reflect the full (unclipped) vals array; only the
+    displayed skewness is recomputed on the clipped/displayed range, since
+    skewness (unlike median/NMAD) is dominated by a handful of outliers
+    that may sit outside the display window.
     '''
     vals = np.asarray(vals, dtype=float)
     vals = vals[np.isfinite(vals)]
@@ -583,11 +653,14 @@ def _add_hist_panel(fig, row, col, n_cols, vals, label, c_med, c_hist, k,
     nmad = float(1.4826 * np.median(np.abs(vals - med)))
     n    = len(vals)
 
-    lo = med - 5.0 * nmad
-    hi = med + 5.0 * nmad
-    if lo >= hi:
-        p10, p90 = np.percentile(vals, [10, 90])
-        lo, hi = p10 - 1e-20, p90 + 1e-20
+    if xlim is not None:
+        lo, hi = xlim
+    else:
+        lo = med - 5.0 * nmad
+        hi = med + 5.0 * nmad
+        if lo >= hi:
+            p10, p90 = np.percentile(vals, [10, 90])
+            lo, hi = p10 - 1e-20, p90 + 1e-20
 
     vals_disp = vals[(vals >= lo) & (vals <= hi)]
     if len(vals_disp) > 2:
@@ -637,6 +710,56 @@ def _add_hist_panel(fig, row, col, n_cols, vals, label, c_med, c_hist, k,
                   f'Skew = {skew_disp:.2f}'),
         )
     return dict(n=n, med=med, nmad=nmad, skew=skew_disp)
+
+
+def _add_trend_panel(fig, row, col, n_cols, x, y, label, c_med, k,
+                     show_legend, ylim):
+    '''
+    Scatter trace + out-of-range annotation in one Figure 6 subplot panel.
+
+    Every file/panel shares the same fixed ylim, so the fraction of
+    exposures actually visible on the plot (vs. excluded by the axis
+    range) is meaningful when comparing overlaid files -- a point outside
+    ylim is otherwise simply invisible with no indication it exists.
+    Reports N and the percentage of finite values below/above ylim in an
+    annotation box, stacked vertically per file (index k).
+
+    row, col : 1-based subplot position.
+    n_cols : number of columns in the subplot grid (for annotation axis refs).
+    ylim : fixed (lo, hi) y-axis range shared by every panel/file.
+    '''
+    y = np.asarray(y, dtype=float)
+    fig.add_trace(
+        go.Scatter(x=x, y=y, mode='markers',
+                  marker=dict(color=c_med, size=4),
+                  name=label, legendgroup=label,
+                  showlegend=show_legend),
+        row=row, col=col,
+    )
+
+    good = y[np.isfinite(y)]
+    lo, hi = ylim
+    n = len(good)
+    if n > 0:
+        pct_lo = 100.0 * np.count_nonzero(good < lo) / n
+        pct_hi = 100.0 * np.count_nonzero(good > hi) / n
+    else:
+        pct_lo = pct_hi = 0.0
+
+    subplot_idx = (row - 1) * n_cols + col
+    ax_sfx = '' if subplot_idx == 1 else str(subplot_idx)
+    y_top  = 0.97 - k * 0.10
+    if y_top > 0.03:
+        fig.add_annotation(
+            x=0.97, y=y_top,
+            xref=f'x{ax_sfx} domain', yref=f'y{ax_sfx} domain',
+            xanchor='right', yanchor='top',
+            showarrow=False, align='right',
+            font=dict(size=8, family='monospace', color=c_med),
+            bgcolor='rgba(255,255,255,0.80)',
+            bordercolor=c_med, borderwidth=1,
+            text=f'N={n}  <lo:{pct_lo:.0f}%  >hi:{pct_hi:.0f}%',
+        )
 
 
 # ──────────────────────────────────────────────────────────────
@@ -779,9 +902,6 @@ def plot_eval(filenames, wmin=3600.0, wmax=9800.0, n_sample=20, outroot=''):
     all_used_mjd = []      # per-file: True if Figure 3 x-axis used MJD
     all_mjd_vals = []      # collected MJD values, for tight axis range
     all_hf_ratio = {lbl: [] for lbl, *_ in _DIAG_WINDOWS}  # for y-range
-    all_arm_resid = {arm: [] for arm, *_ in _ARM_EVAL_RANGES}  # for y-range (row 3)
-    all_arm_sci   = {arm: [] for arm, *_ in _ARM_EVAL_RANGES}  # for y-range (row 1)
-    all_arm_sky   = {arm: [] for arm, *_ in _ARM_EVAL_RANGES}  # for y-range (row 2)
     _fig4_shaded = False   # add background/signal shading once (first file)
     _stats_rows  = []      # collected stats for screen + HTML output
     _arm_stats_rows = []   # per-file, per-arm continuum stats
@@ -871,14 +991,14 @@ def plot_eval(filenames, wmin=3600.0, wmax=9800.0, n_sample=20, outroot=''):
             # science/sky spectra), written by SkySubOrig.py/SkySubDev1.py/
             # SkySepESO.py.  Absent for other methods, or files predating this
             # feature -- panels just stay empty in that case.
-            for row_idx, side, arm_bucket in [(1, 'SCI', all_arm_sci),
-                                              (2, 'SKY', all_arm_sky)]:
+            for row_idx, side in [(1, 'SCI'), (2, 'SKY')]:
                 col_name = f'{side}_MED_{arm}'
                 if drp_all is not None and col_name in drp_all.colnames:
                     vals = np.asarray(drp_all[col_name], dtype=float)
                     hstats = _add_hist_panel(fig5, row_idx, col_idx, 3, vals,
                                              label, c_med, c_hist, k,
-                                             show_legend=not _shown5)
+                                             show_legend=not _shown5,
+                                             xlim=_CONT_HIST_XLIM)
                     if hstats is not None:
                         _shown5 = True
                         _arm_stats_rows.append(dict(
@@ -886,18 +1006,9 @@ def plot_eval(filenames, wmin=3600.0, wmax=9800.0, n_sample=20, outroot=''):
                             med=hstats['med'], nmad=hstats['nmad'],
                             skew=hstats['skew'],
                         ))
-                    good = vals[np.isfinite(vals)]
-                    arm_bucket[arm].extend(good.tolist())
-                    fig6.add_trace(
-                        go.Scatter(
-                            x=spec_x, y=vals,
-                            mode='markers',
-                            marker=dict(color=c_med, size=4),
-                            name=label, legendgroup=label,
-                            showlegend=not _shown6,
-                        ),
-                        row=row_idx, col=col_idx,
-                    )
+                    _add_trend_panel(fig6, row_idx, col_idx, 3, spec_x, vals,
+                                     label, c_med, k, show_legend=not _shown6,
+                                     ylim=_CONT_TREND_YLIM)
                     _shown6 = True
 
             # Figures 5 & 6, row 3: per-spectrum median of the raw
@@ -906,11 +1017,10 @@ def plot_eval(filenames, wmin=3600.0, wmax=9800.0, n_sample=20, outroot=''):
             # spectrum -- like rows 1/2 (SCI_MED/SKY_MED), not pooled
             # per-pixel values, so all three rows are directly comparable.
             if per_spec is not None:
-                good_med = per_spec['med'][np.isfinite(per_spec['med'])]
-                all_arm_resid[arm].extend(good_med.tolist())
                 row3_stats = _add_hist_panel(fig5, 3, col_idx, 3, per_spec['med'],
                                              label, c_med, c_hist, k,
-                                             show_legend=not _shown5)
+                                             show_legend=not _shown5,
+                                             xlim=_CONT_HIST_XLIM)
                 if row3_stats is not None:
                     _shown5 = True
                     _arm_stats_rows.append(dict(
@@ -919,16 +1029,9 @@ def plot_eval(filenames, wmin=3600.0, wmax=9800.0, n_sample=20, outroot=''):
                         skew=row3_stats['skew'],
                     ))
 
-                fig6.add_trace(
-                    go.Scatter(
-                        x=spec_x, y=per_spec['med'],
-                        mode='markers',
-                        marker=dict(color=c_med, size=4),
-                        name=label, legendgroup=label,
-                        showlegend=not _shown6,
-                    ),
-                    row=3, col=col_idx,
-                )
+                _add_trend_panel(fig6, 3, col_idx, 3, spec_x, per_spec['med'],
+                                 label, c_med, k, show_legend=not _shown6,
+                                 ylim=_CONT_TREND_YLIM)
                 _shown6 = True
 
         # ── Write continuum-quality stats back into this file's DRP_ALL ──
@@ -977,10 +1080,9 @@ def plot_eval(filenames, wmin=3600.0, wmax=9800.0, n_sample=20, outroot=''):
             if st is None:
                 continue
 
-            lo = st['med'] - 5.0 * st['nmad']
-            hi = st['med'] + 5.0 * st['nmad']
-            if lo >= hi:
-                lo, hi = st['p10'] - 1e-20, st['p90'] + 1e-20
+            # Fixed range (not each file's own median +/- 5*NMAD) so that
+            # overlaid files are binned identically and directly comparable.
+            lo, hi = _LINE_HIST_XLIM
 
             # Skew of the moment-based estimator is dominated by rare
             # outliers beyond the display clip, so recompute it on the
@@ -1163,19 +1265,15 @@ def plot_eval(filenames, wmin=3600.0, wmax=9800.0, n_sample=20, outroot=''):
         fig3.add_hline(y=1.0, line_dash='dot', line_color='grey',
                        line_width=1, row=1, col=col_idx)
 
-    # Figure 6: symmetric linear y-range per row from the 1st/99th pct of
-    # that row's values; reference line at 0 (no continuum bias) on every
-    # panel.  Row order matches Figure 5: SCI, SKY, Subtracted.
-    for row_idx, arm_dict in [(1, all_arm_sci), (2, all_arm_sky), (3, all_arm_resid)]:
-        for col_idx, (arm, *_) in enumerate(_ARM_EVAL_RANGES, start=1):
-            vals = arm_dict[arm]
-            if vals:
-                v = np.array(vals)
-                v = v[np.isfinite(v)]
-                if len(v):
-                    y_lo, y_hi = np.nanpercentile(v, [1, 99])
-                    pad = 0.1 * max(abs(y_lo), abs(y_hi), 1e-30)
-                    fig6.update_yaxes(range=[y_lo - pad, y_hi + pad], row=row_idx, col=col_idx)
+    # Figure 6: fixed y-range (_CONT_TREND_YLIM) on every panel, the same
+    # for every row/arm/file, so the fraction of exposures actually visible
+    # is comparable across overlaid files (the out-of-range percentage is
+    # reported directly by _add_trend_panel's annotation).  Reference line
+    # at 0 (no continuum bias).  Row order matches Figure 5: SCI, SKY,
+    # Subtracted.
+    for row_idx in (1, 2, 3):
+        for col_idx in (1, 2, 3):
+            fig6.update_yaxes(range=list(_CONT_TREND_YLIM), row=row_idx, col=col_idx)
             fig6.add_hline(y=0.0, line_dash='dot', line_color='grey',
                            line_width=1, row=row_idx, col=col_idx)
 
@@ -1208,7 +1306,7 @@ def plot_eval(filenames, wmin=3600.0, wmax=9800.0, n_sample=20, outroot=''):
         legend=dict(**_leg_style, y=0.99),
     )
     fig2.update_xaxes(**_ax, exponentformat='e', showexponent='all',
-                      title_text='HF residual flux')
+                      title_text='HF residual flux', range=list(_LINE_HIST_XLIM))
     fig2.update_yaxes(**_ax, exponentformat='none', title_text='N')
 
     # ── Figure 3 layout ───────────────────────────────────────
@@ -1253,7 +1351,8 @@ def plot_eval(filenames, wmin=3600.0, wmax=9800.0, n_sample=20, outroot=''):
         title=dict(text=_suptitle_text(_file_legend), x=0.5, xanchor='center',
                   y=0.99, yanchor='top', font=dict(size=13)),
     )
-    fig5.update_xaxes(**_ax, exponentformat='e', showexponent='all')
+    fig5.update_xaxes(**_ax, exponentformat='e', showexponent='all',
+                     range=list(_CONT_HIST_XLIM))
     fig5.update_yaxes(**_ax, exponentformat='none', title_text='N')
     fig5.update_xaxes(title_text='SCI continuum residual (per-spectrum median)', row=1)
     fig5.update_xaxes(title_text='SKY continuum residual (per-spectrum median)', row=2)

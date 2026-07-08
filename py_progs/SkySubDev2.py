@@ -63,6 +63,23 @@ Description:
 
     5. sky-subtracted science = flux_sci - sky
 
+    No scale factor is applied anywhere in this method (unlike
+    SkySubOrig.py/SkySubDev1.py/SkySepESO.py), so there is no
+    DRP_ALL['LINE_SCALE'] column.  Continuum-fit quality against the RAW
+    (pre-subtraction) science and sky spectra is still evaluated and
+    recorded per row, since PALACE's CONT component is a genuine
+    continuum fit even though it is never scaled: if sky_mask.fits is
+    found (same convention as SkySub_eval.py), GetSkyCont.arm_continuum_stats
+    computes, per spectrograph arm (B/R/Z), the median/NMAD/RMS/skew of
+    FLUX-CONT in clean (sky-line-free) pixels -- for the science
+    spectrum (SCI_MED_B etc., from an extra PALACE decomposition run
+    purely for this check, since the subtraction itself never needs a
+    science-side continuum fit) and for the near-sky spectrum whose CONT
+    is used in the final SKY (SKY_MED_B etc.).  This is unrelated to the
+    final sky-subtracted SCI_FLUX -- see SkySub_eval.py's Figures 5/6 for
+    that (post-subtraction) residual, which measures leftover source
+    continuum rather than fit quality.
+
     QA flag bits stored in DRP_ALL['QA_FLAGS']::
 
         0x01  NANDATA   NaN/inf found in input flux or sky data
@@ -77,17 +94,33 @@ Notes:
     Requires the PALACE library (lvmsky/skysub/sky_decomp) and the
     palace data files; the paths are taken from XSkySepIvan.py.
 
+    Continuum-quality columns (SCI_*/SKY_* per arm) require sky_mask.fits;
+    searched for in the current directory, then in the lvm_ksl data/
+    directory.  If not found, do_all() prints a warning and those columns
+    (and the extra per-row science-side PALACE decomposition that feeds
+    them) are skipped entirely (everything else is unaffected).
+
 History::
 
     260630 ksl Coding begun; imports PALACE decomposer from XSkySepIvan.py
     260706 ksl DRP_ALL['mjd'] now recomputed precisely from 'obstime' via
                SkySubOrig.obstime_to_mjd(), instead of the truncated
                integer carried through from the input file.
+    260708 ksl Added per-arm continuum-fit-quality columns (SCI_*/SKY_* for
+               med/nmad/rms/skew x b/r/z), evaluated against the raw
+               pre-subtraction science and near-sky spectra using
+               GetSkyCont.arm_continuum_stats() (same optional sky_mask.fits
+               convention as SkySubOrig.py).  Requires one extra PALACE
+               decomposition per row (on the science flux) that the
+               subtraction itself does not otherwise need; skipped when no
+               mask is available.  Still no LINE_SCALE column -- this
+               method genuinely applies no scale factor.
 
 '''
 
 import sys
 import os
+from pathlib import Path
 
 # ensure py_progs siblings are importable when running directly
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -101,6 +134,13 @@ import astropy.units as u
 
 from XSkySepIvan import _get_decomposer, estimate_ivar, DEFAULT_BASE_DIR
 from SkySubOrig import obstime_to_mjd
+
+try:
+    from GetSkyCont import (load_mask, _interp_mask_to_wave,
+                            arm_continuum_stats, flatten_arm_stats)
+    _HAVE_MASK = True
+except ImportError:
+    _HAVE_MASK = False
 
 # ──────────────────────────────────────────────────────────────
 # QA flag bits
@@ -156,12 +196,25 @@ def _decompose(flux, wave, decomposer):
 # ──────────────────────────────────────────────────────────────
 
 def one_drp(xfits, drp_all, row, wave, decomposer,
-            method='farlines_nearcont'):
+            method='farlines_nearcont', clean_mask=None):
     '''
     Sky-subtract a single row using PALACE decomposition with no scaling.
 
-    Returns (result_table, qa_flags).  result_table has columns WAVE,
-    SCI_FLUX, SKY.  Returns (None, QA_FAILED) on error.
+    Returns (result_table, qa_flags, cont_stats).  result_table has
+    columns WAVE, SCI_FLUX, SKY.
+
+    cont_stats is a flat dict of per-arm continuum-fit-quality stats
+    (GetSkyCont.arm_continuum_stats/flatten_arm_stats), evaluated on the
+    RAW pre-subtraction science spectrum (lines_sci from an extra PALACE
+    decomposition of the science flux -- this algorithm has no other use
+    for a science-side continuum fit) and the near-sky spectrum
+    (lines_near; cont_near is always the continuum used in the final
+    SKY, for both methods here).  Keys are 'sci_<stat>_<arm>' and
+    'sky_<stat>_<arm>'.  Empty dict if clean_mask is None or GetSkyCont
+    is unavailable -- the extra science-side decomposition is skipped
+    entirely in that case, since it exists only to feed this evaluation.
+
+    Returns (None, QA_FAILED, {}) on error.
     '''
     qa_flags = 0
 
@@ -203,10 +256,20 @@ def one_drp(xfits, drp_all, row, wave, decomposer,
         sky = cont_near + lines_near
     else:
         print('Error: unknown method "%s"' % method)
-        return None, QA_FAILED
+        return None, QA_FAILED, {}
+
+    cont_stats = {}
+    if clean_mask is not None and _HAVE_MASK:
+        # Extra decomposition purely for the continuum-fit-quality check --
+        # this algorithm otherwise never needs a science-side continuum fit.
+        lines_sci, _ = _decompose(flux, wave, decomposer)
+        cont_stats.update(flatten_arm_stats(
+            'sci', arm_continuum_stats(wave, lines_sci, clean_mask)))
+        cont_stats.update(flatten_arm_stats(
+            'sky', arm_continuum_stats(wave, lines_near, clean_mask)))
 
     result = Table([wave, flux - sky, sky], names=['WAVE', 'SCI_FLUX', 'SKY'])
-    return result, qa_flags
+    return result, qa_flags, cont_stats
 
 
 # ──────────────────────────────────────────────────────────────
@@ -238,22 +301,42 @@ def do_all(filename, method='farlines_nearcont', idelta=1,
     lsf_sigma  = fwhm_lsf / 2.355
     decomposer = _get_decomposer(wave, lsf_sigma, base_dir=DEFAULT_BASE_DIR)
 
+    # Load sky-line mask once (same convention as SkySub_eval.py) purely for
+    # the continuum-fit-quality evaluation below; the subtraction itself is
+    # unaffected if the mask is unavailable.
+    clean_mask = None
+    if _HAVE_MASK:
+        _data_dir = Path(__file__).parent.parent / 'data'
+        for _candidate in [Path('sky_mask.fits'), _data_dir / 'sky_mask.fits']:
+            if _candidate.exists():
+                try:
+                    _mask_wave, _mask_arr = load_mask(str(_candidate))
+                    clean_mask = _interp_mask_to_wave(_mask_wave, _mask_arr, wave)
+                    print('Loaded sky mask for continuum-quality evaluation: %s' % _candidate)
+                except Exception as _e:
+                    print('Warning: could not load mask %s (%s)' % (_candidate, _e))
+                break
+    if clean_mask is None:
+        print('Warning: sky_mask.fits not found; skipping continuum-quality columns')
+
     nan_spectrum = np.full(len(wave), np.nan)
 
-    final_flux    = []
-    final_sky     = []
-    select        = []
-    qa_flags_list = []
+    final_flux      = []
+    final_sky       = []
+    select          = []
+    qa_flags_list   = []
+    cont_stats_list = []
 
     i = 0
     while i < len(drp_all):
         try:
-            ftab, row_flags = one_drp(x, drp_all, i, wave, decomposer,
-                                      method=method)
+            ftab, row_flags, cont_stats = one_drp(x, drp_all, i, wave, decomposer,
+                                                  method=method, clean_mask=clean_mask)
         except Exception as e:
             print('Row %d: exception (%s)' % (i, e))
-            ftab      = None
-            row_flags = 0
+            ftab       = None
+            row_flags  = 0
+            cont_stats = {}
 
         if ftab is None:
             row_flags |= QA_FAILED
@@ -265,6 +348,7 @@ def do_all(filename, method='farlines_nearcont', idelta=1,
 
         select.append(i)
         qa_flags_list.append(row_flags)
+        cont_stats_list.append(cont_stats)
         i += idelta
         if i % 100 == 0:
             print('Completed %6d of %d in steps of %d' % (i, len(drp_all), idelta))
@@ -292,6 +376,13 @@ def do_all(filename, method='farlines_nearcont', idelta=1,
 
     xtab = drp_all[select].copy()
     xtab['QA_FLAGS'] = np.array(qa_flags_list, dtype=np.int32)
+    # Continuum-fit-quality columns (raw pre-subtraction sci/sky spectra,
+    # not the final sky-subtracted result -- see one_drp() docstring).
+    # No LINE_SCALE column here: this method applies no scale factor.
+    _cont_keys = sorted({k for d in cont_stats_list for k in d})
+    for _key in _cont_keys:
+        xtab[_key.upper()] = np.array(
+            [d.get(_key, np.nan) for d in cont_stats_list], dtype=np.float32)
     if 'obstime' in xtab.colnames and 'mjd' in xtab.colnames:
         xtab['mjd'] = obstime_to_mjd(xtab['obstime'])
     hdu5 = fits.BinTableHDU(xtab, name='DRP_ALL')

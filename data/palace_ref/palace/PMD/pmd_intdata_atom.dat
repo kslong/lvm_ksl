@@ -1,0 +1,35 @@
+# Paranal Airglow Line And Continuum Emission (PALACE) model: data and code of
+# v1.0 (Noll et al. 2024)
+# 
+# List of reference intensities of atomic lines/multiplets with measured
+# X-shooter or UVES (noll+19) time series that were used for the derivation of
+# the PALACE line intensity model
+# 
+# Column names:
+# feat: label of line/multiplet
+# lam: central vacuum wavelength in µm (NIST)
+# dlam: distance from lam to lower und upper wavelength of distribution of
+#       components in µm
+# Nlin: number of components
+# I: reference intensity from climatology in R (corrected for N lines)
+# class: label of variability class
+# 
+# References:
+# NIST: https://physics.nist.gov/asd
+# noll+19: https://doi.org/10.1029/2018JD030044 (only KI0770)
+# 
+    feat       lam      dlam  Nlin           I  class 
+  HI0410  0.410289  0.000003     7   1.063e-01   H    
+  HI0434  0.434168  0.000004     7   1.934e-01   H    
+  HI0486  0.486268  0.000005     7   5.121e-01   H    
+ NI0520a  0.519935  0.000000     1   1.905e+00   N    
+ NI0520b  0.520171  0.000000     1   1.084e+00   N    
+  OI0558  0.557889  0.000000     1   1.627e+02   Og   
+ NaI0589  0.589158  0.000000     1   2.348e+01   Na   
+ NaI0590  0.589756  0.000000     1   1.335e+01   Na   
+  OI0630  0.630205  0.000000     1   1.227e+02   Or   
+  OI0636  0.636554  0.000000     1   4.105e+01   Or   
+  HI0656  0.656462  0.000010     7   5.291e+00   H    
+  KI0770  0.770108  0.000000     1   9.460e-01   K    
+  OI0777  0.777580  0.000172     3   1.614e+01   Orc  
+  OI0845  0.844882  0.000026     3   6.654e+00   Orc  

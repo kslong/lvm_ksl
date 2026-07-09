@@ -127,8 +127,10 @@ Notes:
     is derived as ``<stem>_dev2_<method>.fits`` where ``<stem>`` is the
     input filename without extension.
 
-    Requires the PALACE library (lvmsky/skysub/sky_decomp) and the
-    palace data files; the paths are taken from XSkySepIvan.py.
+    Requires the PALACE library, vendored in py_progs/sky_decomp/ (260709;
+    previously an external dependency on the lvmsky repository and its
+    lvmdrp26-only lvmdrp import) and its reference data in data/palace_ref/;
+    paths are taken from XSkySepIvan.py's DEFAULT_BASE_DIR.
 
     Continuum-quality columns (SCI_*/SKY_* per arm) require sky_mask.fits;
     searched for in the current directory, then in the lvm_ksl data/

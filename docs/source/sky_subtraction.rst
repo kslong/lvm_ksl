@@ -228,8 +228,13 @@ XSkySepIvan.py
 Decomposes LVM sky spectra into physical emission components using the
 PALACE (Paranal Airglow Line And Continuum Emission, Noll et al. 2024) line
 model combined with a B-spline Moon/zodiacal continuum.  This script is a
-wrapper for the ``SkyDecomp`` class written by Ivan Katkov (lvmsky repository,
-``skysub/sky_decomp/fit.py``).
+wrapper for the ``SkyDecomp`` class written by Ivan Katkov, vendored into
+``py_progs/sky_decomp/fit.py`` (260709; previously an external dependency on
+the ``lvmsky`` repository).  The vendored copy has no dependency on the
+``lvmdrp`` package — the one function PALACE used from it (a rebin+convolve
+utility, no real DRP logic) is inlined directly; ``clarabel`` (the QP solver
+used for the fits themselves) remains a normal, separate dependency that
+must still be installed in whichever environment runs this.
 
 The decomposition solves a non-negative quadratic programme (Clarabel solver)
 for the amplitudes of six component families:
@@ -934,8 +939,11 @@ row:
    computed for the subtraction (no extra cost); for the other two
    methods it's an extra PALACE decomposition run purely for this check.
 
-Requires the PALACE library (``lvmsky/skysub/sky_decomp``) and the
-PALACE data files; paths are taken from ``XSkySepIvan.py``.
+Requires the PALACE library, vendored in ``py_progs/sky_decomp/`` (260709;
+no longer an external dependency, and no longer requires ``lvmdrp`` to be
+installed) and its reference data in ``data/palace_ref/``; paths are taken
+from ``XSkySepIvan.py``'s ``DEFAULT_BASE_DIR``.  ``clarabel`` (the QP
+solver used for the fits) is still a separate, normal dependency.
 
 Rebuilding the PALACE decomposer for a new LSF costs roughly 2 seconds
 (measured), on top of the roughly 1 second already spent per PALACE

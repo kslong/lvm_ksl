@@ -94,8 +94,9 @@ from scipy.interpolate import BSpline, interp1d
 from scipy.optimize import nnls
 
 
-DEFAULT_SOLAR_FILE = Path('/Users/long/Projects/lvm_sky2606/skysub_ivan/'
-                          'Spectre_HR_LATMOS_Meftah_V1_350_1000nm.txt')
+## Vendored 260709; was an external path under /Users/long/Projects/lvm_sky2606/
+DEFAULT_SOLAR_FILE = (Path(__file__).resolve().parent.parent / 'data' / 'palace_ref' /
+                      'Spectre_HR_LATMOS_Meftah_V1_350_1000nm.txt')
 
 _USAGE = '''Usage:
   GetSkyCont.py sky_file.fits -mask mask.fits [row_no ...] [-delta N]

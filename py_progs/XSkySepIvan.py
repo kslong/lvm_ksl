@@ -166,15 +166,20 @@ import numpy as np
 import matplotlib.pyplot as plt
 from scipy.ndimage import uniform_filter1d
 
-# SkyDecomp lives in the lvmsky repository
-LVMSKY_SKYSUB = Path('/Users/long/SDSS/lvmsky/skysub')
-if str(LVMSKY_SKYSUB) not in sys.path:
-    sys.path.insert(0, str(LVMSKY_SKYSUB))
+# ensure py_progs siblings (including the sky_decomp/ subpackage) are
+# importable when running directly
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
+# SkyDecomp is vendored in py_progs/sky_decomp/ (260709 -- was imported
+# from the external lvmsky repository; vendored so this doesn't require
+# the lvmdrp26 conda environment just to have lvmdrp importable, since
+# PALACE only ever used it for one small, self-contained utility function
+# that's now inlined in the vendored copy; see sky_decomp/fit.py header)
 from sky_decomp.fit import SkyDecomp, vac_to_air, decode_hitran_id, OH_GROUP_KEYS
 
-# Directory containing palace/PMD/ and the solar spectrum file
-DEFAULT_BASE_DIR = Path('/Users/long/Projects/lvm_sky2606/skysub_ivan')
+# Directory containing palace/PMD/ and the solar spectrum file (vendored
+# 260709; was an external path under /Users/long/Projects/lvm_sky2606/)
+DEFAULT_BASE_DIR = Path(__file__).resolve().parent.parent / 'data' / 'palace_ref'
 
 _CAP_WAVE = 5.0   # Å extra margin on each side when selecting PMD lines
 

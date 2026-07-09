@@ -25,6 +25,31 @@ Optional, for full functionality:
 - **lvmdrp** — LVM Data Reduction Pipeline (needed for `Reduce.py` and local reprocessing)
 - **sdss_access** — for retrieving data directly from the Utah archive
 - **skycorr** — ESO sky-subtraction tool (needed for `RunSkyCorr.py`)
+- **clarabel** — QP solver for the vendored PALACE sky decomposer (needed for
+  `XSkySepIvan.py`; not needed elsewhere).  Install with:
+  ```bash
+  conda install -c conda-forge clarabel
+  ```
+- **palace** — Paranal Airglow Line And Continuum Emission model (Noll et al.
+  2025, *Geoscientific Model Development*, 18, 4353), used for predicting
+  physical airglow line/continuum strengths from atmospheric conditions.  Not
+  currently imported by any script in this repository, but not vendored here
+  either — install it from its own permanent Zenodo archive when needed:
+  ```bash
+  curl -L -o PALACE.zip "https://zenodo.org/api/records/14064023/files/PALACE.zip/content"
+  unzip PALACE.zip
+  cd PALACE
+  conda install -c conda-forge cython   # build-time dependency, not just runtime
+  cp setup_cython.py setup.py           # Cython build for ~10x speed; use
+                                         # setup_python.py instead to avoid
+                                         # needing a C compiler
+  pip install --no-build-isolation .
+  ```
+  Licence: GNU GPLv3 (code), CC-BY-4.0 (data). The Zenodo record
+  (<https://zenodo.org/records/14064023>) also has the paper's PMD reference
+  tables (`PMD.zip`); those are already vendored separately in
+  `data/palace_ref/` for `XSkySepIvan.py`'s `SkyDecomp` solver, so there is no
+  need to fetch `PMD.zip` again — `PALACE.zip` alone is sufficient here.
 
 ### Installation
 

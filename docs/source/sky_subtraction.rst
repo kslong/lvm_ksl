@@ -834,7 +834,7 @@ decomposition (``XSkySepIvan.py``), without any additional scaling.
 **Usage**::
 
     SkySubDev2.py [-method METHOD] [-delta N] [-lsf FWHM]
-                  [-out ROOT] filename
+                  [-lsf_boost FACTOR] [-out ROOT] filename
 
 **Arguments:**
 
@@ -844,44 +844,112 @@ filename
 **Options:**
 
 -method METHOD
-    ``nearest`` | ``farlines_nearcont`` (default).
+    ``scilines_nearcont`` (default) | ``nearest`` | ``farlines_nearcont``.
 
 -delta N
     Process every N-th row (default: 1).
 
 -lsf FWHM
-    LSF FWHM in Angstroms (default: 1.3).
+    Constant LSF FWHM in Angstroms (default: 1.3), used only if the input
+    file has no ``LSF`` extension.
+
+-lsf_boost FACTOR
+    Multiplicative correction applied to whatever LSF is used, any source
+    (default: **1.0**, i.e. no correction).  A single-row peak/area test
+    on real data initially suggested a boost around 1.08 would fix
+    fitted lines coming out too narrow, but a proper 280-row-median test
+    showed the opposite — increasing the boost made the noise-corrected
+    HF RMS residual monotonically *worse*, and made the oversubtracted-
+    center/adjacent-bump pattern at [OI] 5577 monotonically deeper, not
+    smaller. Left available for further investigation, but do not
+    re-enable as the default without re-testing against a multi-row
+    sample.
 
 -out ROOT
     Output filename root.  Default: ``<stem>_dev2_<method>``.
 
 **Description:**
 
-A PALACE decomposer (``SkyDecomp``) is built once from the full wavelength
-grid and LSF, then reused for every row.  For each row:
+The PALACE decomposer (``SkyDecomp``) needs an assumed LSF, chosen in
+priority order:
+
+1. This file's own per-row, per-wavelength LSF, if it has an ``LSF``
+   extension (written by ``SummarizeCframe.py``'s ``make_med_spec`` from
+   the source CFrame's own LSF — one row of FWHM-vs-wavelength per
+   exposure).  The decomposer is rebuilt whenever a row's LSF differs
+   from the previous row's (see "Output" below for the performance cost).
+2. Otherwise, a representative wavelength-dependent reference curve
+   (``data/lsf.fits``, derived once from real per-row LSF data), if
+   found — the same curve every row, so the decomposer is only ever
+   built once for the whole file (no extra per-row cost).
+3. Otherwise, the constant ``-lsf`` FWHM, built once and reused for
+   every row.
+
+A flat 1.3 Å FWHM (case 3's default) is normally too narrow for at least
+part of the real spectrum — cases 1 and 2 both capture the true
+wavelength dependence instead.  Note, however, that even case 1 (a real,
+correct per-row LSF) does not fully eliminate an oversubtracted-center/
+adjacent-bump residual pattern seen at bright lines like [OI] 5577; a
+flat multiplicative width correction (``-lsf_boost``) was tested and
+found to make that pattern worse, not better, so the residual's root
+cause is evidently not a pure LSF-width deficit and remains under
+investigation (see ``lvm_line_profile.py`` in :doc:`spectral_fitting`,
+built specifically to investigate this independently of PALACE — it
+finds a real but line-specific, non-smooth-in-wavelength gap between
+the LSF extension's stated FWHM and an independently-fit Gaussian FWHM
+on raw sky lines, more consistent with several catalog lines being
+unresolved blends than with a genuine LSF calibration error).  For each
+row:
 
 1. Near and far sky telescopes are identified from RA/Dec separations.
-2. Each sky spectrum is decomposed by PALACE into emission-line and
-   continuum components::
+2. The near-sky spectrum, and whichever other spectrum the chosen method
+   needs (far-sky for ``farlines_nearcont``, the science flux itself for
+   ``scilines_nearcont``), are decomposed by PALACE into emission-line
+   and continuum components::
 
        LINES = oh + atom + orc + o2
        CONT  = moon + diffuse
 
 3. The sky model is assembled without any scale factor::
 
+       scilines_nearcont:  sky = CONT_near + LINES_sci
        farlines_nearcont:  sky = CONT_near + LINES_far
        nearest:            sky = CONT_near + LINES_near
 
+   CONT always comes from the near-sky telescope in all three methods —
+   fitting a continuum from the science spectrum itself would be
+   confounded by real astrophysical continuum, so PALACE's CONT
+   component is never taken from there, only its LINES component
+   (``scilines_nearcont``).  ``scilines_nearcont`` is the default:
+   fitting the sky lines directly from the fiber being corrected avoids
+   relying on a sky telescope's lines matching the science fiber's
+   actual sky-line amplitude, which ``farlines_nearcont``/``nearest``
+   implicitly assume.
+
 4. ``flux_out = flux_sci − sky``.
-5. If ``sky_mask.fits`` is available, an extra PALACE decomposition is
-   run on the raw science flux (purely for the check below; the
-   subtraction itself never needs a science-side continuum fit), and
-   per-arm continuum-fit-quality stats are computed from it and from
-   the near-sky spectrum's own decomposition, via
-   ``GetSkyCont.arm_continuum_stats()``.
+5. If ``sky_mask.fits`` is available, per-arm continuum-fit-quality
+   stats are computed from the raw science and near-sky spectra via
+   ``GetSkyCont.arm_continuum_stats()``.  For ``scilines_nearcont`` the
+   science-side decomposition needed here is the same one already
+   computed for the subtraction (no extra cost); for the other two
+   methods it's an extra PALACE decomposition run purely for this check.
 
 Requires the PALACE library (``lvmsky/skysub/sky_decomp``) and the
 PALACE data files; paths are taken from ``XSkySepIvan.py``.
+
+Rebuilding the PALACE decomposer for a new LSF costs roughly 2 seconds
+(measured), on top of the roughly 1 second already spent per PALACE
+decomposition in ``one_drp()`` — real added cost across a full run when
+using this file's own per-row LSF extension (not just a one-time setup
+cost, as with the constant-LSF or reference-curve paths), since
+``_get_decomposer()`` only ever caches one decomposer instance at a time
+and rebuilds whenever the row-to-row LSF changes.  The reference curve
+(``data/lsf.fits``, searched for in the current directory then in the
+lvm_ksl ``data/`` directory, same convention as ``sky_mask.fits``) is the
+same array every row, so it costs nothing extra despite going through the
+same per-row code path.  Any non-finite or non-positive FWHM value at a
+given wavelength in a row's own LSF array falls back to the constant
+``-lsf`` default at that wavelength only (not the whole row).
 
 **Output:**
 
@@ -890,7 +958,10 @@ SKY, and DRP_ALL (with QA_FLAGS, precise ``mjd``, and per-arm
 continuum-fit-quality columns — see "Common DRP_ALL columns" above).  No
 scale factor is applied anywhere in this method (see docstring: "no
 scaling"), so there is still no ``LINE_SCALE`` column, unlike SkySubOrig/
-SkySubDev1/SkySepESO.
+SkySubDev1/SkySepESO.  When an ``LSF`` extension or reference curve was
+used, DRP_ALL also gains ``LSF_FWHM_MED`` (this row's median LSF FWHM
+actually used), and the primary header gains ``LSFSRC`` recording which of
+the three LSF sources was used for the whole run.
 
 **See Also:** :doc:`api/SkySubDev2/index`
 
@@ -1261,7 +1332,7 @@ and comparing the results::
         XCframe_file_orig_farlines_nearcont.fits \
         XCframe_file_drp_farlines_nearcont.fits \
         XCframe_file_dev1_farlines_nearcont.fits \
-        XCframe_file_dev2_farlines_nearcont.fits \
+        XCframe_file_dev2_scilines_nearcont.fits \
         XCframe_file_eso_farlines_nearcont.fits
 
 Open ``compare_eval.html`` in a browser.  Figure 1 overlays the median

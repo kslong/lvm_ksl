@@ -97,6 +97,7 @@ History:
 260516 ksl Add nii_a (6548.04) and nii_b (6583.46); correct SII to 6716.440 and 6730.815
 260516 ksl Correct oi_a/oi_b: use ESO wavelengths (6300.309, 6363.783) with velocity shift
 260516 ksl Add oiii_a (4958.911) and oiii_b (5006.843); refactor to NEBULAR_LINES/SKY_LINES constants; pre-trim and pre-compute per-line indices in do_all
+260709 ksl Corrected sky6553 wavelength from 6553.0 to 6553.617 A; widened its window from 6549-6556 to 6549-6558 A to keep it centered. The old value gave a 0.61 A fitted centroid shift on real data (lvm_line_profile.py, independent Gaussian fit to raw sky spectra); 6553.617 reproduces the fitted centroid (6553.614 A) to within 0.003 A
 
 '''
 
@@ -137,7 +138,7 @@ SKY_LINES = [
     ('sky6300', 6300.308594, 6295.,  6305.),
     ('sky6363', 6363.782715, 6358.,  6368.),
     ('sky6533', 6533.04,     6528.,  6538.),
-    ('sky6553', 6553.0,      6549.,  6556.),
+    ('sky6553', 6553.617,    6549.,  6558.),
     ('sky6577', 6577.2,      6572.,  6582.),
     ('sky6912', 6912.623,    6907.,  6917.),
     ('sky6923', 6923.220,    6918.,  6928.),

@@ -14,6 +14,7 @@ The spectral fitting tools include:
 
 - ``lvm_gaussfit.py`` - Fit standard emission lines across an RSS file
 - ``sky_gaussfit.py`` - Fit nebular and airglow lines fiber-by-fiber in SFrame files
+- ``lvm_line_profile.py`` - Compare Gaussian vs Moffat airglow line profiles on raw sky spectra
 - ``lvm_double.py`` - Fit single or double Gaussian profiles to a line
 - ``lvm_triple.py`` - Fit up to triple Gaussian profiles
 - ``lvm_flux.py`` - Calculate fluxes using parameters from other fits
@@ -171,7 +172,7 @@ sky5577    5577.34 A
 sky6300    6300.31 A
 sky6363    6363.78 A
 sky6533    6533.04 A
-sky6553    6553.0  A
+sky6553    6553.617 A
 sky6577    6577.2  A
 sky6912    6912.62 A
 sky6923    6923.22 A
@@ -226,6 +227,132 @@ parallelism for debugging.
 Spatial maps of the per-fiber fit results (wavelength residuals, flux
 residuals, and FWHM residuals for all 18 airglow lines) are produced by
 ``plot_sky_gaussfit.py``; see :doc:`data_quality` for full documentation.
+
+
+lvm_line_profile.py — Gaussian vs Moffat Airglow Line Profiles
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+Fits both a Gaussian and a Moffat profile (each with a constant
+background) to the same 18 airglow lines used by ``sky_gaussfit.py``,
+but on **raw, pre-subtraction** sky spectra rather than sky-subtracted
+science fibers — the goal is to characterize the true instrumental line
+shape directly, independent of any sky-subtraction algorithm or the
+PALACE decomposer used by ``SkySubDev2.py`` (see :doc:`sky_subtraction`).
+
+Fully standalone: it imports nothing from any other ``py_progs`` script
+(only external packages — numpy, astropy, matplotlib, scipy, lmfit).
+Its own copy of the airglow line list and its own IVAR estimator are
+self-contained, deliberately not shared with ``lvm_gaussfit.py`` or
+``sky_gaussfit.py``, so those scripts remain free to be reused/changed
+for other analyses without affecting this one.
+
+**Usage**::
+
+    lvm_line_profile.py [-delta N] [-lines name1,name2,...]
+                        [-ext SKY_EAST|SKY_WEST] [-out ROOT] filename
+
+**Arguments:**
+
+filename
+    An XCframe FITS file (``SKY_EAST``/``SKY_WEST`` extensions) or a
+    ``Sky_<name>.fits`` file (``FLUX`` extension) containing raw,
+    pre-subtraction sky spectra.
+
+**Options:**
+
+-delta N
+    Process every N-th row (default: 50).
+
+-lines LIST
+    Comma-separated subset of line names to fit (default: all 18).
+
+-ext NAME
+    Which raw sky column to use for an XCframe file: ``SKY_EAST``
+    (default) or ``SKY_WEST``; ignored for ``Sky_<name>.fits`` files,
+    which use ``FLUX`` directly.
+
+-out ROOT
+    Output filename root (default: ``<stem>_profile``).
+
+**Description:**
+
+For each requested line, a median spectrum is formed across all
+selected rows and fit with both profiles — the primary, highest-S/N
+comparison, plotted as data + both fits + residuals. Each individual
+selected row is also fit with both profiles, building a per-row table
+used to test whether any preference for one profile is consistent
+across many independent exposures, not just a property of the deep
+stack.
+
+Both profiles are parameterized so their fitted flux equals the
+analytic integral of the profile (matching ``lvm_gaussfit.py``'s
+convention), and both fit the line **center freely** (bounded only to
+the fit window, not fixed at the nominal catalog wavelength) — so a
+real wavelength shift is not assumed away. The Moffat profile reduces
+to a Gaussian as beta → ∞, so a finite, well-constrained beta across
+many lines/rows would indicate genuine non-Gaussian wings; beta
+drifting to the fit's upper bound indicates no real preference for
+Moffat.
+
+Because Moffat has one more free parameter (beta) than Gaussian, raw
+chi², RMSE always favour it — comparisons use AIC/BIC instead, which
+penalize that extra freedom::
+
+    delta_aic = aic_gaussian - aic_moffat   (positive: Moffat preferred)
+    delta_bic = bic_gaussian - bic_moffat
+    rms_core_<profile>, rms_wing_<profile>  -- a fixed, profile-
+        independent split of the fit window (core = center +/- 1.5 A,
+        wing = the rest), so both profiles are judged against the same
+        pixels regardless of their own fitted width
+
+If the input file has an LSF extension (per-row, per-wavelength FWHM in
+Ångströms — the same one ``SkySubDev2.py`` uses), the fitted Gaussian
+FWHM is also compared directly against that file's own stated LSF FWHM
+at each line's wavelength — an independent check of whether the LSF
+extension's values are themselves accurate, entirely outside any
+subtraction algorithm.
+
+**Output:**
+
+- ``<ROOT>_median_<line>.png`` — one file per line: median spectrum,
+  both fits (with fitted FWHM/shift and the LSF extension's FWHM if
+  available), and both fits' residuals.
+- ``<ROOT>_perrow.txt`` — ascii table, one row per (input row, line):
+  both fits' parameters (including fitted center/shift), AIC/BIC,
+  core/wing RMS, and (if available) the LSF-extension comparison.
+- ``<ROOT>_summary.png`` — per-line distributions of delta_AIC and beta
+  across all fitted rows; also fit-FWHM-vs-LSF-extension difference and
+  center shift, if an LSF extension is available.
+
+A summary table (per line: median delta_AIC, fraction of rows favouring
+Moffat by delta_AIC > 2, median beta and its IQR, and — if available —
+median FWHM-vs-LSF-extension difference and median center shift) is
+also printed to the screen.
+
+**Example**::
+
+    # Compare profile shapes for all 18 lines, sampling every 50th row
+    lvm_line_profile.py -delta 50 XCframe_1.2.1_7325_48860_1_50.fits
+
+    # Just the two brightest optical lines, every row
+    lvm_line_profile.py -delta 1 -lines sky5577,sky6300 XCframe_file.fits
+
+**Findings so far (260709):**
+
+Run across the full 18-line set on real XCframe data (280 rows), the
+Gaussian profile is preferred (or at least not improved upon) at every
+single line — delta_AIC negative and beta pinned near its fit ceiling
+everywhere. Separately, the fitted Gaussian FWHM comes out consistently
+wider than the file's own LSF extension value at every line (a modest
+but real few-percent-to-~12% gap, not a smooth function of wavelength);
+that irregular, line-specific pattern is more consistent with several
+of these catalog lines being unresolved blends of close airglow
+transitions than with a genuine, correctable LSF calibration error —
+still under investigation. This same run also directly caught and
+confirmed a wavelength error in ``sky_gaussfit.py``'s own line list:
+``sky6553`` was catalogued at 6553.0 Å but the data consistently show
+its true centroid at 6553.617 Å (now corrected in both
+``sky_gaussfit.py`` and this script's own line-list copy).
 
 
 Multi-Component Fitting
@@ -377,6 +504,7 @@ See Also
 - :doc:`data_quality` - ``plot_sky_gaussfit.py`` for spatial maps of sky Gaussian fit residuals
 - :doc:`api/lvm_gaussfit/index` - API documentation
 - :doc:`api/sky_gaussfit/index` - API documentation
+- :doc:`api/lvm_line_profile/index` - API documentation
 - :doc:`api/lvm_double/index` - API documentation
 - :doc:`api/lvm_triple/index` - API documentation
 - :doc:`api/lvm_flux/index` - API documentation

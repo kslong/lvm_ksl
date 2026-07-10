@@ -49,6 +49,7 @@ History:
 '''
 
 import sys
+import os
 from astropy.io import ascii,fits
 import numpy as np
 import matplotlib.pyplot as plt
@@ -224,24 +225,23 @@ def get_text(url,location='.'):
 
 def get_source_location():
     file_path = inspect.getfile(get_text)
-    return file_path
+    # file_path is .../lvm_ksl/py_progs/GetSolar.py; the data directory is
+    # .../lvm_ksl/data, one level above py_progs, not py_progs/data.
+    py_progs_dir = os.path.dirname(os.path.abspath(file_path))
+    return os.path.join(os.path.dirname(py_progs_dir), 'data')
 
 
 def doit(xurl='https://www.spaceweather.gc.ca/solar_flux_data/daily_flux_values/fluxtable.txt'):
 
     print('Getting solar data from:\n %s' % xurl)
     location=get_source_location()
-    location=location.replace('GetSolar.py','data')
     get_text(xurl,location)
 
 
 def get_flux(xtime='2025-04-21T03:00:00',filename='solar.txt'):
 
     location=get_source_location()
-    print(location)
-    location=location.replace('GetSolar.py','data')
-    print(location)
-    
+
     xtab=ascii.read('%s/%s' % (location,filename))
     jd=convert_time(xtime,'jd')
     # print(jd)

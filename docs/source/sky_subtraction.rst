@@ -177,7 +177,9 @@ time
     from the historical flux table (``GetSolar.py``).
 
 -out root
-    Output filename root.  Default: derived from position and time.
+    Output filename root; default is ``SkyE_<mjd>_<ra>_<dec>``, matching
+    the ``SkyC_``/``SkyM_`` naming convention used by SkyCalcObs.py/
+    SkyModelObs.py (and adopted by PalaceObs.py's ``SkyP_`` -- see below).
 
 -site lco\|paranal
     Observatory height/pressure physics used by the model (default
@@ -295,7 +297,9 @@ obstime
     (OH, O2, HO2, FeO, Na, K, O, N, H).
 
 -out ROOT
-    Output FITS filename root; default is ``PalaceObs_<ra>_<dec>_<mjd>``.
+    Output FITS filename root; default is ``SkyP_<mjd>_<ra>_<dec>``,
+    matching the ``SkyC_``/``SkyM_``/``SkyE_`` naming convention used by
+    SkyCalcObs.py/SkyModelObs.py/EsoSkyObs.py.
 
 **Output FITS structure:**
 
@@ -368,7 +372,16 @@ a stale legacy scale factor left over from the original (much cruder)
 ESO continuum template can inflate the local engine's DIFFUSE relative to
 PALACE's by a large factor while leaving the wavelength *shape* similar
 (scale and shape errors look very different, which is how this was first
-noticed).
+noticed). Diagnosed and fixed in this way on 2026-07-10 for this
+project's own ``$ESO_SKY_MODEL`` install: the patched ``palace_cont.dat``
+carried its predecessor ``airglow_cont.dat``'s ``scale`` header value
+unchanged even though the tabulated continuum was no longer normalized to
+1.0 at the model's 0.543 micron reference wavelength, and the corrected
+absolute level (informed by comparison with real LVM data, not the
+ESO/PALACE ratio alone) needed a further empirical adjustment beyond that
+units fix -- see the ``scale`` header value and the backup copies kept
+alongside ``palace_cont.dat`` in that installation's ``data/`` directory
+for the full history.
 
 **See Also:** :doc:`api/PalaceObs/index`
 

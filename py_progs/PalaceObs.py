@@ -29,7 +29,9 @@ Options::
                       data/solar.txt via GetSolar.get_flux
     -species S1,S2    comma-separated species to predict individually;
                       default is all nine (OH, O2, HO2, FeO, Na, K, O, N, H)
-    -out ROOT         output FITS filename root; default is PalaceObs_<ra>_<dec>_<mjd>
+    -out ROOT         output FITS filename root; default is
+                      SkyP_<mjd>_<ra>_<dec> (matches SkyC_/SkyM_/SkyE_'s
+                      convention in SkyCalcObs.py/SkyModelObs.py/EsoSkyObs.py)
 
 Output FITS structure::
 
@@ -655,7 +657,10 @@ def do_one(ra, dec, obstime, srf=None, species_list=SPECIES, outroot='',
 
     if outroot == '':
         mjd = convert_time(obstime, 'mjd')
-        outroot = 'PalaceObs_%.5f_%.5f_%08.2f' % (ra, dec, mjd)
+        if dec > 0:
+            outroot = 'SkyP_%8.2f_%05.1f_+%04.1f' % (mjd, ra, dec)
+        else:
+            outroot = 'SkyP_%8.2f_%05.1f_%.1f' % (mjd, ra, dec)
     outname = outroot if outroot.endswith('.fits') else outroot + '.fits'
 
     primary = fits.PrimaryHDU()

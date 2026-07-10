@@ -244,8 +244,11 @@ COMPONENTS     = PALACE_SPECIES + ['MOON']
 # The subset of COMPONENTS that are smooth/continuum-like rather than
 # line-dominated -- used to reconstruct a "continuum-only" spectrum from an
 # already-fit amplitude vector, for the SCI_MED/SKY_MED continuum-fit-quality
-# columns (see one_drp() Notes and GetSkyCont.arm_continuum_stats).
-CONTINUUM_COMPONENTS = ['HO2', 'FeO', 'MOON']
+# columns (see one_drp() Notes and GetSkyCont.arm_continuum_stats).  The
+# HO2/FeO part is PalaceObs.CONTINUUM_SPECIES (same classification that
+# module uses for its own LINES/DIFFUSE split); MOON added since PALACE
+# itself has no continuum/line distinction for a component it doesn't model.
+CONTINUUM_COMPONENTS = PalaceObs.CONTINUUM_SPECIES + ['MOON']
 _CONT_IDX = [COMPONENTS.index(c) for c in CONTINUUM_COMPONENTS]
 
 _NATIVE_RESOL = 20000

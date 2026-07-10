@@ -136,11 +136,250 @@ regions dominated by sky emission.
 Sky Modeling
 ------------
 
-These tools generate theoretical sky spectra using ESO models, which can
-be compared to observed sky spectra for validation.
+These tools generate theoretical sky spectra using the ESO Sky Model and
+the PALACE airglow model, which can be compared to observed sky spectra
+for validation.
+
+EsoSkyObs.py
+^^^^^^^^^^^^
+
+Generates a predicted sky spectrum for a given RA, Dec, and time using the
+real ESO Sky Model.  Unifies the two previously separate approaches below
+(SkyCalcObs.py, SkyModelObs.py) into one script and one output convention;
+intended to eventually replace both (they still work standalone and are
+documented below for reference, but new work should use this instead).
+
+**Usage**::
+
+    EsoSkyObs.py [-h] [-engine local|remote|auto] [-msol flux] [-out root] [-site lco|paranal] ra dec time
+
+**Arguments:**
+
+ra, dec
+    Sky position in degrees.
+
+time
+    Observation time as a date string, MJD, or JD.
+
+**Options:**
+
+-h
+    Print help and exit.
+
+-engine local\|remote\|auto
+    ``local`` uses the local ``calcskymodel`` binary only, erroring if it
+    isn't available; ``remote`` always uses the ESO SkyCalc web service;
+    ``auto`` (default) tries local first, falling back to remote only if
+    the local model isn't set up.
+
+-msol flux
+    Force a specific 10.7 cm solar radio flux instead of looking one up
+    from the historical flux table (``GetSolar.py``).
+
+-out root
+    Output filename root.  Default: derived from position and time.
+
+-site lco\|paranal
+    Observatory height/pressure physics used by the model (default
+    ``lco``).  See Notes below — this is an approximation for comparing
+    against PALACE, not a full site swap.
+
+**Output FITS structure:**
+
+.. list-table::
+   :header-rows: 1
+   :widths: 20 80
+
+   * - Column
+     - Description
+   * - ``WAVE``
+     - wavelength [Angstrom]
+   * - ``FLUX``
+     - total sky flux, corrected for atmospheric extinction
+   * - ``FLUX_LCO``
+     - total sky flux, as actually observed on the ground
+   * - ``MOON``
+     - scattered moonlight component (extinction-corrected)
+   * - ``ZODI``
+     - zodiacal light component (extinction-corrected)
+   * - ``LINES``
+     - airglow emission line component (as modeled, **not**
+       extinction-corrected -- see Notes)
+   * - ``DIFFUSE``
+     - diffuse/residual airglow continuum (extinction-corrected)
+   * - ``CONT``
+     - MOON + ZODI + DIFFUSE
+   * - ``trans``
+     - atmospheric transmission
+
+The primary header records ``RA``, ``DEC``, ``OBSTIME``, ``MSOLFLUX``,
+``ENGINE`` (``local`` or ``remote`` -- which engine actually produced the
+file), and ``SITE`` (``lco`` or ``paranal``).
+
+**Requirements:**
+
+The local engine requires the environment variable ``ESO_SKY_MODEL`` to
+point to a working installation of the real ESO Sky Model.  The remote
+engine requires ``skycalc_cli`` to be pip-installed, a working
+setuptools/pkg_resources in the environment (recent ``setuptools``
+releases, roughly >=81, dropped ``pkg_resources`` entirely -- pin
+``setuptools<81`` if ``skycalc_cli`` fails with
+``ModuleNotFoundError: No module named 'pkg_resources'``), and network
+access to eso.org.
+
+**Notes:**
+
+Both engines compute the sky as it would actually be observed on the
+ground (after atmospheric extinction).  LVM spectra are normally compared
+against the above-the-atmosphere equivalent, so FLUX and the
+MOON/ZODI/DIFFUSE/CONT components here are corrected for extinction by
+dividing by the transmission; the as-observed value is kept separately in
+FLUX_LCO.  LINES is **not** currently divided by the transmission --
+inherited unchanged from the original SkyModelObs.py/SkyCalcObs.py code
+and never re-examined against the same reasoning FLUX got (airglow
+originates at ~90 km and should see the same extinction as everything
+else on the way down).  This is a real inconsistency between LINES and
+the other components worth revisiting.
+
+``-site paranal`` exists for comparing against PALACE, whose own
+atmospheric-physics constants are hardcoded to Cerro Paranal
+(``h=2.64 km``, ``p=744 hPa``, not overridable via any public PALACE
+parameter -- see PalaceObs.py below).  The two engines handle this
+differently: the local engine only changes the observatory height/
+pressure physics (``SITE_HEIGHT_KM``), keeping the real LCO observing
+geometry (alt/az, moon phase/separation) -- the same mixed real-geometry/
+Paranal-physics approach PALACE itself uses, so this is the more directly
+comparable of the two.  The remote engine's ``observatory`` parameter
+drives both the atmosphere physics *and* skycalc_cli's own internal moon/
+sun almanac geometry (``REMOTE_SITE_NAME``), so ``-site paranal`` there
+also shifts the modeled sky to Paranal's real geographic location, not
+just its altitude -- a real, different kind of approximation than the
+local engine's.
+
+**See Also:** :doc:`api/EsoSkyObs/index`
+
+
+PalaceObs.py
+^^^^^^^^^^^^
+
+Generates a predicted airglow spectrum for a given RA, Dec, and time using
+the PALACE model (Noll et al. 2025, "PALACE v1.0: Paranal Airglow Line And
+Continuum Emission model"), in the same physical-unit, homogenized output
+convention as EsoSkyObs.py, for direct comparison.  PALACE is an external
+dependency, not vendored in this repository -- see Readme.md for
+installation.
+
+**Usage**::
+
+    PalaceObs.py [-h] [-srf VALUE] [-species S1,S2,...] [-out ROOT] ra dec obstime
+
+**Arguments:**
+
+ra, dec
+    Sky position in degrees.
+
+obstime
+    UTC observation time, e.g. ``2023-08-29T03:20:43.668``.
+
+**Options:**
+
+-h
+    Print help and exit.
+
+-srf VALUE
+    Solar radio flux in sfu; default is looked up from ``data/solar.txt``
+    via ``GetSolar.get_flux``.
+
+-species S1,S2
+    Comma-separated species to predict individually; default is all nine
+    (OH, O2, HO2, FeO, Na, K, O, N, H).
+
+-out ROOT
+    Output FITS filename root; default is ``PalaceObs_<ra>_<dec>_<mjd>``.
+
+**Output FITS structure:**
+
+.. list-table::
+   :header-rows: 1
+   :widths: 25 75
+
+   * - Column
+     - Description
+   * - ``WAVE``
+     - wavelength [Angstrom], PALACE's own native grid truncated to the
+       LVM range (0.36-0.98 micron) and generated at fine native
+       resolution (R~20000)
+   * - ``FLUX``, ``FLUX_LCO``
+     - total airglow flux, above the atmosphere / as observed on the
+       ground at LCO
+   * - ``LINES``, ``LINES_LCO``
+     - PALACE's own total line emission, above the atmosphere / at LCO --
+       matches ESO's flux_ael
+   * - ``DIFFUSE``, ``DIFFUSE_LCO``
+     - PALACE's own total continuum emission (3 components: HO2, FeO,
+       and O2's own separate continuum), above the atmosphere / at LCO --
+       matches ESO's flux_arc
+   * - ``OH``, ``O2``, ``HO2``, ``FeO``, ``NA``, ``K``, ``O``, ``N``, ``H``
+     - per-species contribution to FLUX (above the atmosphere only)
+
+All flux columns are in erg/s/cm^2/Angstrom for one LVM fiber.  The
+primary header records ``RA``, ``DEC``, ``OBSTIME``, ``MSOLFLUX``, and
+``ENGINE='palace'``.
+
+**Requirements:**
+
+The PALACE Python package (external dependency; see Readme.md).
+
+**Notes:**
+
+Both the local ESO Sky Model and PALACE compute the sky as it would
+actually be observed on the ground; FLUX/LINES/DIFFUSE here are the
+above-the-atmosphere value (PALACE's own ``isatm=False``), with the
+as-observed value in the ``_LCO`` columns (``isatm=True``).  Since ESO's
+own LINES column is not currently divided by the transmission (see
+EsoSkyObs.py Notes), today PALACE's ``LINES_LCO`` (not ``LINES``) matches
+ESO's LINES like-for-like, while PALACE's ``DIFFUSE`` (not
+``DIFFUSE_LCO``) matches ESO's DIFFUSE (which *is* divided by the
+transmission) -- an inconsistency inherited from ESO's side, not PALACE's.
+
+LINES/DIFFUSE are built from PALACE's own internal line-table/continuum-
+table split (calling ``readdata``/``calcscalfac``/``scalelines``/
+``scalecont``/``corratmlines``/``corratmcont``/``calclinspec``/
+``calccontspec``/``convolvelsf`` directly, stopping short of the final
+line+continuum sum), not by summing whole species: PALACE's public
+``species=`` selector operates on whole species, and O2 has its own
+separate continuum component (``palace_cont.fits``' own header:
+``NCONT=3``, ``CHEM3='O2'``, ``VARID3='O2Ac'``) in addition to its line
+emission, so a per-species line/continuum classification would silently
+fold that continuum into LINES.
+
+``FLUX_LCO`` can come out very slightly *brighter* than ``FLUX`` in
+places -- not a bug: PALACE's own ``isatm=True`` scattering correction
+includes a van-Rhijn/in-scattering term for the extended airglow layer
+that can slightly exceed unit transmission at some zenith angles/
+wavelengths (light scattered into the line of sight from the rest of the
+sky outweighing light scattered out of it).
+
+If your local ``$ESO_SKY_MODEL`` install's airglow continuum data file
+has been patched to use PALACE's own continuum shape (check
+``sm_filenames.dat``'s ``acontname`` entry), verify its absolute scaling
+carefully before comparing ESO's local-engine DIFFUSE against PALACE's --
+a stale legacy scale factor left over from the original (much cruder)
+ESO continuum template can inflate the local engine's DIFFUSE relative to
+PALACE's by a large factor while leaving the wavelength *shape* similar
+(scale and shape errors look very different, which is how this was first
+noticed).
+
+**See Also:** :doc:`api/PalaceObs/index`
+
 
 SkyCalcObs.py
 ^^^^^^^^^^^^^
+
+.. note::
+   Superseded by EsoSkyObs.py's remote engine (see above), which unifies
+   this script with SkyModelObs.py below into one homogenized output
+   convention.  Still works standalone; kept for reference.
 
 Uses ESO's SkyCalc web service to generate a theoretical sky spectrum
 for a given position and time.
@@ -177,6 +416,12 @@ A FITS file containing the theoretical sky spectrum.
 
 SkyModelObs.py
 ^^^^^^^^^^^^^^
+
+.. note::
+   Superseded by EsoSkyObs.py's local engine (see above), which unifies
+   this script with SkyCalcObs.py into one homogenized output convention.
+   Still works standalone (and is still directly used by SkySepESO.py);
+   kept for reference.
 
 Uses the ESO Sky Model (local installation) to generate theoretical
 sky spectra. This is faster than SkyCalcObs for batch processing.
@@ -1060,6 +1305,119 @@ falls back to the SkyCalc web service (slower, needs network access).
 **See Also:** :doc:`api/SkySepESO/index`
 
 
+SkySepPalace.py
+^^^^^^^^^^^^^^^
+
+Perform per-spectrum sky subtraction using the **PALACE airglow model**
+instead of the ESO sky model (SkySepESO.py's approach) -- a deliberately
+scoped-down first cut::
+
+    SKY = sum_species  a_species * PALACE_species  +  a_moon * MOON     (all a >= 0)
+
+fit jointly by non-negative least squares (all 9 PALACE species
+amplitudes plus one MOON amplitude at once, full spectrum, no line
+masking needed) against the nearest sky fiber's own spectrum.
+
+**Usage**::
+
+    SkySepPalace.py [-delta N] [-out ROOT] filename
+
+**Arguments:**
+
+filename
+    XCframe FITS file to process.
+
+**Options:**
+
+-delta N
+    Process every N-th row; useful for quick tests (default: 1 = all rows).
+
+-out ROOT
+    Output filename root; default is ``<stem>_palace``.
+
+**Description:**
+
+For each row, RA/Dec/obstime for the science fiber and both sky
+telescopes are read from DRP_ALL, and the nearer sky telescope is
+identified (as in SkySepESO.py).  PALACE (via ``PalaceObs.predict()``,
+**not** the homogenized ``do_one()`` output -- see Notes) is queried once
+per unique (near sky position, obstime) pair, cached across rows since a
+real XCframe file shares only two sky-telescope positions across
+~1700+ fibers, for all 9 species at high native resolution
+(``resol=20000``, ``dlam~0.2 A`` -- matching what ``PalaceObs.py``'s own
+``do_one()`` output now defaults to as well).  Each species' native
+spectrum is flux-conserving rebinned and LSF-convolved onto the
+instrument grid using the row's real LSF (same 3-tier priority as
+SkySubDev2.py: this file's own LSF extension, else a reference curve,
+else a flat default).  The 9 species templates plus MOON are then fit by
+NNLS to the near-sky fiber's flux; ``SKY`` is the fit, ``FLUX = FLUX_sci
+- SKY``.
+
+**MOON:** a single, static, precomputed spectral shape
+(``data/moon_base_spectrum.dat``, built offline by ``MakeMoonBase.py``)
+with exactly one free amplitude -- not the flexible multi-knot B-spline
+envelope SkySubDev2.py uses for its own Moon component.  The template is
+the real ESO Sky Model's own MOON column, evaluated once for one fixed
+reference geometry (an earlier version tried the bare solar spectrum,
+then solar x ROLO lunar albedo -- both wrong in the same direction;
+validated against the real ESO Sky Model that atmospheric Rayleigh/
+aerosol scattering reverses the albedo reddening, so the current template
+uses ESO's own already-scattered MOON output instead).  Neither the
+template's shape (fixed reference geometry) nor its amplitude (entirely
+free in the fit) depends on this observation's real lunar phase, moon
+altitude, or moon-target separation -- flagged as the top item still
+needed.  Zodiacal light is not included at all.
+
+**Output:**
+
+A FITS file ``<ROOT>.fits`` with extensions WAVE, FLUX (sky-subtracted),
+SKY, and DRP_ALL.  DRP_ALL gains per-row ``PALACE_<SPECIES>`` (the 9
+species amplitudes), ``PALACE_MOON``, ``QA_FLAGS``, ``ERROR_MSG``, and --
+if ``sky_mask.fits`` is found -- per-arm continuum-fit-quality columns
+(``SCI_MED_<arm>``/``SKY_MED_<arm>`` etc., directly comparable to
+SkySepESO.py's own columns of the same name; see "Common DRP_ALL columns"
+above), evaluated only from the HO2/FeO/MOON (continuum-like) subset of
+the fit.
+
+**QA flag bits:**
+
+======  ==========  ===========================================================
+0x01    NANDATA     NaN/inf found in input flux or sky data.
+0x04    MODELFAIL   PALACE prediction failed for this row's geometry (e.g.
+                    sky position below the horizon).
+0x08    FAILED      Row raised an exception; spectrum filled with NaN.
+======  ==========  ===========================================================
+
+**Notes:**
+
+Uses ``PalaceObs.predict()``'s raw PALACE units (Rayleighs/nm), not
+``do_one()``'s homogenized physical-unit output (erg/s/cm^2/Angstrom) --
+see PalaceObs.py above.  Since each species/MOON amplitude is entirely
+free in the NNLS fit, this is not a problem for the sky subtraction
+itself (any constant unit-conversion factor is absorbed into the fitted
+amplitude, since the fit only needs the right relative wavelength shape,
+not an absolute scale), but it does mean the ``PALACE_<SPECIES>``/
+``PALACE_MOON`` columns written to DRP_ALL are **not** physically
+meaningful brightnesses -- they can't be compared across species or
+across observations in absolute terms, since the missing unit conversion
+and the missing at-telescope-vs-above-atmosphere extinction correction
+are both silently baked into that one free scalar per component.
+
+Deliberately not yet included (in order of what's needed next): real
+lunar-phase/airmass dependence for MOON's shape or a physical prediction
+of its amplitude; zodiacal light continuum; a sky-to-science line-scale
+correction (SkySepESO.py's bisection step) -- not clearly motivated yet
+since the NNLS amplitudes already give each species its own free scaling,
+unlike ESO's single lumped LINES template.
+
+**Requirements:**
+
+The PALACE Python package (external dependency; see ``PalaceObs.py``
+above and Readme.md).
+
+**See Also:** :doc:`api/SkySepPalace/index`
+
+
 SkySub_eval.py
 ^^^^^^^^^^^^^^
 
@@ -1596,8 +1954,10 @@ See Also
 - :doc:`api/Prep4SkyCorr/index` - API documentation
 - :doc:`api/RunSkyCorr/index` - API documentation
 - :doc:`api/SkySub/index` - API documentation
-- :doc:`api/SkyCalcObs/index` - API documentation
-- :doc:`api/SkyModelObs/index` - API documentation
+- :doc:`api/EsoSkyObs/index` - API documentation
+- :doc:`api/PalaceObs/index` - API documentation
+- :doc:`api/SkyCalcObs/index` - API documentation (superseded by EsoSkyObs.py)
+- :doc:`api/SkyModelObs/index` - API documentation (superseded by EsoSkyObs.py)
 - :doc:`api/palace_make_mask/index` - API documentation
 - :doc:`api/GetSky_from_CFrame_sum/index` - API documentation
 - :doc:`api/XSkySepIvan/index` - API documentation
@@ -1609,6 +1969,7 @@ See Also
 - :doc:`api/SkySubDev1/index` - API documentation
 - :doc:`api/SkySubDev2/index` - API documentation
 - :doc:`api/SkySepESO/index` - API documentation
+- :doc:`api/SkySepPalace/index` - API documentation
 - :doc:`api/SkySub_eval/index` - API documentation
 - :doc:`api/SkySubSci/index` - API documentation
 - :doc:`api/SummarizeSciSky/index` - API documentation

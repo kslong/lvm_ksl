@@ -81,6 +81,7 @@ def convert_time(time_input, output_format='datetime'):
         Desired output format:
         - 'datetime': Python datetime object
         - 'iso': ISO 8601 format string (e.g., '2025-04-21T03:00:00')
+        - 'iso_ms': ISO 8601 format with milliseconds (e.g., '2023-08-29T03:20:43.668')
         - 'mjd': Modified Julian Date (float)
         - 'jd': Julian Date (float)
 
@@ -122,7 +123,9 @@ def _detect_time_format(time_input):
         time_str = time_input
 
     # Check for ISO format (contains date separators and possibly time separators)
-    if re.search(r'\d{4}-\d{2}-\d{2}', time_str) or re.search(r'\d{4}/\d{2}/\d{2}', time_str):
+    if (re.search(r'\d{4}-\d{2}-\d{2}', time_str) or
+        re.search(r'\d{4}/\d{2}/\d{2}', time_str) or
+        re.search(r'\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.?\d*', time_str)):
         return 'iso'
 
     # Try to convert to float
@@ -179,7 +182,7 @@ def _convert_to_output_format(time_obj, output_format):
     time_obj : astropy.time.Time
         Time object
     output_format : str
-        Desired output format ('datetime', 'iso', 'mjd', or 'jd')
+        Desired output format ('datetime', 'iso', 'iso_ms', 'mjd', or 'jd')
 
     Returns
     -------
@@ -190,6 +193,10 @@ def _convert_to_output_format(time_obj, output_format):
             return time_obj.to_datetime()
         elif output_format == 'iso':
             return time_obj.iso
+        elif output_format == 'iso_ms':
+            # Format with millisecond precision: YYYY-MM-DDTHH:MM:SS.sss
+            dt = time_obj.to_datetime()
+            return dt.strftime('%Y-%m-%dT%H:%M:%S.%f')[:-3]
         elif output_format == 'mjd':
             return time_obj.mjd
         elif output_format == 'jd':
@@ -227,7 +234,11 @@ def get_source_location():
     file_path = inspect.getfile(get_text)
     # file_path is .../lvm_ksl/py_progs/GetSolar.py; the data directory is
     # .../lvm_ksl/data, one level above py_progs, not py_progs/data.
-    py_progs_dir = os.path.dirname(os.path.abspath(file_path))
+    # realpath (not abspath) resolves any symlinks in the import path (e.g.
+    # when py_progs is reached via a PYTHONPATH symlink) back to the real
+    # lvm_ksl checkout, so the data directory is found regardless of how
+    # the module was imported.
+    py_progs_dir = os.path.dirname(os.path.realpath(file_path))
     return os.path.join(os.path.dirname(py_progs_dir), 'data')
 
 

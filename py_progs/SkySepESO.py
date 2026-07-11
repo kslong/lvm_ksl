@@ -51,10 +51,10 @@ Description:
        (as in SkySubOrig.py).
 
     2. The ESO sky model is fetched for the science fiber's coordinates
-       and time (SkyModelObs.do_one, falling back to the SkyCalc web
-       service via SkyCalcObs.py if the local model call fails), giving
-       MOON/ZODI/DIFFUSE continuum templates on the model's own
-       wavelength grid.  These are interpolated onto the instrument
+       and time (EsoSkyObs.run_sky_obs, engine='auto': local ESO SM-01
+       model first, falling back to the SkyCalc web service if that
+       fails), giving MOON/ZODI/DIFFUSE continuum templates on the
+       model's own wavelength grid.  These are interpolated onto the instrument
        wavelength grid and fit to the observed flux as a non-negative
        3-component linear combination::
 
@@ -111,9 +111,9 @@ Description:
 Notes:
 
     Every row with a non-zero QA_FLAGS value is listed at the end of
-    the run with the specific reason it failed (e.g. which of
-    SkyModelObs/SkyCalcObs failed and why); this report is printed to
-    the terminal and also written to ``<ROOT>_errors.txt`` next to the
+    the run with the specific reason it failed (e.g. which engine
+    EsoSkyObs.run_sky_obs tried and why each failed); this report is
+    printed to the terminal and also written to ``<ROOT>_errors.txt`` next to the
     output FITS file.  The same reason string (truncated to 200
     characters) is stored per row in DRP_ALL['ERROR_MSG'], so the
     output FITS file is self-documenting even without the text file.
@@ -126,13 +126,13 @@ Notes:
     per row than the other SkySub* scripts -- use -delta for quick
     tests, e.g. -delta 50.
 
-    SkyModelObs.do_one requires the ESO SM-01 sky model binary
-    installed locally (path fixed inside SkyModelObs.py, gated by the
-    ESO_SKY_MODEL environment variable) and only works on machines
-    where it is set up; SkySepESO.py falls back automatically to the
-    SkyCalc web service (SkyCalcObs.py) if the local call fails, so it
-    can still run (more slowly, and needing network access) on
-    machines without the local model installed.
+    EsoSkyObs.run_sky_obs's local engine requires the ESO SM-01 sky
+    model binary, resolved dynamically from the ESO_SKY_MODEL
+    environment variable, and only works on machines where it is set
+    up; SkySepESO.py falls back automatically to the SkyCalc web
+    service (EsoSkyObs.run_sky_obs's remote engine) if the local call
+    fails, so it can still run (more slowly, and needing network
+    access) on machines without the local model installed.
 
     Output filename is ``<ROOT>.fits``.  If -out is omitted the name
     is derived as ``<stem>_eso_<method>.fits``.
@@ -160,6 +160,12 @@ History:
                 med/nmad/rms/skew x b/r/z), evaluated against the raw
                 pre-subtraction science and sky spectra using
                 GetSkyCont.arm_continuum_stats(); requires sky_mask.fits.
+    260711 ksl  Migrated _get_sky_model from SkyModelObs.do_one/SkyCalcObs.py
+                (both retired) to EsoSkyObs.run_sky_obs(engine='auto'), which
+                already implements the same local-then-remote fallback.
+                Picks up a real fix as a side effect: the local engine now
+                resolves the historical solar flux (GetSolar.get_flux) instead
+                of SkyModelObs.py's old hardcoded msolflux=101.
 
 '''
 
@@ -181,8 +187,7 @@ import astropy.units as u
 from scipy.optimize import minimize
 from scipy.stats import sigmaclip
 
-import SkyModelObs
-import SkyCalcObs
+import EsoSkyObs
 from SkySubOrig import fit_func, ksl_bisection, obstime_to_mjd
 
 try:
@@ -245,34 +250,22 @@ def _get_sky_model(ra, dec, obstime):
     '''
     Fetch an ESO sky model spectrum for the given coordinates/time.
 
-    Tries the local ESO SM-01 model (SkyModelObs.do_one) first, then
-    falls back to the SkyCalc web service (SkyCalcObs.py) if that
-    fails.  The per-call FITS file written by either routine is
-    deleted immediately after being read, so nothing accumulates on
-    disk across a full run.
+    Uses EsoSkyObs.run_sky_obs(engine='auto'), which tries the local ESO
+    SM-01 model first and falls back to the SkyCalc web service if that
+    fails.  The per-call FITS file it writes is deleted immediately after
+    being read, so nothing accumulates on disk across a full run.
 
     Returns (model_tab, err_msg).  model_tab is an astropy Table with
     WAVE, MOON, ZODI, DIFFUSE columns, and err_msg is ''.  If both the
-    local model and the web fallback fail, model_tab is None and
-    err_msg describes what each attempt reported.
+    local model and the web fallback fail, model_tab is None and err_msg
+    is whatever run_sky_obs printed while trying each engine.
     '''
-    outroot, local_msg = _run_captured(SkyModelObs.do_one,
-                                       ra=ra, dec=dec, obstime=obstime)
+    outroot, captured = _run_captured(EsoSkyObs.run_sky_obs,
+                                      ra=ra, dec=dec, xtime=obstime, engine='auto')
 
     if outroot == '':
-        try:
-            outroot, web_msg = _run_captured(
-                SkyCalcObs.run_SkyCalc_from_observation,
-                ra=ra, dec=dec, xtime=obstime)
-        except Exception as e:
-            web_msg = str(e)
-            outroot = ''
-
-        if outroot == '':
-            err_msg = ('SkyModelObs: %s | SkyCalcObs: %s'
-                      % (local_msg or 'failed, no message',
-                         web_msg or 'failed, no message'))
-            return None, err_msg
+        err_msg = captured or 'EsoSkyObs.run_sky_obs failed, no message'
+        return None, err_msg
 
     modelfile = '%s.fits' % outroot
     try:

@@ -20,7 +20,7 @@ Arguments::
     ra          right ascension in degrees
     dec         declination in degrees
     obstime     UTC observation time (any format accepted by
-                SkyModelObs.convert_time, e.g. '2023-08-29T03:20:43.668')
+                GetSolar.convert_time, e.g. '2023-08-29T03:20:43.668')
 
 Options::
 
@@ -30,8 +30,8 @@ Options::
     -species S1,S2    comma-separated species to predict individually;
                       default is all nine (OH, O2, HO2, FeO, Na, K, O, N, H)
     -out ROOT         output FITS filename root; default is
-                      SkyP_<mjd>_<ra>_<dec> (matches SkyC_/SkyM_/SkyE_'s
-                      convention in SkyCalcObs.py/SkyModelObs.py/EsoSkyObs.py)
+                      SkyP_<mjd>_<ra>_<dec>, matching EsoSkyObs.py's SkyE_
+                      convention
 
 Output FITS structure::
 
@@ -80,7 +80,7 @@ Description:
 
     This module (a) computes the geometry/time parameters PALACE needs
     from an LVM observation (ra, dec, obstime), reusing
-    ``SkyModelObs.get_info_las_campanas`` for the site geometry and
+    ``EsoSkyObs.get_info_las_campanas`` for the site geometry and
     ``GetSolar.get_flux`` for the solar radio flux, and (b) calls
     ``palace.model()`` once per species (plus once more for the combined
     spectrum) to recover the per-species breakdown that PALACE's own data
@@ -168,9 +168,9 @@ Notes:
     this override, PalaceObs.py's output visibly looks lower-resolution
     than EsoSkyObs.py's when plotted side by side -- not a real physical
     difference, just PALACE's coarse default versus ESO's engines both
-    natively running at R~5500-14000 (SkyModelObs's local engine:
-    wgauss=0.8 px * 0.5 A/px = 0.4A FWHM, R~14000 at 5577A; SkyCalcObs's
-    remote engine: lsf_gauss_fwhm=2.0 px * 0.5 A/px = 1.0A FWHM, R~5580).
+    natively running at R~5500-14000 (EsoSkyObs.py's local engine:
+    wgauss=0.8 px * 0.5 A/px = 0.4A FWHM, R~14000 at 5577A; its remote
+    engine: lsf_gauss_fwhm=2.0 px * 0.5 A/px = 1.0A FWHM, R~5580).
     DEFAULT_RESOL=20000 matches the native resolution SkySepPalace.py
     already uses internally for its own PALACE templates (_NATIVE_RESOL);
     see that constant's comment for the same "generate fine, convolve to
@@ -260,6 +260,11 @@ History:
         LINES/DIFFUSE now come from this; the ground/isatm=True call went
         back to species_list=[] since the per-species ground breakdown it
         was fetching is no longer used for anything.
+    260711 ksl SkyModelObs.py retired (its get_info_las_campanas moved into
+        EsoSkyObs.py); switched imports to EsoSkyObs.get_info_las_campanas
+        and GetSolar.convert_time. Default output naming also switched from
+        PalaceObs_<ra>_<dec>_<mjd> to SkyP_<mjd>_<ra>_<dec>, matching
+        EsoSkyObs.py's ``SkyE_`` convention.
 
 '''
 
@@ -276,9 +281,8 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from palace import palace
 
-from SkyModelObs import get_info_las_campanas, convert_time
-from GetSolar import get_flux as get_solar_flux
-from EsoSkyObs import FIBER_AREA_ARCSEC2
+from GetSolar import convert_time, get_flux as get_solar_flux
+from EsoSkyObs import get_info_las_campanas, FIBER_AREA_ARCSEC2
 
 
 _USAGE = '''Usage: PalaceObs.py [-h] [-srf VALUE] [-species S1,S2,...] [-out ROOT] ra dec obstime
@@ -311,7 +315,7 @@ SPECIES = ['OH', 'O2', 'HO2', 'FeO', 'Na', 'K', 'O', 'N', 'H']
 CONTINUUM_SPECIES = ['HO2', 'FeO']
 LINE_SPECIES = [sp for sp in SPECIES if sp not in CONTINUUM_SPECIES]
 
-# Las Campanas Observatory longitude, matching SkyModelObs.get_info_las_campanas
+# Las Campanas Observatory longitude, matching EsoSkyObs.get_info_las_campanas
 LCO_LON_DEG = -70.6920
 
 # do_one()'s default output wavelength range, truncated to the LVM range
@@ -493,7 +497,7 @@ def predict(ra, dec, obstime, srf=None, species_list=SPECIES,
 
     Parameters:
         ra, dec       degrees
-        obstime       UTC time, any SkyModelObs.convert_time format
+        obstime       UTC time, any GetSolar.convert_time format
         srf           solar radio flux in sfu; looked up from
                       data/solar.txt via GetSolar.get_flux if not given
         species_list  which of PALACE's nine species to predict

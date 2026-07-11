@@ -44,8 +44,8 @@ Description:
     approximation to it (tried: even the best-fit ~lambda^-2.5 power law
     left a much larger residual than just using the real ESO output
     directly), this script runs the real, already-installed, already-
-    validated ESO Sky Model (SkyModelObs.do_one) ONCE, for one fixed
-    reference geometry, and stores its MOON column as a static spectral
+    validated ESO Sky Model (EsoSkyObs.run_sky_obs, engine='local') ONCE,
+    for one fixed reference geometry, and stores its MOON column as a static spectral
     shape.  This keeps SkySepPalace.py itself free of any runtime ESO
     dependency (see Readme.md) while still using a physically complete
     albedo+scattering shape rather than an uncorrected or wrongly-
@@ -68,10 +68,11 @@ Notes:
     airmass dependence of the scattering are both real effects this
     single static curve does not capture.
 
-    SkyModelObs.setup() (called by do_one()) writes config/, output/,
-    and a data/ symlink into the *current working directory* -- run
-    this script from a scratch directory, not from py_progs/, or clean
-    those up afterward (they are not meant to be tracked).
+    EsoSkyObs.setup() (called by run_local(), via run_sky_obs()) writes
+    config/, output/, and a data/ symlink into the *current working
+    directory* -- run this script from a scratch directory, not from
+    py_progs/, or clean those up afterward (they are not meant to be
+    tracked).
 
     data/moon_rolo_albedo.dat (the raw Kieffer & Stone 2005 ROLO
     coefficients) is not used by this script -- it was the first,
@@ -86,6 +87,11 @@ Notes:
 History:
 
     260709 ksl Coding begun.
+    260711 ksl Migrated from SkyModelObs.do_one (retired) to
+        EsoSkyObs.run_sky_obs(engine='local') -- forced to 'local' rather
+        than 'auto' since this script's whole point is running one
+        specific, known model install, not silently falling back to a
+        different engine if the local one isn't set up.
 
 '''
 
@@ -98,7 +104,7 @@ import numpy as np
 from astropy.io import fits
 from astropy.table import Table
 
-import SkyModelObs
+import EsoSkyObs
 
 _USAGE = '''Usage:
   MakeMoonBase.py [-ra RA] [-dec DEC] [-obstime TIME] [-out FILE]
@@ -131,8 +137,8 @@ def make_moon_base(ra=DEFAULT_RA, dec=DEFAULT_DEC, obstime=DEFAULT_OBSTIME,
     Run the ESO Sky Model once for (ra, dec, obstime) and write
     data/moon_base_spectrum.dat with WAVE/SOLAR/MOON_BASE columns.
     '''
-    outroot = SkyModelObs.do_one(ra=ra, dec=dec, obstime=obstime,
-                                 outroot='/tmp/MakeMoonBase_tmp')
+    outroot = EsoSkyObs.run_sky_obs(ra=ra, dec=dec, xtime=obstime,
+                                    outroot='/tmp/MakeMoonBase_tmp', engine='local')
     if outroot == '':
         print('Error: ESO Sky Model call failed; no output written')
         return None

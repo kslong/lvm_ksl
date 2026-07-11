@@ -144,10 +144,9 @@ EsoSkyObs.py
 ^^^^^^^^^^^^
 
 Generates a predicted sky spectrum for a given RA, Dec, and time using the
-real ESO Sky Model.  Unifies the two previously separate approaches below
+real ESO Sky Model.  Unifies two previously separate approaches
 (SkyCalcObs.py, SkyModelObs.py) into one script and one output convention;
-intended to eventually replace both (they still work standalone and are
-documented below for reference, but new work should use this instead).
+both of those scripts have since been retired and removed (see note below).
 
 **Usage**::
 
@@ -177,9 +176,8 @@ time
     from the historical flux table (``GetSolar.py``).
 
 -out root
-    Output filename root; default is ``SkyE_<mjd>_<ra>_<dec>``, matching
-    the ``SkyC_``/``SkyM_`` naming convention used by SkyCalcObs.py/
-    SkyModelObs.py (and adopted by PalaceObs.py's ``SkyP_`` -- see below).
+    Output filename root; default is ``SkyE_<mjd>_<ra>_<dec>``, the same
+    naming convention adopted by PalaceObs.py's ``SkyP_`` (see below).
 
 -site lco\|paranal
     Observatory height/pressure physics used by the model (default
@@ -298,8 +296,7 @@ obstime
 
 -out ROOT
     Output FITS filename root; default is ``SkyP_<mjd>_<ra>_<dec>``,
-    matching the ``SkyC_``/``SkyM_``/``SkyE_`` naming convention used by
-    SkyCalcObs.py/SkyModelObs.py/EsoSkyObs.py.
+    matching EsoSkyObs.py's ``SkyE_`` naming convention.
 
 **Output FITS structure:**
 
@@ -386,89 +383,13 @@ for the full history.
 **See Also:** :doc:`api/PalaceObs/index`
 
 
-SkyCalcObs.py
-^^^^^^^^^^^^^
-
 .. note::
-   Superseded by EsoSkyObs.py's remote engine (see above), which unifies
-   this script with SkyModelObs.py below into one homogenized output
-   convention.  Still works standalone; kept for reference.
-
-Uses ESO's SkyCalc web service to generate a theoretical sky spectrum
-for a given position and time.
-
-**Usage**::
-
-    SkyCalcObs.py [-h] [-out name] ra dec time
-
-**Arguments:**
-
-ra, dec
-    Sky position in degrees.
-
-time
-    Observation time as a date string, JD, or MJD.
-
-**Options:**
-
--h
-    Print help and exit.
-
--out name
-    Set output filename root.
-
-**Requirements:**
-
-The ``skycalc_cli`` package must be installed::
-
-    pip install skycalc_cli
-
-**Output:**
-
-A FITS file containing the theoretical sky spectrum.
-
-SkyModelObs.py
-^^^^^^^^^^^^^^
-
-.. note::
-   Superseded by EsoSkyObs.py's local engine (see above), which unifies
-   this script with SkyCalcObs.py into one homogenized output convention.
-   Still works standalone (and is still directly used by SkySepESO.py);
-   kept for reference.
-
-Uses the ESO Sky Model (local installation) to generate theoretical
-sky spectra. This is faster than SkyCalcObs for batch processing.
-
-**Usage**::
-
-    SkyModelObs.py [-h] [-config] [-data data_dir] [-out name] ra dec time
-
-**Arguments:**
-
-ra, dec
-    Sky position in degrees.
-
-time
-    Observation time as a date string, MJD, or JD.
-
-**Options:**
-
--h
-    Print help and exit.
-
--config
-    Force reconfiguration of directories.
-
--data data_dir
-    Set data directory (overrides ESO_SKY_MODEL environment variable).
-
--out name
-    Set output filename root.
-
-**Requirements:**
-
-The ESO Sky Model package must be installed locally, with the
-``calcskymodel`` executable available.
+   SkyCalcObs.py and SkyModelObs.py (the two previously separate
+   approaches EsoSkyObs.py unified above) were retired and removed on
+   2026-07-11: everything that used them (EsoSkyObs.py itself,
+   PalaceObs.py, SkySepESO.py, MakeMoonBase.py) has been migrated to
+   EsoSkyObs.py/its ``get_info_las_campanas``.  Use EsoSkyObs.py's
+   ``-engine local``/``-engine remote`` in their place.
 
 
 PALACE-based Sky Line Masking and Sky Spectrum Collection
@@ -1270,9 +1191,9 @@ filename
 **Description:**
 
 For each row, the ESO sky model is fetched for the relevant fiber's
-coordinates and observation time (``SkyModelObs.do_one``, using the local
-ESO SM-01 binary; falls back automatically to the SkyCalc web service via
-``SkyCalcObs.py`` if the local model call fails — e.g. because the model
+coordinates and observation time (``EsoSkyObs.run_sky_obs``, ``engine='auto'``:
+local ESO SM-01 binary first; falls back automatically to the SkyCalc web
+service if the local model call fails — e.g. because the model
 rejects the target/Moon geometry).  The model gives MOON/ZODI/DIFFUSE
 continuum templates, which are fit to the observed flux as a non-negative,
 iteratively-downweighted 3-component linear combination
@@ -1288,10 +1209,9 @@ Only the sky lines are scaled by *r*; ``sky_CONT`` (whichever sky fiber's
 ESO-model fit produced it — near for ``nearest``/``farlines_nearcont``, far
 for ``farthest``) is used exactly as fitted.
 
-Each ESO-model fetch writes a small per-call FITS file
-(``SkyM_*.fits``/``SkyC_*.fits``) to the current working directory; this
-file is read and deleted immediately, so nothing accumulates on disk across
-a run.
+Each ESO-model fetch writes a small per-call FITS file (``SkyE_*.fits``)
+to the current working directory; this file is read and deleted
+immediately, so nothing accumulates on disk across a run.
 
 **Output:**
 
@@ -1312,7 +1232,7 @@ written to ``<ROOT>_errors.txt``.
 **Requirements:**
 
 The local ESO SM-01 sky model binary, gated by the ``ESO_SKY_MODEL``
-environment variable (see ``SkyModelObs.py`` above); without it, every row
+environment variable (see ``EsoSkyObs.py`` above); without it, every row
 falls back to the SkyCalc web service (slower, needs network access).
 
 **See Also:** :doc:`api/SkySepESO/index`
@@ -1922,7 +1842,7 @@ Comparing with Sky Models
 
 1. Generate a theoretical sky for the observation::
 
-       SkyCalcObs.py 81.5 -66.0 60000.5
+       EsoSkyObs.py 81.5 -66.0 60000.5
 
 2. Compare with observed sky from SKY_EAST or SKY_WEST telescopes
 3. Identify discrepancies that may indicate calibration issues
@@ -1969,8 +1889,6 @@ See Also
 - :doc:`api/SkySub/index` - API documentation
 - :doc:`api/EsoSkyObs/index` - API documentation
 - :doc:`api/PalaceObs/index` - API documentation
-- :doc:`api/SkyCalcObs/index` - API documentation (superseded by EsoSkyObs.py)
-- :doc:`api/SkyModelObs/index` - API documentation (superseded by EsoSkyObs.py)
 - :doc:`api/palace_make_mask/index` - API documentation
 - :doc:`api/GetSky_from_CFrame_sum/index` - API documentation
 - :doc:`api/XSkySepIvan/index` - API documentation

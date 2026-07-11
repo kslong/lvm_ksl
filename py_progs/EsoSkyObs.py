@@ -12,13 +12,13 @@ real ESO Sky Model.
 This routine unifies two previously separate approaches:
 
 - the local ESO Sky Model calculator (calcskymodel), previously run from
-  SkyModelObs.py
+  SkyModelObs.py (retired 260711 -- fully absorbed into this module)
 - the ESO web-service SkyCalc CLI (skycalc_cli), previously run from
-  SkyCalcObs.py
+  SkyCalcObs.py (retired 260711 -- fully absorbed into this module)
 
-and is intended to eventually replace both of those scripts.  By default it
-tries the local install first (it is the version we maintain and trust) and
-falls back to the ESO web service only if the local model is not set up.
+By default it tries the local install first (it is the version we maintain
+and trust) and falls back to the ESO web service only if the local model
+is not set up.
 
 Command line usage::
 
@@ -75,14 +75,10 @@ Primary routines::
 Notes:
 
     The local engine requires the environment variable ESO_SKY_MODEL to
-    point to a working installation of the real ESO Sky Model (see
-    SkyModelObs.py).  The remote engine requires skycalc_cli to be
-    pip-installed, a working setuptools/pkg_resources in the environment,
-    and network access to eso.org.
-
-    This module still depends on SkyModelObs.py for the LCO
-    geometry/almanac calculation (get_info_las_campanas) and directory
-    setup (setup), since those are unchanged by this merge.
+    point to a working installation of the real ESO Sky Model.  The remote
+    engine requires skycalc_cli to be pip-installed, a working
+    setuptools/pkg_resources in the environment, and network access to
+    eso.org.
 
     site='paranal' (default 'lco'): for comparing against PALACE, whose
     own atmospheric-physics constants are hardcoded to Cerro Paranal (see
@@ -111,6 +107,15 @@ History:
     let a comparison run approximate PALACE's Paranal-fixed atmosphere
     physics; default behavior (site='lco') unchanged.  Not a full site
     swap for the remote engine -- see Notes.
+260711 ksl Retired SkyModelObs.py and SkyCalcObs.py (nothing else used
+    SkyCalcObs.py; SkyModelObs.py was still imported by this module for
+    get_info_las_campanas/setup, and directly by SkySepESO.py and
+    MakeMoonBase.py).  get_info_las_campanas/setup/safe_remove moved here
+    verbatim; SkySepESO.py and MakeMoonBase.py migrated to call
+    run_sky_obs()/this module instead of the retired scripts directly (the
+    former also gains a real fix along the way: its local engine now
+    resolves the historical solar flux via resolve_solar_flux() instead of
+    SkyModelObs.py's old hardcoded msolflux=101).
 
 '''
 
@@ -118,21 +123,185 @@ import os
 import sys
 import json
 import time
+import shutil
 import subprocess
+import warnings
 
 import numpy as np
 from astropy.io import fits
 from astropy.table import Table, join
 from astropy.time import Time
+from astropy.coordinates import (get_body, solar_system_ephemeris, AltAz,
+                                 EarthLocation, SkyCoord, GeocentricTrueEcliptic)
+import astropy.units as u
 
 from lvm_ksl.GetSolar import convert_time, get_flux
-from lvm_ksl.SkyModelObs import get_info_las_campanas, setup
+
+# get_info_las_campanas's cross-frame separation/transform_to calls trigger
+# this astropy warning; NonRotationTransformationWarning was removed from
+# recent astropy versions but drp still uses it, hence the fallback -- moved
+# here (260711) from the now-retired SkyModelObs.py, unchanged.
+try:
+    from astropy.coordinates.baseframe import NonRotationTransformationWarning
+except ImportError:
+    from astropy.utils.exceptions import AstropyWarning as NonRotationTransformationWarning
+warnings.simplefilter('ignore', NonRotationTransformationWarning)
 
 
 # Angular area of one LVM fiber, in arcsec^2 -- used to convert the sky
 # model's per-solid-angle native flux into the flux collected by one fiber.
 # Shared with PalaceObs.py so PALACE-derived fluxes use the same convention.
 FIBER_AREA_ARCSEC2 = np.pi * (37 / 2) ** 2
+
+
+def safe_remove(path):
+    if os.path.islink(path):
+        os.unlink(path)
+    elif os.path.isdir(path):
+        shutil.rmtree(path)
+
+
+def setup(eso_sky_dir='', config=True):
+    '''
+    Set up the directories (config/, output/, a data/ symlink) that the
+    local calcskymodel binary needs in the current working directory.
+    Moved here (260711) from the now-retired SkyModelObs.py, unchanged.
+    '''
+    if config == False:
+        icheck = True
+        if os.path.isdir('config') == False:
+            icheck = False
+        if os.path.isdir('output') == False:
+            icheck = False
+        if os.path.isdir('data') == False and os.path.islink('data') == False:
+            icheck = False
+        if icheck == True:
+            return
+
+    xdir = os.getenv('ESO_SKY_MODEL')
+    if eso_sky_dir == '':
+        eso_sky_dir = xdir
+
+    data_dir = '%s/sm-01_mod2/data' % eso_sky_dir
+    print('What is going on:', data_dir)
+    if os.path.isdir(data_dir) == False:
+        print('Error: %s really does not appear to exist' % data_dir)
+        return
+    safe_remove('data')
+    os.symlink(data_dir, 'data')
+    os.makedirs('output', exist_ok=True)
+    os.makedirs('config', exist_ok=True)
+    return
+
+
+def get_info_las_campanas(datetime_utc, ra, dec, verbose=False):
+    '''
+    Get information about the sun, moon, and a source at given RA and Dec
+    as a function of UT, from Las Campanas Observatory.  Moved here
+    (260711) from the now-retired SkyModelObs.py, unchanged.
+
+    Parameters:
+    -----------
+    datetime_utc : str or datetime
+        UTC time for the observation
+    ra : float
+        Right ascension of the source in degrees
+    dec : float
+        Declination of the source in degrees
+    verbose : bool, optional
+        If True, print the information
+
+    Returns:
+    --------
+    dict
+        Dictionary containing information about the sun, moon, and source
+    '''
+    if verbose:
+        print('get_info_las_campanas,Start: ', datetime_utc, ra, dec)
+    # Las Campanas Observatory coordinates
+    observatory_location = EarthLocation(lat=-29.0089*u.deg, lon=-70.6920*u.deg, height=2281*u.m)
+
+    obs_time = Time(datetime_utc)
+
+    source_coords = SkyCoord(ra=ra*u.deg, dec=dec*u.deg, frame='fk5')
+
+    with solar_system_ephemeris.set('builtin'):
+        moon_coords = get_body('moon', obs_time, location=observatory_location)
+        sun_coords = get_body('sun', obs_time, location=observatory_location)
+
+    phase_angle = moon_coords.separation(sun_coords).radian
+    illumination_fraction = (1 - np.cos(phase_angle))/2
+
+    moon_sun_longitude_diff = (moon_coords.ra - sun_coords.ra).wrap_at(360 * u.deg).value
+    if moon_sun_longitude_diff > 0:
+        moon_phase = illumination_fraction/2.
+    else:
+        moon_phase = 1-illumination_fraction/2.
+    illumination_fraction *= 100.
+
+    altaz_frame = AltAz(obstime=obs_time, location=observatory_location)
+    moon_altaz = moon_coords.transform_to(altaz_frame)
+    sun_altaz = sun_coords.transform_to(altaz_frame)
+    source_altaz = source_coords.transform_to(altaz_frame)
+    if source_altaz.alt.deg < 0:
+        print('Error: Source altitude is negative :', source_altaz.alt.deg, ra, dec, datetime_utc)
+
+    moon_ecliptic = moon_coords.transform_to(GeocentricTrueEcliptic(equinox=obs_time))
+    sun_ecliptic = sun_coords.transform_to(GeocentricTrueEcliptic(equinox=obs_time))
+    source_ecliptic = source_coords.transform_to(GeocentricTrueEcliptic(equinox=obs_time))
+
+    moon_eclip_lon = moon_ecliptic.lon.deg
+    if moon_eclip_lon > 180:
+        moon_eclip_lon -= 360
+
+    if verbose:
+        print('XXX %.1f %.1f -> %.1f ' % (source_ecliptic.lon.deg, sun_ecliptic.lon.deg,
+                                          source_ecliptic.lon.deg-sun_ecliptic.lon.deg))
+
+    sun_eclip_lon = sun_ecliptic.lon.deg
+    source_eclip_lon = source_ecliptic.lon.deg
+
+    mean_moon_distance = 384400 * u.km
+    moon_distance = moon_coords.distance.to(u.km)
+    moon_distance_in_mean = moon_distance / mean_moon_distance
+
+    moon_sun_separation = moon_coords.separation(sun_coords).deg
+    moon_source_separation = moon_coords.separation(source_coords).deg
+    sun_source_separation = sun_coords.separation(source_coords).deg
+
+    xreturn = {
+        'SunRA': sun_coords.ra.deg,
+        'SunDec': sun_coords.dec.deg,
+        'SunAlt': sun_altaz.alt.deg,
+        'SunAz': sun_altaz.az.deg,
+        'SunEclipLon': sun_eclip_lon,
+        'SunEclipLat': sun_ecliptic.lat.deg,
+        'MoonRA': moon_coords.ra.deg,
+        'MoonDec': moon_coords.dec.deg,
+        'MoonAlt': moon_altaz.alt.deg,
+        'MoonAz': moon_altaz.az.deg,
+        'MoonEclipLon': moon_eclip_lon,
+        'MoonEclipLat': moon_ecliptic.lat.deg,
+        'MoonPhas': moon_phase,
+        'MoonIll': illumination_fraction,
+        'MoonDistance': moon_distance.value,
+        'MoonDistanceInMeanUnits': moon_distance_in_mean.value,
+        'SourceRA': source_coords.ra.deg,
+        'SourceDec': source_coords.dec.deg,
+        'SourceAlt': source_altaz.alt.deg,
+        'SourceAz': source_altaz.az.deg,
+        'SourceEclipLon': source_eclip_lon,
+        'SourceEclipLat': source_ecliptic.lat.deg,
+        'Moon-Sun_Separation': moon_sun_separation,
+        'Moon-Source_Separation': moon_source_separation,
+        'Sun-Source_Separation': sun_source_separation
+    }
+
+    if verbose:
+        for key, value in xreturn.items():
+            print(f'{key}: {value}')
+
+    return xreturn
 
 
 _USAGE = '''

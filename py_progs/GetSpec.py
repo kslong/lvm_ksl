@@ -76,6 +76,25 @@ import matplotlib.pyplot as plt
 import fib2radec
 
 from LocateReduced import read_drpall,find_em
+
+
+import re
+
+
+def _usage_from_doc(doc):
+    '''
+    __doc__ truncated just before a line consisting of "History:" (or
+    "History::"/"Version History" -- whitespace/colon-insensitive), so
+    -h stays short even as that section grows -- without hand-
+    duplicating the Synopsis/Options text in a second string.  Anchored
+    to a whole line (not a bare substring search) so it can't misfire on
+    "History:" appearing mid-sentence, and returns doc unchanged if no
+    such line is present.
+    '''
+    m = re.search(r'^\s*(?:Version\s+)?History:{0,2}\s*$', doc, re.MULTILINE)
+    return doc[:m.start()].rstrip() + '\n' if m else doc
+
+
 XTOP='/uufs/chpc.utah.edu/common/home/sdss51/'
 XXTOP='%s/Projects/lvm_data/sas/' % (os.environ['HOME'])
 
@@ -297,7 +316,7 @@ def steer(argv):
     i=1
     while i<len(argv):
         if argv[i]=='-h':
-            print(__doc__)
+            print(_usage_from_doc(__doc__))
             return 
         elif argv[i]=='-size':
             i+=1

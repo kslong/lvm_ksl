@@ -117,10 +117,21 @@ import psutil
 from lvm_ksl import rss_combine
 
 
+import re
 
 
-
-
+def _usage_from_doc(doc):
+    '''
+    __doc__ truncated just before a line consisting of "History:" (or
+    "History::"/"Version History" -- whitespace/colon-insensitive), so
+    -h stays short even as that section grows -- without hand-
+    duplicating the Synopsis/Options text in a second string.  Anchored
+    to a whole line (not a bare substring search) so it can't misfire on
+    "History:" appearing mid-sentence, and returns doc unchanged if no
+    such line is present.
+    '''
+    m = re.search(r'^\s*(?:Version\s+)?History:{0,2}\s*$', doc, re.MULTILINE)
+    return doc[:m.start()].rstrip() + '\n' if m else doc
 
 
 def do_fixed(filenames, ra, dec, pa, size, fib_type='xy', c_type='ave', outroot='', keep_tmp=False):
@@ -387,7 +398,7 @@ def steer(argv):
     i=1
     while i < len(argv):
         if argv[i][:2]=='-h':
-            print(__doc__)
+            print(_usage_from_doc(__doc__))
             return
         elif argv[i][:4]=='-out':
             i+=1

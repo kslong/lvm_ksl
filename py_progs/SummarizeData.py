@@ -76,6 +76,22 @@ import astropy.units as u
 import numpy as np
 
 
+import re
+
+
+def _usage_from_doc(doc):
+    '''
+    __doc__ truncated just before a line consisting of "History:" (or
+    "History::"/"Version History" -- whitespace/colon-insensitive), so
+    -h stays short even as that section grows -- without hand-
+    duplicating the Synopsis/Options text in a second string.  Anchored
+    to a whole line (not a bare substring search) so it can't misfire on
+    "History:" appearing mid-sentence, and returns doc unchanged if no
+    such line is present.
+    '''
+    m = re.search(r'^\s*(?:Version\s+)?History:{0,2}\s*$', doc, re.MULTILINE)
+    return doc[:m.start()].rstrip() + '\n' if m else doc
+
 
 LVM_DATA_S=os.environ.get('LVM_DATA_S')
 
@@ -437,7 +453,7 @@ def steer(argv):
     i=1
     while i<len(argv):
         if argv[i]=='-h':
-            print(__doc__)
+            print(_usage_from_doc(__doc__))
             return
         elif argv[i]=='-all':
             xall=True
@@ -529,5 +545,5 @@ if __name__ == "__main__":
     if len(sys.argv)>1:
        steer(sys.argv)
     else:
-        print(__doc__)
+        print(_usage_from_doc(__doc__))
 

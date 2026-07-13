@@ -41,6 +41,24 @@ from lvmdrp.external import ancillary_func
 from scipy.signal.windows import boxcar
 from scipy.signal import convolve
 
+
+import re
+
+
+def _usage_from_doc(doc):
+    '''
+    __doc__ truncated just before a line consisting of "History:" (or
+    "History::"/"Version History" -- whitespace/colon-insensitive), so
+    -h stays short even as that section grows -- without hand-
+    duplicating the Synopsis/Options text in a second string.  Anchored
+    to a whole line (not a bare substring search) so it can't misfire on
+    "History:" appearing mid-sentence, and returns doc unchanged if no
+    such line is present.
+    '''
+    m = re.search(r'^\s*(?:Version\s+)?History:{0,2}\s*$', doc, re.MULTILINE)
+    return doc[:m.start()].rstrip() + '\n' if m else doc
+
+
 def xsmooth(flux,smooth=21):
     '''
     boxcar smooth the flux
@@ -162,7 +180,7 @@ def steer(argv):
     i=1
     while i<len(argv):
         if argv[i].count('-h'):
-            print(__doc__)
+            print(_usage_from_doc(__doc__))
             return
         elif argv[i][0]=='-':
             print('Error: could not process command line: ',argv)

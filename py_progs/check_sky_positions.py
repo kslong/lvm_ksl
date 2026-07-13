@@ -108,17 +108,26 @@ History:
 
 import sys
 import os
+import re
 import numpy as np
 from astropy.io import fits
 from astropy.table import Table
 
-# -h prints _USAGE, not the full docstring: __doc__ keeps a growing
-# History section for future reference (git has no per-decision detail
-# for this file, which was only ever developed outside version control),
-# but that's exactly the part that pushes the actual usage off-screen in
-# a terminal.  Truncating at the History: marker keeps -h output short
-# without hand-duplicating the Synopsis/Options text in a second string.
-_USAGE = __doc__.split('\nHistory:', 1)[0].rstrip() + '\n'
+
+def _usage_from_doc(doc):
+    '''
+    __doc__ truncated just before a line consisting of "History:"
+    (whitespace-insensitive), so -h stays short even as that section
+    grows -- without hand-duplicating the Synopsis/Options text in a
+    second string.  Anchored to a whole line (not a bare substring
+    search) so it can't misfire on "History:" appearing mid-sentence,
+    and returns doc unchanged if no such line is present.
+    '''
+    m = re.search(r'^\s*History:\s*$', doc, re.MULTILINE)
+    return doc[:m.start()].rstrip() + '\n' if m else doc
+
+
+_USAGE = _usage_from_doc(__doc__)
 
 
 def angsep_deg(ra1, dec1, ra2, dec2):

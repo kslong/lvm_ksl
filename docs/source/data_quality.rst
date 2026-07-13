@@ -2,13 +2,34 @@ Data Quality
 ============
 
 The lvm_ksl package includes tools for assessing the quality of reduced
-LVM data.  Currently the focus is on wavelength calibration stability,
-characterised by measuring per-fiber wavelength offsets across an exposure
-using Fourier cross-correlation.
+LVM data.  They fall into a few distinct categories, grouped below by
+what they actually check rather than listed alphabetically:
 
+- **Wavelength calibration** — how much the wavelength solution drifts
+  from fiber to fiber within an exposure (``fourier_offset.py``,
+  ``fourier_offset_check.py``).
+- **Reduction bookkeeping** — whether a batch of downloaded or locally
+  reduced files is complete, current, and free of DRP errors
+  (``CheckData.py``, ``CheckReduced.py``).
+- **Sky subtraction** — how well the subtracted sky matches what was
+  actually there, both spectroscopically and fiber-by-fiber
+  (``eval_sky.py``, ``plot_sky_gaussfit.py``).
+- **Flux calibration** — how well calibrated standard-star spectra agree
+  with their Gaia reference spectra (``eval_standard.py``).
+- **Sky telescope pointing** — whether a sky exposure's recorded
+  position actually agrees with the sky field name it was labelled with
+  (``SummarizeSkyHdr.py``, ``check_sky_positions.py``).
+
+
+Wavelength Calibration
+-----------------------
+
+Checks whether the wavelength solution is stable across fibers within a
+single exposure, using a synthetic-line injection test to validate the
+measurement itself.
 
 fourier_offset.py — Wavelength Offset Analysis
------------------------------------------------
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 Measures per-fiber wavelength offsets in a CFrame or SFrame file by
 cross-correlating each fiber spectrum against a median reference template
@@ -102,7 +123,7 @@ median quality are printed to the terminal::
 
 
 fourier_offset_check.py — Synthetic-Line Injection Test
---------------------------------------------------------
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 Adds a synthetic Gaussian emission line to the FLUX extension of an
 lvmCFrame file and writes the result to a new file.  Intended for
@@ -158,8 +179,16 @@ line wavelength, flux, and per-spectrograph offsets.
     fourier_offset_check.py -wave 5007 -flux 1e-12 -off2 0.2 lvmCFrame-*.fits
 
 
+Reduction Bookkeeping
+----------------------
+
+Checks whether a batch of downloaded or locally reduced files is
+complete, up to date with the current DRP version, and free of DRP
+processing errors — not a check on the science content of the data
+itself.
+
 CheckData.py — Inspect Downloaded Files
-----------------------------------------
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 Prints and saves a summary table of key header keywords for one or more
 downloaded CFrame or SFrame files.  Useful for quickly checking whether
@@ -187,7 +216,7 @@ include: ``Filename``, ``MJD``, ``DRP``, ``Commit``, ``FluxCal``,
 
 
 CheckReduced.py — Verify Local DRP Reductions
-----------------------------------------------
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 Checks whether a set of locally reduced files all succeeded and whether
 they were all produced from the same DRP git commit.  Intended to be run
@@ -225,8 +254,15 @@ DRP log files in ``xlog/``.
     CheckReduced.py -d mydata -l mylogs
 
 
+Sky Subtraction
+-----------------
+
+Checks how well the subtracted sky spectrum matches what was actually
+present, both as a per-exposure spectroscopic comparison and as
+fiber-by-fiber spatial maps of individual airglow-line fit residuals.
+
 eval_sky.py — Sky Subtraction Quality Plot
--------------------------------------------
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 Produces a four-panel plot showing median flux, sky, and total
 (flux + sky) spectra for the science fibers, the east sky telescope
@@ -257,40 +293,8 @@ on median-combined spectra.
     eval_sky.py data/lvmSFrame-00012345.fits
 
 
-eval_standard.py — Flux Standard Calibration Plot
---------------------------------------------------
-
-Compares the observed standard star spectra in a CFrame file against
-their Gaia BP/RP reference spectra, providing a visual check of the
-flux calibration quality.
-
-**Command line usage**::
-
-    eval_standard.py filename [filename ...]
-
-**Arguments:**
-
-filename
-    One or more lvmCFrame FITS files to evaluate.
-
-**Output:**
-
-One PNG file per input file, named ``standard_<basename>.png``, written
-to the current directory.  If no Gaia spectra can be retrieved for any
-standard in the file, no plot is produced and a warning is printed.
-
-**Notes:**
-
-Requires ``lvmdrp`` to be installed (uses ``ancillary_func.retrive_gaia_star``
-to fetch Gaia reference spectra).
-
-**Example**::
-
-    eval_standard.py data/lvmCFrame-00012345.fits
-
-
 plot_sky_gaussfit.py — Sky Subtraction Residual Maps
------------------------------------------------------
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 Visualises fiber-by-fiber sky Gaussian fit results produced by
 ``sky_gaussfit.py`` as spatial scatter maps (fiber RA vs Dec coloured by
@@ -372,6 +376,204 @@ Three PNG files saved to ``Figs_gaussfit_sky/``:
     plot_sky_gaussfit.py lvmSFrame-*.txt
 
 
+Flux Calibration
+-----------------
+
+Checks how well flux-calibrated standard-star spectra agree with their
+Gaia BP/RP reference spectra.
+
+eval_standard.py — Flux Standard Calibration Plot
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Compares the observed standard star spectra in a CFrame file against
+their Gaia BP/RP reference spectra, providing a visual check of the
+flux calibration quality.
+
+**Command line usage**::
+
+    eval_standard.py filename [filename ...]
+
+**Arguments:**
+
+filename
+    One or more lvmCFrame FITS files to evaluate.
+
+**Output:**
+
+One PNG file per input file, named ``standard_<basename>.png``, written
+to the current directory.  If no Gaia spectra can be retrieved for any
+standard in the file, no plot is produced and a warning is printed.
+
+**Notes:**
+
+Requires ``lvmdrp`` to be installed (uses ``ancillary_func.retrive_gaia_star``
+to fetch Gaia reference spectra).
+
+**Example**::
+
+    eval_standard.py data/lvmCFrame-00012345.fits
+
+
+Sky Telescope Pointing
+------------------------
+
+Checks whether a sky exposure's *recorded* telescope position actually
+agrees with the sky field name it was *labelled* with, at each stage of
+the DRP's astrometry processing.  This grew out of a real, confirmed
+data-quality bug: some SkyE/SkyW exposures carry a field name that
+doesn't match where the telescope was actually pointed — most commonly a
+clean east/west name swap, but also partial and unexplained variants
+(see ``check_sky_positions.py``'s module docstring history for the full
+diagnostic trail).
+
+SummarizeSkyHdr.py — Per-Exposure Astrometry Keyword Extraction
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Pulls a fixed, hardwired list of raw acquisition/astrometry PRIMARY
+header keywords out of each exposure's CFrame file, for a range of
+exposures selected from a drpall table.  These keywords carry three
+independent position pairs per sky telescope — what it *reported* back,
+what was *commanded*, and the final *adopted* (astrometry-refined)
+position — plus the astrometry-source quality flags (SCIASRC/SKYEASRC/
+SKYWASRC).  drpall itself only ever stores the adopted position, so this
+is the tool that makes the earlier pipeline stages visible for
+diagnosis; ``check_sky_positions.py`` is what actually checks them.
+
+**Command line usage**::
+
+    SummarizeSkyHdr.py [-h] [-emin 900] [-ver 1.2.1] [-drp_all FILE]
+                       [-keywords FILE] [-data_dir DIR] [-out ROOT]
+                       exp_start exp_stop [delta]
+
+**Arguments:**
+
+exp_start, exp_stop
+    Exposure number range to select from the drpall table.
+
+delta
+    Process every delta-th exposure in the range (default 1).
+
+**Options:**
+
+-h
+    Print help and exit.
+
+-emin N
+    Minimum exposure time to include (default 900).
+
+-ver VER
+    DRP version, used to locate ``drpall-VER.fits`` (default 1.2.1).
+
+-drp_all FILE
+    Explicit drpall table to read instead of ``drpall-VER.fits``.
+
+-keywords FILE
+    Optional (keyword, definition) table, overriding the hardwired
+    keyword list built into the script.  Not needed for normal use — the
+    script has no external file dependency by default, so it can be
+    copied to and run standalone at Utah.
+
+-data_dir DIR
+    Look for CFrame files directly in this flat local cache by basename
+    first, before falling back to the standard xtop/location tree.
+
+-out ROOT
+    Output filename root (default:
+    ``SummarizeSkyHdr_<ver>_<exp_start>_<exp_stop>_<delta>``).
+
+**Output:**
+
+A FITS file with three extensions:
+
+- ``PRIMARY`` — records the calling parameters (DRPVER, EMIN, EXPSTART,
+  EXPSTOP, DELTA, DRPALL, KWFILE, N_PROC).
+- ``SKY_HDR`` — one row per successfully-read exposure: EXPNUM (the join
+  key back to DRP_ALL) plus one column per keyword.  Each column's FITS
+  ``TTYPEn`` comment card carries that keyword's definition, so the file
+  is self-documenting.
+- ``DRP_ALL`` — the drpall rows for the exposures actually processed.
+
+**Example**::
+
+    # Summarize astrometry keywords for a range of exposures
+    SummarizeSkyHdr.py 7325 48860 1
+
+
+check_sky_positions.py — Sky Field Name/Position Cross-Check
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Cross-references the recorded skye/skyw positions in a drpall file (or a
+``SummarizeSkyHdr.py`` output file) against the nominal catalog positions
+in ``final_sky_tiles.csv``, to find exposures where a sky field's
+recorded position doesn't match its own name.  Every problem exposure is
+classified as ``Swapped`` (skye and skyw's names are cleanly crossed with
+each other), ``HalfMatch`` (only one direction of that crossing holds —
+suggestive of a shifted-by-one-slot pattern rather than a clean swap), or
+``Unknown`` (no recognized pattern).
+
+**Command line usage**::
+
+    check_sky_positions.py [-csv FILE] [-tol DEG] [-out FILE]
+                           [-postype reported|commanded|adopted] [drpall_file]
+
+**Arguments:**
+
+drpall_file
+    A drpall FITS file (default: ``drpall-1.2.1.fits``), or a
+    ``SummarizeSkyHdr.py`` output file if ``-postype`` is anything other
+    than ``adopted``.
+
+**Options:**
+
+-h
+    Print help and exit.
+
+-csv FILE
+    Sky tile position catalog (default: ``final_sky_tiles.csv``).
+
+-tol DEG
+    Agreement tolerance in degrees (default: 0.1).
+
+-out FILE
+    Override the per-exposure problem table's output filename (default:
+    ``sky_problem_check_<drpall stem>[_<postype>].tab``).
+
+-postype T
+    Which of the three recorded sky-telescope positions to check against
+    — ``reported``, ``commanded``, or ``adopted`` (default; the only one
+    that works on a plain ``drpall-*.fits``).  ``reported``/``commanded``
+    require a ``SummarizeSkyHdr.py`` output file's SKY_HDR extension.
+    Comparing across postype values traces which DRP stage a mismatch
+    first appears at.
+
+**Output:**
+
+Two ASCII fixed-width tables are always written together:
+
+- ``sky_problem_check_<drpall stem>[_<postype>].tab`` — one row per
+  problem exposure: tileid, mjd, expnum, filename, skye_name, skyw_name,
+  each side's real nearest-catalog position, problem_type, and (when
+  available) the SCIASRC/SKYEASRC/SKYWASRC astrometry-quality flags.
+- ``sky_position_check_<drpall stem>[_<postype>].tab`` — one row per
+  catalog field: how many times it was labelled, how often that label
+  was correct, and a breakdown of the incorrect ones into Swapped/
+  HalfMatch/Unexplained, plus how many times the field's real position
+  was observed under any label (and how many of those were mislabeled).
+
+Both are also printed to the terminal, each followed by a summary
+(problem counts by type for the per-exposure table; clean/Swapped/
+HalfMatch/Unexplained field counts for the per-name table).
+
+**Example**::
+
+    # Check the adopted (final) positions in a plain drpall file
+    check_sky_positions.py drpall-1.2.1.fits
+
+    # Trace the same check back to the commanded stage, loosening the
+    # tolerance to 1 degree
+    check_sky_positions.py -postype commanded -tol 1 SummarizeSkyHdr_1.2.1_7325_48860_1.fits
+
+
 See Also
 --------
 
@@ -381,5 +583,7 @@ See Also
 - :doc:`api/CheckReduced/index` - API documentation
 - :doc:`api/eval_sky/index` - API documentation
 - :doc:`api/eval_standard/index` - API documentation
+- :doc:`api/SummarizeSkyHdr/index` - API documentation
+- :doc:`api/check_sky_positions/index` - API documentation
 - :doc:`summarize` - Tools for cataloging and summarizing exposures
 - :doc:`spectral_fitting` - ``sky_gaussfit.py`` produces the input tables for ``plot_sky_gaussfit.py``

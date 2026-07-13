@@ -11,9 +11,9 @@ Synopsis:
     positions and sky field names -- see _KEYWORD_DEFS below) across
     many exposures selected from a drpall table, for diagnosing where in
     the DRP a sky telescope's position and name can end up disagreeing
-    (see check_sky_positions.py in .../duplicates, which found this
-    disagreement from the drpall side only; this script pulls in the
-    per-exposure header values needed to trace where it happens).
+    (see check_sky_positions.py, which found this disagreement from the
+    drpall side only; this script pulls in the per-exposure header
+    values needed to trace where it happens).
 
     Exposure selection follows the same convention as SummarizeCframe.py/
     SummarizeSciSky.py (exposure-number range against a drpall table),
@@ -105,10 +105,9 @@ Notes:
 History:
 
 260713 ksl Coding begun, to diagnose the skye/skyw position-vs-name
-    mismatches found by check_sky_positions.py
-    (.../lvm_sky2607/duplicates/check_sky_positions.py) from the drpall
-    side -- these reported/commanded/adopted-position keywords let that
-    mismatch be traced to a specific stage of DRP processing.
+    mismatches found by check_sky_positions.py from the drpall side --
+    these reported/commanded/adopted-position keywords let that mismatch
+    be traced to a specific stage of DRP processing.
 260713 ksl Hardwired _KEYWORD_DEFS directly into this script instead of
     reading it from SkyPosKeywords.txt at runtime, so this script has no
     companion-file dependency when deployed to Utah -- SkyPosKeywords.txt

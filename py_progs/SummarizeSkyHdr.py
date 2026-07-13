@@ -6,12 +6,12 @@
 
 Synopsis:
 
-    Summarize a fixed list of raw acquisition/astrometry PRIMARY-header
-    keywords (reported/commanded/adopted telescope positions and sky
-    field names -- see py_progs/SkyPosKeywords.txt) across many exposures selected
-    from a drpall table, for diagnosing where in the DRP a sky
-    telescope's position and name can end up disagreeing (see
-    check_sky_positions.py in .../duplicates, which found this
+    Summarize a fixed, hardwired list of raw acquisition/astrometry
+    PRIMARY-header keywords (reported/commanded/adopted telescope
+    positions and sky field names -- see _KEYWORD_DEFS below) across
+    many exposures selected from a drpall table, for diagnosing where in
+    the DRP a sky telescope's position and name can end up disagreeing
+    (see check_sky_positions.py in .../duplicates, which found this
     disagreement from the drpall side only; this script pulls in the
     per-exposure header values needed to trace where it happens).
 
@@ -37,8 +37,9 @@ Command line usage (if any):
         -emin N        minimum exposure time to include (default 900)
         -ver VER       DRP version, used to locate drpall-VER.fits (default 1.2.1)
         -drp_all FILE  explicit drpall table to read instead of drpall-VER.fits
-        -keywords FILE keyword/definition table (default: this script's own
-                       SkyPosKeywords.txt, in py_progs/ alongside it) -- see Notes
+        -keywords FILE optional (keyword, definition) table to use INSTEAD
+                       of the hardwired list built into this script -- see
+                       Notes; not needed for normal use
         -data_dir DIR  look for CFrame files directly in DIR by basename
                        first (a flat local cache), before falling back to
                        the standard xtop/location tree layout
@@ -50,20 +51,20 @@ Description:
     For each selected exposure, opens its CFrame file (from the drpall
     table's own `location` column, SFrame renamed to CFrame -- same
     convention as SummarizeCframe.py/SummarizeSciSky.py) and reads the
-    PRIMARY header keywords listed in -keywords (default SkyPosKeywords.txt) --
-    NOT spectra, just header values.
+    hardwired PRIMARY header keywords (_KEYWORD_DEFS, or -keywords if
+    given) -- NOT spectra, just header values.
 
     Output FITS structure::
 
         PRIMARY    header records the calling parameters (DRPVER, EMIN,
                    EXPSTART, EXPSTOP, DELTA, DRPALL, KWFILE, N_PROC) --
-                   same convention as SummarizeSciSky.py
+                   same convention as SummarizeSciSky.py.  KWFILE is
+                   'hardwired' unless -keywords was given.
         SKY_HDR    one row per successfully-read exposure: EXPNUM (the
-                   join key back to DRP_ALL) plus one column per keyword
-                   in -keywords.  Each column's FITS TTYPEn comment card
-                   is set to that keyword's definition text from
-                   -keywords, so the file is self-documenting without
-                   needing SkyPosKeywords.txt alongside it.
+                   join key back to DRP_ALL) plus one column per
+                   keyword.  Each column's FITS TTYPEn comment card is
+                   set to that keyword's definition text, so the file is
+                   self-documenting even without this script alongside it.
         DRP_ALL    the drpall rows for the exposures actually processed
                    (same rows SKY_HDR was built from -- join on expnum
                    if you need columns from both).
@@ -74,13 +75,18 @@ Primary routines:
 
 Notes:
 
-    SkyPosKeywords.txt (py_progs/SkyPosKeywords.txt) is a fixed_width_two_line ascii table
-    (keyword, definition) -- read directly with astropy.io.ascii, not
-    hardcoded here, so keeping the keyword list current only means
-    editing that one file.  A keyword's definition ending in "[deg]" is
-    treated as numeric (missing/undefined -> NaN); anything else is
-    treated as a string (missing/undefined -> the literal string
-    "None", matching drpall's own placeholder convention).
+    The (keyword, definition) list is hardwired directly into this
+    script (_KEYWORD_DEFS, near load_keyword_defs) rather than read from
+    a companion file at runtime, so SummarizeSkyHdr.py has no file
+    dependency beyond itself -- it needs to run standalone at Utah with
+    nothing else copied over.  Source: SkyPosKeywords.py/
+    SkyPosKeywords.txt (not part of this repo) -- if that reference
+    table changes, update _KEYWORD_DEFS here by hand to match, or pass
+    -keywords to read an external table instead without editing this
+    script.  A keyword's definition ending in "[deg]" is treated as
+    numeric (missing/undefined -> NaN); anything else is treated as a
+    string (missing/undefined -> the literal string "None", matching
+    drpall's own placeholder convention).
 
     Some of these keywords (SCIASRC/SKYEASRC/SKYWASRC, the astrometry-
     source quality flags) are absent from older/some exposures' headers
@@ -101,8 +107,13 @@ History:
 260713 ksl Coding begun, to diagnose the skye/skyw position-vs-name
     mismatches found by check_sky_positions.py
     (.../lvm_sky2607/duplicates/check_sky_positions.py) from the drpall
-    side -- SkyPosKeywords.txt's reported/commanded/adopted-position keywords let
-    that mismatch be traced to a specific stage of DRP processing.
+    side -- these reported/commanded/adopted-position keywords let that
+    mismatch be traced to a specific stage of DRP processing.
+260713 ksl Hardwired _KEYWORD_DEFS directly into this script instead of
+    reading it from SkyPosKeywords.txt at runtime, so this script has no
+    companion-file dependency when deployed to Utah -- SkyPosKeywords.txt
+    is not part of this repo.  -keywords can still point at an external
+    table if one is needed.
 
 '''
 
@@ -127,7 +138,8 @@ Options:
   -emin N        minimum exposure time to include (default 900)
   -ver VER       DRP version, used to locate drpall-VER.fits (default 1.2.1)
   -drp_all FILE  explicit drpall table to read instead of drpall-VER.fits
-  -keywords FILE keyword/definition table (default: py_progs/SkyPosKeywords.txt)
+  -keywords FILE optional (keyword, definition) table, overriding the
+                 hardwired list built into this script
   -data_dir DIR  flat local cache to check for CFrame files before the
                  standard xtop/location tree layout
   -out ROOT      output filename root (default:
@@ -225,25 +237,62 @@ def resolve_filename(location, xtop, data_dir=''):
 # Keyword table / per-exposure header reading
 # ──────────────────────────────────────────────────────────────
 
-_DEFAULT_KEYWORD_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'SkyPosKeywords.txt')
+# Hardwired (keyword, definition) list -- source: SkyPosKeywords.py/
+# SkyPosKeywords.txt (not committed to this repo; kept in sync by hand
+# if that reference table changes).  Baked in directly, rather than read
+# from a file at runtime, so this script has no companion-file
+# dependency -- it needs to run standalone at Utah with nothing else
+# copied over but itself.
+_KEYWORD_DEFS = [
+    ('TESCIRA',  'Sci telescope reported RA [deg]'),
+    ('TESCIDE',  'Sci telescope reported Dec [deg]'),
+    ('TESKYERA', 'SkyE telescope reported RA [deg]'),
+    ('TESKYEDE', 'SkyE telescope reported Dec [deg]'),
+    ('TESKYWRA', 'SkyW telescope reported RA [deg]'),
+    ('TESKYWDE', 'SkyW telescope reported Dec [deg]'),
+    ('TESPECRA', 'Spec telescope initial pointing RA [deg]'),
+    ('TESPECDE', 'Spec telescope initial pointing Dec [deg]'),
+    ('POSCIRA',  'Sci telescope commanded (target) RA [deg]'),
+    ('POSCIDE',  'Sci telescope commanded (target) Dec [deg]'),
+    ('POSKYERA', 'SkyE telescope commanded (target) RA [deg]'),
+    ('POSKYEDE', 'SkyE telescope commanded (target) Dec [deg]'),
+    ('SKYENAME', 'Name of the sky field commanded for the SkyE telescope'),
+    ('POSKYWRA', 'SkyW telescope commanded (target) RA [deg]'),
+    ('POSKYWDE', 'SkyW telescope commanded (target) Dec [deg]'),
+    ('SKYWNAME', 'Name of the sky field commanded for the SkyW telescope'),
+    ('SCIRA',    'Sci telescope adopted RA [deg]'),
+    ('SCIDEC',   'Sci telescope adopted Dec [deg]'),
+    ('SCIASRC',  "Quality: source of Sci astrometry - 'GDR coadd' (guider WCS fit) "
+                 "or 'CMD position' (fallback to commanded position)"),
+    ('SKYERA',   'SkyE telescope adopted RA [deg]'),
+    ('SKYEDEC',  'SkyE telescope adopted Dec [deg]'),
+    ('SKYEASRC', "Quality: source of SkyE astrometry - 'GDR coadd' or 'CMD position'"),
+    ('SKYWRA',   'SkyW telescope adopted RA [deg]'),
+    ('SKYWDEC',  'SkyW telescope adopted Dec [deg]'),
+    ('SKYWASRC', "Quality: source of SkyW astrometry - 'GDR coadd' or 'CMD position'"),
+]
 
 
-def load_keyword_defs(keyword_file=_DEFAULT_KEYWORD_FILE):
+def load_keyword_defs(keyword_file=None):
     '''
-    Read a fixed_width_two_line (keyword, definition) table -- default
-    py_progs/SkyPosKeywords.txt.  Returns a list of (keyword, definition,
-    is_numeric) tuples, in file order.  is_numeric is True when the
-    definition ends in "[deg]" (the RA/Dec keywords), False otherwise
-    (the sky-field-name and astrometry-source-quality keywords).
+    Return a list of (keyword, definition, is_numeric) tuples.  With no
+    keyword_file (the default), this is just _KEYWORD_DEFS, hardwired
+    above -- no file needed.  Pass keyword_file to read a
+    fixed_width_two_line (keyword, definition) ascii table instead (e.g.
+    an updated SkyPosKeywords.txt) without having to edit this script.
+
+    is_numeric is True when the definition ends in "[deg]" (the RA/Dec
+    keywords), False otherwise (the sky-field-name and
+    astrometry-source-quality keywords).
     '''
-    tab = apy_ascii.read(keyword_file, format='fixed_width_two_line')
-    defs = []
-    for row in tab:
-        kw = str(row['keyword']).strip()
-        definition = str(row['definition']).strip()
-        is_numeric = definition.endswith('[deg]')
-        defs.append((kw, definition, is_numeric))
-    return defs
+    if keyword_file is None:
+        pairs = _KEYWORD_DEFS
+    else:
+        tab = apy_ascii.read(keyword_file, format='fixed_width_two_line')
+        pairs = [(str(row['keyword']).strip(), str(row['definition']).strip())
+                for row in tab]
+
+    return [(kw, definition, definition.endswith('[deg]')) for kw, definition in pairs]
 
 
 def read_header_keywords(filename, keyword_defs):
@@ -278,11 +327,15 @@ def read_header_keywords(filename, keyword_defs):
 # ──────────────────────────────────────────────────────────────
 
 def process_drpall(exp_start, exp_stop, delta=1, exp_min=900., drp_ver='1.2.1',
-                   drp_all_file='', keyword_file=_DEFAULT_KEYWORD_FILE,
+                   drp_all_file='', keyword_file=None,
                    data_dir='', outroot=''):
     '''
     Select exposures from a drpall table and write a combined
     SummarizeSkyHdr FITS file (SKY_HDR + DRP_ALL extensions).
+
+    keyword_file : str or None
+        None (default) uses the hardwired _KEYWORD_DEFS; pass a path to
+        read an external (keyword, definition) table instead.
     '''
     xtop = find_top()
     xtab = read_drpall(drp_all_file, drp_ver)
@@ -293,7 +346,8 @@ def process_drpall(exp_start, exp_stop, delta=1, exp_min=900., drp_ver='1.2.1',
     print('Selected %d exposures from the drpall table' % len(ztab))
 
     keyword_defs = load_keyword_defs(keyword_file)
-    print('Reading %d header keywords from %s' % (len(keyword_defs), keyword_file))
+    print('Reading %d header keywords (%s)' % (
+        len(keyword_defs), keyword_file if keyword_file else 'hardwired list'))
 
     hdr_rows  = []
     good_rows = []
@@ -333,7 +387,7 @@ def process_drpall(exp_start, exp_stop, delta=1, exp_min=900., drp_ver='1.2.1',
     hdr['EXPSTOP']  = exp_stop
     hdr['DELTA']    = delta
     hdr['DRPALL']   = drp_all_file if drp_all_file else ('drpall-%s.fits' % drp_ver)
-    hdr['KWFILE']   = os.path.basename(keyword_file)
+    hdr['KWFILE']   = os.path.basename(keyword_file) if keyword_file else 'hardwired'
     hdr['N_PROC']   = len(hdr_rows)
 
     hdr_hdu = fits.BinTableHDU(hdr_tab, name='SKY_HDR')
@@ -358,7 +412,7 @@ def steer(argv):
     exp_min   = 900.
     drp_ver   = '1.2.1'
     drp_all_file = ''
-    keyword_file = _DEFAULT_KEYWORD_FILE
+    keyword_file = None
     data_dir  = ''
     outroot   = ''
 

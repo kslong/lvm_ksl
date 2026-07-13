@@ -8,7 +8,7 @@ Synopsis:
 
     Summarize a fixed list of raw acquisition/astrometry PRIMARY-header
     keywords (reported/commanded/adopted telescope positions and sky
-    field names -- see py_progs/test.txt) across many exposures selected
+    field names -- see py_progs/SkyPosKeywords.txt) across many exposures selected
     from a drpall table, for diagnosing where in the DRP a sky
     telescope's position and name can end up disagreeing (see
     check_sky_positions.py in .../duplicates, which found this
@@ -38,7 +38,7 @@ Command line usage (if any):
         -ver VER       DRP version, used to locate drpall-VER.fits (default 1.2.1)
         -drp_all FILE  explicit drpall table to read instead of drpall-VER.fits
         -keywords FILE keyword/definition table (default: this script's own
-                       test.txt, in py_progs/ alongside it) -- see Notes
+                       SkyPosKeywords.txt, in py_progs/ alongside it) -- see Notes
         -data_dir DIR  look for CFrame files directly in DIR by basename
                        first (a flat local cache), before falling back to
                        the standard xtop/location tree layout
@@ -50,7 +50,7 @@ Description:
     For each selected exposure, opens its CFrame file (from the drpall
     table's own `location` column, SFrame renamed to CFrame -- same
     convention as SummarizeCframe.py/SummarizeSciSky.py) and reads the
-    PRIMARY header keywords listed in -keywords (default test.txt) --
+    PRIMARY header keywords listed in -keywords (default SkyPosKeywords.txt) --
     NOT spectra, just header values.
 
     Output FITS structure::
@@ -63,7 +63,7 @@ Description:
                    in -keywords.  Each column's FITS TTYPEn comment card
                    is set to that keyword's definition text from
                    -keywords, so the file is self-documenting without
-                   needing test.txt alongside it.
+                   needing SkyPosKeywords.txt alongside it.
         DRP_ALL    the drpall rows for the exposures actually processed
                    (same rows SKY_HDR was built from -- join on expnum
                    if you need columns from both).
@@ -74,7 +74,7 @@ Primary routines:
 
 Notes:
 
-    test.txt (py_progs/test.txt) is a fixed_width_two_line ascii table
+    SkyPosKeywords.txt (py_progs/SkyPosKeywords.txt) is a fixed_width_two_line ascii table
     (keyword, definition) -- read directly with astropy.io.ascii, not
     hardcoded here, so keeping the keyword list current only means
     editing that one file.  A keyword's definition ending in "[deg]" is
@@ -101,7 +101,7 @@ History:
 260713 ksl Coding begun, to diagnose the skye/skyw position-vs-name
     mismatches found by check_sky_positions.py
     (.../lvm_sky2607/duplicates/check_sky_positions.py) from the drpall
-    side -- test.txt's reported/commanded/adopted-position keywords let
+    side -- SkyPosKeywords.txt's reported/commanded/adopted-position keywords let
     that mismatch be traced to a specific stage of DRP processing.
 
 '''
@@ -127,7 +127,7 @@ Options:
   -emin N        minimum exposure time to include (default 900)
   -ver VER       DRP version, used to locate drpall-VER.fits (default 1.2.1)
   -drp_all FILE  explicit drpall table to read instead of drpall-VER.fits
-  -keywords FILE keyword/definition table (default: py_progs/test.txt)
+  -keywords FILE keyword/definition table (default: py_progs/SkyPosKeywords.txt)
   -data_dir DIR  flat local cache to check for CFrame files before the
                  standard xtop/location tree layout
   -out ROOT      output filename root (default:
@@ -225,13 +225,13 @@ def resolve_filename(location, xtop, data_dir=''):
 # Keyword table / per-exposure header reading
 # ──────────────────────────────────────────────────────────────
 
-_DEFAULT_KEYWORD_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'test.txt')
+_DEFAULT_KEYWORD_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'SkyPosKeywords.txt')
 
 
 def load_keyword_defs(keyword_file=_DEFAULT_KEYWORD_FILE):
     '''
     Read a fixed_width_two_line (keyword, definition) table -- default
-    py_progs/test.txt.  Returns a list of (keyword, definition,
+    py_progs/SkyPosKeywords.txt.  Returns a list of (keyword, definition,
     is_numeric) tuples, in file order.  is_numeric is True when the
     definition ends in "[deg]" (the RA/Dec keywords), False otherwise
     (the sky-field-name and astrometry-source-quality keywords).

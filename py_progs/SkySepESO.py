@@ -166,6 +166,11 @@ History:
                 Picks up a real fix as a side effect: the local engine now
                 resolves the historical solar flux (GetSolar.get_flux) instead
                 of SkyModelObs.py's old hardcoded msolflux=101.
+    260711 ksl  _get_sky_model gained an engine='auto' parameter (was
+                hardcoded), so EsoSkyFit.py (a new sky-model-vs-real-sky
+                evaluation tool, not subtraction) can reuse this function
+                with engine='local' -- this module's own two call sites
+                don't pass engine, so behavior here is unchanged.
 
 '''
 
@@ -246,14 +251,23 @@ def _run_captured(func, *args, **kwargs):
     return result, captured.strip()
 
 
-def _get_sky_model(ra, dec, obstime):
+def _get_sky_model(ra, dec, obstime, engine='auto'):
     '''
     Fetch an ESO sky model spectrum for the given coordinates/time.
 
-    Uses EsoSkyObs.run_sky_obs(engine='auto'), which tries the local ESO
-    SM-01 model first and falls back to the SkyCalc web service if that
-    fails.  The per-call FITS file it writes is deleted immediately after
-    being read, so nothing accumulates on disk across a full run.
+    Uses EsoSkyObs.run_sky_obs(engine=engine); with the default
+    engine='auto' this tries the local ESO SM-01 model first and falls
+    back to the SkyCalc web service if that fails.  The per-call FITS
+    file it writes is deleted immediately after being read, so nothing
+    accumulates on disk across a full run.
+
+    engine : 'auto' (default, matches this module's own call sites),
+        'local', or 'remote' -- passed straight through to
+        EsoSkyObs.run_sky_obs.  EsoSkyFit.py (a model-evaluation tool,
+        not subtraction) calls this with engine='local' by default so
+        every row's model comes from the same engine, since mixing local
+        and remote-fallback rows within one evaluation run would
+        contaminate a judgement of model quality.
 
     Returns (model_tab, err_msg).  model_tab is an astropy Table with
     WAVE, MOON, ZODI, DIFFUSE columns, and err_msg is ''.  If both the
@@ -261,7 +275,7 @@ def _get_sky_model(ra, dec, obstime):
     is whatever run_sky_obs printed while trying each engine.
     '''
     outroot, captured = _run_captured(EsoSkyObs.run_sky_obs,
-                                      ra=ra, dec=dec, xtime=obstime, engine='auto')
+                                      ra=ra, dec=dec, xtime=obstime, engine=engine)
 
     if outroot == '':
         err_msg = captured or 'EsoSkyObs.run_sky_obs failed, no message'

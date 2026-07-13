@@ -116,6 +116,16 @@ History:
     former also gains a real fix along the way: its local engine now
     resolves the historical solar flux via resolve_solar_flux() instead of
     SkyModelObs.py's old hardcoded msolflux=101).
+260711 ksl Real incident: a model fetch run with this repo's own root as
+    the working directory (instead of a scratch directory) triggered
+    setup()'s old unconditional safe_remove('data') -> shutil.rmtree(),
+    destroying this repo's real data/ directory (528MB of vendored PALACE
+    reference data, sky_mask.fits, etc.) before symlinking over it.  Fully
+    recovered via git checkout (everything was committed), but that was
+    luck, not safety.  Fixed: safe_remove() no longer ever removes a real
+    (non-symlink) directory, only symlinks; setup() now raises RuntimeError
+    if 'data' already exists as a real directory rather than silently
+    destroying it.
 
 '''
 
@@ -123,7 +133,6 @@ import os
 import sys
 import json
 import time
-import shutil
 import subprocess
 import warnings
 
@@ -155,17 +164,32 @@ FIBER_AREA_ARCSEC2 = np.pi * (37 / 2) ** 2
 
 
 def safe_remove(path):
+    '''
+    Remove a symlink at path, if one exists.  Deliberately does NOT
+    remove a real (non-symlink) directory, even if one is found there --
+    see setup()'s docstring for why.
+    '''
     if os.path.islink(path):
         os.unlink(path)
-    elif os.path.isdir(path):
-        shutil.rmtree(path)
 
 
 def setup(eso_sky_dir='', config=True):
     '''
     Set up the directories (config/, output/, a data/ symlink) that the
     local calcskymodel binary needs in the current working directory.
-    Moved here (260711) from the now-retired SkyModelObs.py, unchanged.
+    Moved here (260711) from the now-retired SkyModelObs.py.
+
+    Refuses to touch 'data' if it already exists as a real directory
+    (raises RuntimeError) rather than deleting it -- this used to call
+    shutil.rmtree() unconditionally on 'data' (via safe_remove), which on
+    260711 destroyed this repo's own real data/ directory (528MB of
+    vendored PALACE reference data, sky_mask.fits, etc.) when a model
+    fetch was accidentally run with the repo root as the working
+    directory instead of a scratch directory -- fully recovered via git
+    checkout since everything was committed, but that was luck, not
+    safety.  'data' should only ever be a symlink this function itself
+    created; a real directory there means setup() is running somewhere
+    it shouldn't.
     '''
     if config == False:
         icheck = True
@@ -177,6 +201,16 @@ def setup(eso_sky_dir='', config=True):
             icheck = False
         if icheck == True:
             return
+
+    if os.path.isdir('data') and not os.path.islink('data'):
+        raise RuntimeError(
+            "setup(): 'data' already exists as a real directory in %s, not "
+            "a symlink -- refusing to remove it. This usually means the "
+            "local ESO Sky Model engine is being run from the wrong working "
+            "directory (it needs a scratch directory of its own, not one "
+            "with real data already in it). cd to a scratch directory, or "
+            "remove/rename this data/ directory yourself if you are certain "
+            "it is not needed." % os.getcwd())
 
     xdir = os.getenv('ESO_SKY_MODEL')
     if eso_sky_dir == '':

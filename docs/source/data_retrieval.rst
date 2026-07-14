@@ -120,6 +120,60 @@ The ``exposures_to_process`` argument uses a flexible format:
 - With ``-cp``, reduced frames are copied to ``./data``
 
 
+Syncing the Local Calibration Cache
+------------------------------------
+
+lvm_cal_sync.py
+^^^^^^^^^^^^^^^
+
+``drp get-calibs`` downloads master calibration frames from Utah into the
+local calibration cache (``$LVM_MASTER_DIR``, typically
+``$LVM_SANDBOX/calib``) but runs in rsync mode without ``--delete``, so a
+local MJD folder that is no longer present remotely (e.g. a
+superseded/retagged calibration epoch) is never cleaned up. This matters
+because the DRP's ``get_master_mjd()`` picks a calibration set purely by
+listing local MJD folders and taking the latest one at or before the
+science MJD -- it never checks whether that MJD is still valid upstream,
+so a stale local folder can silently end up being used for a reduction.
+
+``lvm_cal_sync.py`` compares the local calibration cache against what is
+available remotely (a read-only listing -- nothing is downloaded) and
+writes a reviewable command file containing the ``rm -r`` commands needed
+to remove stale local MJD folders, plus a ``drp get-calibs`` call at the
+end to fetch anything new or updated. It never deletes anything or runs
+``get-calibs`` itself; non-MJD folders under the cache (``pixelmasks``,
+``stellar_models``, etc.) are never touched.
+
+**Usage**::
+
+    lvm_cal_sync.py [-h] [-out FILE]
+
+**Options:**
+
+-h
+    Print help and exit.
+
+-out FILE
+    Name of the generated command file (default:
+    ``SyncCalCommands.<YYMMDD>.txt``).
+
+**Example**::
+
+    lvm_cal_sync.py
+
+    # inspect the generated file, then run it yourself
+    bash SyncCalCommands.260714.txt
+
+**Output:**
+
+- Prints a summary: local vs. remote MJD counts, which local MJDs will be
+  removed (stale, no longer present remotely), and which remote MJDs will
+  be added (new, not yet local).
+- Writes a command file with ``rm -r`` lines for stale local MJDs and a
+  final ``drp get-calibs`` line to resync everything else. Nothing in the
+  file is executed automatically.
+
+
 Locating Processed Data
 -----------------------
 
@@ -208,6 +262,10 @@ Notes
 - Environment variables may need to be set to point to data locations
 - The DRP must be installed locally to use ``Reduce.py``
 - Processing large numbers of exposures can be parallelized with ``-np``
+- ``Reduce.py`` (and the DRP generally) depend on the local calibration
+  cache kept in sync with Utah via ``drp get-calibs``; run
+  ``lvm_cal_sync.py`` periodically to catch and remove calibration MJDs
+  that are stale locally but no longer exist remotely
 
 
 See Also
@@ -217,3 +275,4 @@ See Also
 - :doc:`api/GetFromUtah/index` - API documentation
 - :doc:`api/Reduce/index` - API documentation
 - :doc:`api/LocateData/index` - API documentation
+- :doc:`api/lvm_cal_sync/index` - API documentation

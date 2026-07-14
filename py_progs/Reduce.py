@@ -51,11 +51,7 @@ input spectrum.
 
 '''
 
-import sys
-from astropy.io import ascii,fits
 from astropy.table import Table
-import numpy as np
-import matplotlib.pyplot as plt
 import subprocess
 import timeit
 import time
@@ -65,6 +61,7 @@ import os
 import sky_plot
 import re
 from collections import Counter
+from sdss_access import Access
 
 
 def _usage_from_doc(doc):
@@ -143,88 +140,47 @@ def process_one(mjd,i,clean):
         return  reduction_process.returncode
 
 
-RSYNC_PASSWORD_FILE = os.path.expanduser('~/.sdss_rsync_password')
-
-def get_rsync_password_args():
-    '''Return --password-file argument list, or [] with instructions if file is missing.'''
-    if not os.path.isfile(RSYNC_PASSWORD_FILE):
-        print('Warning: rsync password file not found at ~/.sdss_rsync_password')
-        print('To set up passwordless rsync access to dtn.sdss.org, create it with:')
-        print('  echo "<sdss_rsync_password>" > ~/.sdss_rsync_password')
-        print('  chmod 600 ~/.sdss_rsync_password')
-        print('Proceeding - rsync will prompt for the password interactively.')
-        return []
-    return ['--password-file', RSYNC_PASSWORD_FILE]
-
-
-# Function to run rsync command with ignore-existing and dry-run options
-def run_forced_dry_rsync(mjd,xnumb,verbose=False):
-    # Run rsync command with dry-run and ignore-existing options
-    rsync_process = subprocess.Popen(
-        ["rsync", "-avn", "--no-motd", "--ignore-existing"] + get_rsync_password_args() + [
-         f"rsync://sdss5@dtn.sdss.org/sdsswork/data/lvm/lco/{mjd}/sdR-s-*-{xnumb}.fits.gz",
-         f"{os.environ['SAS_BASE_DIR']}/sdsswork/data/lvm/lco/{mjd}/"],
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        universal_newlines=True
-    )
-
-    # Capture stdout and stderr
-    stdout, stderr = rsync_process.communicate()
-
-    # Check if rsync command was successful
-    if verbose:
-        if rsync_process.returncode == 0:
-            print(f"Files for {xnumb} would be successfully downloaded if forced.")
-        else:
-            print("Rsync forced dry-run failed.")
-
-        # Print stdout and stderr
-        print("Standard Output:")
-        print(stdout)
-        print("Standard Error:")
-        print(stderr)
-
-    return rsync_process.returncode
+# Raw frames come from 3 cameras (b, r, z) x 3 spectrographs (1, 2, 3)
+CAMSPECS = [f'{cam}{spec}' for cam in ('b', 'r', 'z') for spec in (1, 2, 3)]
 
 
 def get_data(mjd,i):
     '''
     qmjd is a string
+
+    Uses sdss_access (HTTPS + .netrc) rather than rsync, since dtn.sdss.org
+    now requires 2FA for rsync access.
     '''
 
     os.environ["LVMAGCAM_DIR"] = os.path.join(os.environ["SAS_BASE_DIR"], "sdsswork/data/agcam/lco/")
-    password_args = get_rsync_password_args()
     mjd='%s' % mjd
     xmjd='%d' % (int(mjd)+1)
     xnumb = format_number(i)
 
-    if run_forced_dry_rsync(mjd,xnumb)==0:
+    a = Access(release='sdsswork')
+
+    # A single representative camspec is enough to tell whether this exposure
+    # was recorded under mjd or rolled over into mjd+1.
+    if a.exists('lvm_raw', remote=True, mjd=mjd, hemi='s', camspec='b1', expnum=i):
         print('All is OK with %s so proceeding' % mjd)
         qmjd=mjd
-    elif run_forced_dry_rsync(xmjd,xnumb)==0:
+    elif a.exists('lvm_raw', remote=True, mjd=xmjd, hemi='s', camspec='b1', expnum=i):
         print('Failed on orginal %s, but succeeded with  %s' % (mjd,xmjd))
         qmjd=xmjd
     else:
         print('Failed with both %s and %s so returning' % (mjd,xmjd))
         return 'Failed'
 
-
-
-    # Get the raw frames
-    raw_frames_process = subprocess.run(["rsync", "-av", "--no-motd"] + password_args + [f"rsync://sdss5@dtn.sdss.org/sdsswork/data/lvm/lco/{qmjd}/sdR-s-*-{xnumb}.fits.gz", f"{os.environ['SAS_BASE_DIR']}/sdsswork/data/lvm/lco/{qmjd}/"])
-    if raw_frames_process.returncode == 0:
-        print(f"Raw frames for {xnumb} successfully downloaded.")
-    else:
-        print(f"Failed to download raw frames for {xnumb}.")
-
-    # Get the coadd with astrometry
-    os.makedirs(f"{os.environ['SAS_BASE_DIR']}/sdsswork/data/agcam/lco/{qmjd}/coadds/", exist_ok=True)
-    coadd_process = subprocess.run(["rsync", "-av", "--no-motd"] + password_args + [f"rsync://sdss5@dtn.sdss.org/sdsswork/data/agcam/lco/{qmjd}/coadds/lvm.sci.coadd_s{xnumb}.fits", f"{os.environ['SAS_BASE_DIR']}/sdsswork/data/agcam/lco/{mjd}/coadds/"])
-    if coadd_process.returncode == 0:
-        print(f"Coadd for {xnumb} successfully downloaded.")
-    else:
-        print(f"Failed to download coadd for {xnumb}.")
+    try:
+        a.remote()
+        for camspec in CAMSPECS:
+            a.add('lvm_raw', mjd=qmjd, hemi='s', camspec=camspec, expnum=i)
+        a.add('lvm_agcam_coadd', mjd=qmjd, tel='sci', specframe=i)
+        a.set_stream()
+        a.commit()
+        print(f"Raw frames and coadd for {xnumb} successfully downloaded.")
+    except Exception as e:
+        print(f"Failed to download raw frames/coadd for {xnumb}: {e}")
 
     return qmjd
 

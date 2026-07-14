@@ -29,11 +29,10 @@ History:
 
 '''
 
-import sys
 from astropy.io import ascii
-import numpy as np
 import os
-import subprocess
+import shutil
+from sdss_access import Access
 
 
 import re
@@ -53,26 +52,16 @@ def _usage_from_doc(doc):
     return doc[:m.start()].rstrip() + '\n' if m else doc
 
 
-RSYNC_PASSWORD_FILE = os.path.expanduser('~/.sdss_rsync_password')
-
-def get_rsync_password_args():
-    '''Return --password-file argument list, or [] with instructions if file is missing.'''
-    if not os.path.isfile(RSYNC_PASSWORD_FILE):
-        print('Warning: rsync password file not found at ~/.sdss_rsync_password')
-        print('To set up passwordless rsync access to dtn.sdss.org, create it with:')
-        print('  echo "<sdss_rsync_password>" > ~/.sdss_rsync_password')
-        print('  chmod 600 ~/.sdss_rsync_password')
-        print('Proceeding - rsync will prompt for the password interactively.')
-        return []
-    return ['--password-file', RSYNC_PASSWORD_FILE]
-
-
 def get_file(xfile,path='data'):
     '''
-    xfile is the name of a spectrum
+    xfile is the exact sdsswork-relative location of a file to retrieve,
+    e.g. /sdsswork/lvm/spectro/redux/1.2.1/0011XX/11111/60288/lvmCFrame-00009083.fits
+
+    Uses sdss_access (HTTPS/rsync + .netrc) rather than a raw rsync
+    subprocess, since dtn.sdss.org now requires 2FA for interactive
+    rsync password auth.
     '''
 
-    password_args = get_rsync_password_args()
     print(xfile)
     if xfile[0]!='/':
         xfile='/%s' % xfile
@@ -80,12 +69,18 @@ def get_file(xfile,path='data'):
     if os.path.isdir(path)==False:
         os.makedirs(path)
 
-    # Get the raw frames
-    raw_frames_process = subprocess.run(["rsync", "-av", "--no-motd"] + password_args + [f"rsync://sdss5@dtn.sdss.org%s" % xfile, "%s/" % path])
-    if raw_frames_process.returncode == 0:
+    local_full = os.path.join(os.environ['SAS_BASE_DIR'], xfile.lstrip('/'))
+
+    a = Access(release='sdsswork')
+    try:
+        a.remote()
+        a.add_file(local_full)
+        a.set_stream()
+        a.commit()
+        shutil.copy(local_full, path)
         print(f"%s successfully downloaded." % xfile)
-    else:
-        print(f"Failed to download %s." %  xfile)
+    except Exception as e:
+        print(f"Failed to download %s: %s" % (xfile, e))
 
 
 def steer(argv):

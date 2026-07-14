@@ -29,11 +29,10 @@ History:
 
 '''
 
-import sys
 from astropy.io import ascii
-import numpy as np
 import os
-import subprocess
+import shutil
+from sdss_access import Access
 
 
 import re
@@ -53,43 +52,42 @@ def _usage_from_doc(doc):
     return doc[:m.start()].rstrip() + '\n' if m else doc
 
 
-DAP_TOP='/sdsswork/lvm/spectro/analysis/'
+DAP_TOP='sdsswork/lvm/spectro/analysis'
 
-RSYNC_PASSWORD_FILE = os.path.expanduser('~/.sdss_rsync_password')
-
-def get_rsync_password_args():
-    '''Return --password-file argument list, or [] with instructions if file is missing.'''
-    if not os.path.isfile(RSYNC_PASSWORD_FILE):
-        print('Warning: rsync password file not found at ~/.sdss_rsync_password')
-        print('To set up passwordless rsync access to dtn.sdss.org, create it with:')
-        print('  echo "<sdss_rsync_password>" > ~/.sdss_rsync_password')
-        print('  chmod 600 ~/.sdss_rsync_password')
-        print('Proceeding - rsync will prompt for the password interactively.')
-        return []
-    return ['--password-file', RSYNC_PASSWORD_FILE]
-
+# DAP output filenames follow this fixed dap-<config>-<expnum>.dap.fits.gz
+# convention (also assumed by DAP2tab.py/DAPGauss2tab.py) rather than being
+# discovered via a directory listing, since sdss_access has no wildcard/glob
+# download and listing a whole exposure's DAP directory is much slower.
+DAP_CONFIG='rsp108-sn20'
 
 def get_dap(drpver, tileid, mjd, expnum):
     '''
-    qmjd is a string
+    Uses sdss_access (HTTPS/rsync + .netrc) rather than a raw rsync
+    subprocess, since dtn.sdss.org now requires 2FA for interactive
+    rsync password auth.
     '''
 
-    password_args = get_rsync_password_args()
     xtile='%07d' % tileid
     xtile='%sXX' % xtile[:4]
     print(xtile)
-    xfile='%s/%s/%s/%s/%d/%08d/*fits.gz' % (DAP_TOP,drpver,xtile,tileid,mjd,expnum)
-    print(xfile)
+    remote_name = 'dap-%s-%08d.dap.fits.gz' % (DAP_CONFIG, expnum)
+    local_full = os.path.join(os.environ['SAS_BASE_DIR'], DAP_TOP, str(drpver), xtile,
+                               str(tileid), str(mjd), '%08d' % expnum, remote_name)
+    print(local_full)
 
     if os.path.isdir('DAP')==False:
         os.makedirs('DAP')
 
-    # Get the raw frames
-    raw_frames_process = subprocess.run(["rsync", "-av", "--no-motd"] + password_args + [f"rsync://sdss5@dtn.sdss.org%s" % xfile, f"./DAP/"])
-    if raw_frames_process.returncode == 0:
-        print(f"%s successfully downloaded." % xfile)
-    else:
-        print(f"Failed to download %s." %  xfile)
+    a = Access(release='sdsswork')
+    try:
+        a.remote()
+        a.add_file(local_full)
+        a.set_stream()
+        a.commit()
+        shutil.copy(local_full, 'DAP/')
+        print(f"%s successfully downloaded." % remote_name)
+    except Exception as e:
+        print(f"Failed to download %s: %s" % (remote_name, e))
 
 
 def steer(argv):

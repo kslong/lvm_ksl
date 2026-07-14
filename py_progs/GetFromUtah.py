@@ -76,16 +76,6 @@ Version History
 import numpy as np
 import matplotlib.pyplot as plt
 
-from lvmdrp.core import rss
-from lvmdrp.core import image
-
-
-from lvmdrp import path, log, __version__ as drpver
-from lvmdrp.core import rss
-import lvmdrp.utils.metadata as md
-
-
-
 from sdss_access  import Access
 
 from lvm_ksl import LocateData 

@@ -46,8 +46,18 @@ History:
 
 240404 ksl Coding begun
 240526 ksl Adapt to new version of the DRP
-240527 ksl Add multiprocessing and allow for a more complicated 
+240527 ksl Add multiprocessing and allow for a more complicated
 input spectrum.
+260714 ksl get_data() rewritten to use sdss_access (Access.add for the
+    9 raw camspec frames + agcam coadd) instead of hand-rolled rsync
+    subprocess calls against ~/.sdss_rsync_password -- dtn.sdss.org now
+    requires 2FA for that rsync auth path, which sdss_access sidesteps
+    via .netrc. Also fixed a latent bug where the agcam coadd was
+    written under the original mjd instead of the resolved qmjd when
+    the exposure rolled over to mjd+1. Dropped unused ascii/fits/np/plt
+    imports. The download half now works in any sdss_access env (e.g.
+    ksl); process_one() still shells out to `drp run`, so the actual
+    reduction step still requires lvmdrp26.
 
 '''
 

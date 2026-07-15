@@ -68,6 +68,14 @@ Version History
 240607 ksl
     Coding begun; adapted from a routine provided by Alfredo
 
+260714 ksl
+    Removed the dead ``from lvmdrp...`` imports (rss, image, path, log,
+    drpver, md) -- never actually used anywhere in this file, just
+    leftover from the routine this was adapted from. This script only
+    ever needed sdss_access and lvm_ksl.LocateData, so it now runs in
+    any env with sdss_access (e.g. ``ksl``) instead of requiring the
+    full ``lvmdrp26`` DRP environment.
+
 """
 #!/usr/bin/env python
 # coding: utf-8

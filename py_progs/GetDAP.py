@@ -26,6 +26,16 @@ Notes:
 History:
 
 250204 ksl Coding begun
+260714 ksl get_dap() rewritten to use sdss_access (Access.add_file)
+    instead of a hand-rolled rsync subprocess call against
+    ~/.sdss_rsync_password -- dtn.sdss.org now requires 2FA for that
+    rsync auth path, which sdss_access sidesteps via .netrc. sdss_access
+    has no wildcard/glob download, so this now fetches the DAP fits.gz
+    by its known dap-<config>-<expnum>.dap.fits.gz name (DAP_CONFIG =
+    'rsp108-sn20', matching the convention already assumed by
+    DAP2tab.py/DAPGauss2tab.py) instead of the old `*fits.gz` glob --
+    confirmed via a real download this is ~5s vs ~4min for listing the
+    whole per-exposure directory. Dropped unused sys/np imports.
 
 '''
 

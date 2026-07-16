@@ -58,6 +58,17 @@ History::
     imports. The download half now works in any sdss_access env (e.g.
     ksl); process_one() still shells out to `drp run`, so the actual
     reduction step still requires lvmdrp26.
+    260716 ksl Added ensure_metadata_store(), called once per distinct MJD
+    at the top of do_many() before any parallel `drp run` processes for
+    that MJD start. Fixes a FileExistsError race in lvmdrp's
+    raw_metadata.hdf5 store: h5py opens that file with mode='a', which
+    is a check-then-act "open, and if not found, create exclusively" --
+    if two `drp run` processes for exposures on the same new MJD hit
+    this at once, both can see "not found" and race to create it, and
+    the loser crashes. Downloading one exposure and running `drp
+    metadata regenerate -m` serially up front creates the store before
+    the parallel processes start, so they only ever open an existing
+    file.
 
 '''
 
@@ -195,6 +206,30 @@ def get_data(mjd,i):
     return qmjd
 
 
+def ensure_metadata_store(mjd,exp):
+    '''
+    Force-create the raw_metadata.hdf5 store for mjd before any parallel
+    `drp run` processes start.
+
+    h5py opens that store with mode='a', which is implemented as "try to
+    open read/write, and if that raises FileNotFoundError, create the file
+    exclusively" -- a check-then-act race. If several `drp run` processes
+    for exposures on the same new MJD hit this at once, all of them can see
+    "not found" and race to create it exclusively, and the losers crash
+    with FileExistsError. Downloading one exposure and running `drp
+    metadata regenerate` here, serially, creates the store up front so the
+    parallel `drp run` calls only ever open an existing file.
+    '''
+    print('Pre-creating metadata store for MJD %s using exposure %s' % (mjd,exp))
+    qmjd=get_data(mjd,exp)
+    if qmjd=='Failed':
+        print('WARNING: could not download exposure %s to prime metadata store for MJD %s' % (exp,mjd))
+        return
+    regen_process=subprocess.run(["drp","metadata","regenerate","-m",str(qmjd)])
+    if regen_process.returncode != 0:
+        print('WARNING: drp metadata regenerate failed for MJD %s' % qmjd)
+
+
 def do_one(mjd,exp,clean=True,xcopy=True):
     '''
     mjd is a string, as is qmjd
@@ -247,8 +282,18 @@ def do_many(xtab,clean=True,xcopy=True,nproc=8):
 
     start_time = timeit.default_timer()
 
+    # Prime the metadata store for each distinct MJD serially, before any
+    # parallel `drp run` processes for that MJD start (see
+    # ensure_metadata_store for why).
+    seen_mjds=set()
+    for one in xtab:
+        mjd=one['MJD']
+        if mjd not in seen_mjds:
+            ensure_metadata_store(mjd,one['ExpNo'])
+            seen_mjds.add(mjd)
+
     jobs=[]
-    for one in xtab:                   
+    for one in xtab:
         if int(one['MJD']) < 60177:
             print('WARNING: THESE DATA ARE UNLIKELY BE CALIBRATABLE WITHOUT SPECIAL EFFORT, AS THEY WERE OBTAINED BEFORE MJD 60177')
 

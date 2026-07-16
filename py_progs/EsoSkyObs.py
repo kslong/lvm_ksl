@@ -84,7 +84,8 @@ Notes:
     own atmospheric-physics constants are hardcoded to Cerro Paranal (see
     PalaceObs.py's Notes -- h=2.64 km, p=744 hPa, not overridable via any
     public PALACE parameter), not adjustable to LCO or any other site.
-    The two engines handle this differently:
+    The two engines handle this differently::
+
       local engine: only SITE_HEIGHT_KM's sm_h (observatory height/
         pressure physics) changes; the real observing geometry (alt/az,
         moon phase/separation) still comes from get_info_las_campanas's
@@ -100,14 +101,14 @@ Notes:
         altitude.  A real difference from what PALACE (and this module's
         own local engine) do, not merely a units/precision detail.
 
-History:
+History::
 
-260710 ksl Coding begun; unifies SkyCalcObs.py and SkyModelObs.py
-260710 ksl Added site='lco'|'paranal' (SITE_HEIGHT_KM/REMOTE_SITE_NAME) to
+    260710 ksl Coding begun; unifies SkyCalcObs.py and SkyModelObs.py
+    260710 ksl Added site='lco'|'paranal' (SITE_HEIGHT_KM/REMOTE_SITE_NAME) to
     let a comparison run approximate PALACE's Paranal-fixed atmosphere
     physics; default behavior (site='lco') unchanged.  Not a full site
     swap for the remote engine -- see Notes.
-260711 ksl Retired SkyModelObs.py and SkyCalcObs.py (nothing else used
+    260711 ksl Retired SkyModelObs.py and SkyCalcObs.py (nothing else used
     SkyCalcObs.py; SkyModelObs.py was still imported by this module for
     get_info_las_campanas/setup, and directly by SkySepESO.py and
     MakeMoonBase.py).  get_info_las_campanas/setup/safe_remove moved here
@@ -116,7 +117,7 @@ History:
     former also gains a real fix along the way: its local engine now
     resolves the historical solar flux via resolve_solar_flux() instead of
     SkyModelObs.py's old hardcoded msolflux=101).
-260711 ksl Real incident: a model fetch run with this repo's own root as
+    260711 ksl Real incident: a model fetch run with this repo's own root as
     the working directory (instead of a scratch directory) triggered
     setup()'s old unconditional safe_remove('data') -> shutil.rmtree(),
     destroying this repo's real data/ directory (528MB of vendored PALACE

@@ -19,6 +19,9 @@ what they actually check rather than listed alphabetically:
 - **Sky telescope pointing** — whether a sky exposure's recorded
   position actually agrees with the sky field name it was labelled with
   (``SummarizeSkyHdr.py``, ``check_sky_positions.py``).
+- **Combined quality report** — a single-exposure HTML report combining
+  header overview, sky subtraction, and flux calibration checks
+  (``Quicklook.py``).
 
 
 Wavelength Calibration
@@ -574,6 +577,69 @@ HalfMatch/Unexplained field counts for the per-name table).
     check_sky_positions.py -postype commanded -tol 1 SummarizeSkyHdr_1.2.1_7325_48860_1.fits
 
 
+Combined Quality Report
+-------------------------
+
+Produces a single self-contained HTML report for one exposure, combining
+a header overview with the sky-subtraction and flux-calibration checks
+above, so that an exposure can be assessed at a glance without running
+several scripts separately.
+
+Quicklook.py — Per-Exposure HTML Quality Report
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Reads an lvmSFrame file and builds an HTML file containing header
+information plus the science/sky spectral comparison, Hα/[SII]/continuum
+images, and (if possible) the flux-calibrated standard-star comparison.
+
+**Command line usage**::
+
+    Quicklook.py [-h] SFrame1 SFrame2 ...
+
+**Options:**
+
+-h
+    Print help and exit.
+
+**Arguments:**
+
+filename
+    One or more lvmSFrame FITS files to analyse. Each produces its own
+    HTML report.
+
+**Output:**
+
+- ``<root>.html`` — the report, written to the current working directory
+  (``<root>`` is the SFrame filename with its directory and ``.fits``
+  extension stripped). Image links in the file are relative, so the
+  report and the ``figs_qual/`` directory below must be kept together.
+- ``figs_qual/`` — subdirectory holding all PNGs referenced by the
+  report (science/sky spectra from ``eval_qual_sframe``, line and
+  continuum images from ``make_images``, and the standard-star
+  comparison from ``eval_standard.qual_eval``).
+
+**Overview section:**
+
+The top of the report lists, from the SFrame's PRIMARY header: exposure
+number, MJD, observation time, object name, DRP version (``DRPVER``) and
+commit hash (``COMMIT``), the science and sky-telescope RA/Dec/PA (with
+angular distance from the science pointing), and the Moon/Sun RA, Dec,
+altitude, and (for the Moon) illumination at Las Campanas. Any of these
+header keywords that are missing falls back to a placeholder (``Unknown``
+for strings, ``-999.0`` for numbers) rather than raising an error, since
+not every keyword is present in every DRP version's headers.
+
+**Notes:**
+
+The standard-star comparison panel requires ``lvmdrp`` (via
+``eval_standard.py``); if it isn't available, the report notes that the
+comparison could not be done and continues without it.
+
+**Example**::
+
+    Quicklook.py data/lvmSFrame-00012345.fits
+
+
 See Also
 --------
 
@@ -585,5 +651,6 @@ See Also
 - :doc:`api/eval_standard/index` - API documentation
 - :doc:`api/SummarizeSkyHdr/index` - API documentation
 - :doc:`api/check_sky_positions/index` - API documentation
+- :doc:`api/QuickLook/index` - API documentation
 - :doc:`summarize` - Tools for cataloging and summarizing exposures
 - :doc:`spectral_fitting` - ``sky_gaussfit.py`` produces the input tables for ``plot_sky_gaussfit.py``

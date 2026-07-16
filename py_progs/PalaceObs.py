@@ -220,7 +220,7 @@ Notes:
     part; SkySepPalace.py imports CONTINUUM_SPECIES from here instead of
     keeping its own separate copy of the HO2/FeO part of that list.
 
-History:
+History::
 
     260709 ksl Coding begun.  First cut: loop the public palace.model()
         over each of PALACE's 9 species plus once for the combined
@@ -495,7 +495,8 @@ def predict(ra, dec, obstime, srf=None, species_list=SPECIES,
     Predict PALACE airglow spectra for an LVM pointing/time, split by
     species.
 
-    Parameters:
+    Parameters::
+
         ra, dec       degrees
         obstime       UTC time, any GetSolar.convert_time format
         srf           solar radio flux in sfu; looked up from
@@ -507,7 +508,8 @@ def predict(ra, dec, obstime, srf=None, species_list=SPECIES,
                       lammin=0.55, resol=4000) passed straight through to
                       every palace.model() call
 
-    Returns:
+    Returns::
+
         species_table  astropy Table with columns lam, flux, dflux,
                        species (species with no contribution in the
                        requested wavelength range are simply omitted)

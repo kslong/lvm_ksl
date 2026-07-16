@@ -76,7 +76,8 @@ at the start and again at the end, since the table itself can be
 hundreds of rows -- easy to lose the first copy off a terminal's visible
 scrollback.
 
-History:
+History::
+
     260712 ksl Coding begun, to check a real name/position mismatch
         found via EsoSkyFit.py testing on WHAM_south_08.
     260713 ksl Fixed a real bug: this script opened the drpall table via
@@ -178,7 +179,7 @@ def nearest_catalog_match(ra, dec, cat_names, cat_ra, cat_dec, tol):
 def _drpall_hdu(hdul):
     '''
     Return the HDU holding the drpall table, whichever file convention
-    this is: the original drpall-*.fits (a single unnamed table at
+    this is: the original ``drpall-*.fits`` (a single unnamed table at
     extension 1) or a SummarizeSkyHdr.py-style file (an explicitly
     named 'DRP_ALL' extension alongside others, e.g. SKY_HDR -- extension
     index alone is not reliable there).
@@ -330,7 +331,7 @@ def check_positions(drpall_file, csv_file, tol=0.1, postype='adopted'):
     check_problems's _swap_mask/half1^half2 logic -- and both sides of
     such a row share that row's classification.
 
-    Returns (result_table, unmatched_names).  result_table columns:
+    Returns (result_table, unmatched_names).  result_table columns::
 
         name                        catalog field name
         n_observed                  times this name was used as a label

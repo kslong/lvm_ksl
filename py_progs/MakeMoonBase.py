@@ -84,7 +84,7 @@ Notes:
     tracking the ROLO albedo's phase dependence for the *overall*
     amplitude).
 
-History:
+History::
 
     260709 ksl Coding begun.
     260711 ksl Migrated from SkyModelObs.do_one (retired) to

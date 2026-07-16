@@ -42,13 +42,13 @@ Primary routines:
 
 Notes:
                                        
-History:
+History::
 
-240404 ksl Coding begun
-240526 ksl Adapt to new version of the DRP
-240527 ksl Add multiprocessing and allow for a more complicated
-input spectrum.
-260714 ksl get_data() rewritten to use sdss_access (Access.add for the
+    240404 ksl Coding begun
+    240526 ksl Adapt to new version of the DRP
+    240527 ksl Add multiprocessing and allow for a more complicated
+    input spectrum.
+    260714 ksl get_data() rewritten to use sdss_access (Access.add for the
     9 raw camspec frames + agcam coadd) instead of hand-rolled rsync
     subprocess calls against ~/.sdss_rsync_password -- dtn.sdss.org now
     requires 2FA for that rsync auth path, which sdss_access sidesteps

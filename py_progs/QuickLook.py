@@ -57,7 +57,7 @@ import xhtml
 from astropy.table import Table
 from matplotlib.gridspec import GridSpec
 from astropy.wcs import WCS
-from astropy.coordinates import get_body, solar_system_ephemeris, get_sun, AltAz, EarthLocation, get_moon
+from astropy.coordinates import get_body, solar_system_ephemeris, AltAz, EarthLocation
 from astropy.time import Time
 import astropy.units as u
 from lvm_ksl import quick_map
@@ -529,7 +529,7 @@ def get_header_string(header, key, default_string='Unknown', verbose=False):
     try:
         value = header[key]
         if value==None:
-            value=default_value
+            value=default_string
         elif isinstance(value, str):
             if value=='':
                 return default_string
@@ -541,7 +541,7 @@ def get_header_string(header, key, default_string='Unknown', verbose=False):
     except KeyError as e:
         if verbose:
             print(f"Key '{key}' not found in header: {e}")
-        value = default_value
+        value = default_string
     return value
 
 
@@ -561,6 +561,8 @@ def create_overview(filename='data/lvmSFrame-00011061.fits'):
     mjd=get_header_value(hdr,'MJD')
     object_name=get_header_string(hdr,'OBJECT')
     obs_time=get_header_string(hdr,'OBSTIME')
+    drp_version=get_header_string(hdr,'DRPVER')
+    drp_commit=get_header_string(hdr,'COMMIT')
     ra=get_header_value(hdr,'TESCIRA')
     dec=get_header_value(hdr,'TESCIDE')
     try:
@@ -594,6 +596,8 @@ def create_overview(filename='data/lvmSFrame-00011061.fits'):
     xlist.append('MJD      : %d' % mjd)
     xlist.append('Obs. time: %s' % obs_time)
     xlist.append('Object.  : %s' % object_name)
+    xlist.append('DRP Version : %s' % drp_version)
+    xlist.append('DRP Commit  : %s' % drp_commit)
     xlist.append('Science RA  Dec. PA : %8.2f %8.2f %8.2f' % (ra,dec,pa))
     xlist.append('SkyE    RA  Dec. PA (ang distance): %8.2f %8.2f %8.2f (%8.2f)' % (ra_sky_e,dec_sky_e,pa_sky_e,distance_sky_e))
     xlist.append('SkyW    RA  Dec. PA (ang distance): %8.2f %8.2f %8.2f (%8.2f)' % (ra_sky_w,dec_sky_w,pa_sky_w,distance_sky_w))

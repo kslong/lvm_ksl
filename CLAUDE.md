@@ -20,6 +20,21 @@ cd docs && make html
 ```
 Builds Sphinx documentation with AutoAPI. Output in `docs/html/`.
 
+**Rule: after editing any docstring or `.rst` file, rebuild the docs and fix any new warnings/errors before considering the change done.**
+
+```bash
+cd docs && rm -rf source/api html doctrees && make html
+```
+(`docs/source/api/` is AutoAPI-generated and gitignored — force a clean rebuild rather than trusting a stale copy on disk, since `autoapi_keep_files` leaves old generated `.rst` around otherwise.) Watch for `ERROR`/`WARNING` lines from `docutils` in the output.
+
+The dominant, recurring cause is multi-line docstring sections (`History:`, `Parameters:`, numbered/columnar lists) where a wrapped continuation line is indented differently from its first line — RST reads that as a malformed nested block ("Unexpected indentation" / "Block quote ends without a blank line"). **The fix is always the same, apply it directly on sight — do not hand-tune indentation or re-derive a fix by trial and error:** change the section header to end in `::` (e.g. `History::` not `History:`) and indent the whole body at least one level deeper than the header. This makes it an RST literal block, which is never reparsed, so internal wrapping/indentation can't break it. RST's tolerance for wrapped/deeper-indented continuation lines under a plain `:` header is inconsistent and context-dependent — near-identical patterns sometimes parse and sometimes don't — so don't trust a passing test on one such section as a reason to leave it as `:`; any multi-line section gets `::`. Applied repo-wide 260707–260716.
+
+Other docstring RST gotchas:
+- A literal `|word|` (e.g. `sqrt(|flux|)`) is parsed as an undefined substitution reference — reword without pipes or wrap in double backticks.
+- A bare word ending in `_` in free prose (e.g. `SkyE_`) is parsed as an implicit hyperlink target — wrap in double backticks.
+- A single unmatched `*` (e.g. `drpall-*.fits`) is parsed as the start of emphasis markup — wrap in double backticks, or put it inside a section already marked `::`.
+- A `Parameters:`/`Returns:` docstring without a colon after each name (relying on column alignment) confuses `sphinx.ext.napoleon`'s Google/NumPy parser — either use `name: description` per line, or mark the whole section `::` like `History`.
+
 ## Architecture
 
 **Script-based design**: 58 independent executable Python programs in `py_progs/`, each handling a specific task with command-line interface. Most scripts accept `-h` for usage help.

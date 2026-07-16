@@ -32,21 +32,21 @@ the best/valid one upstream. A stale local MJD folder can silently become
 the one reductions use, with no warning in the logs.
 
 This script never deletes anything and never runs get-calibs itself. It
-only:
+only::
 
-1. Lists local MJD folders under the calibration cache. Any subfolder
-   whose name is not purely digits (e.g. pixelmasks, stellar_models) is a
-   special non-MJD folder that get-calibs manages separately, and is never
-   treated as a removal candidate here.
-2. Lists remote MJD folders available at Utah for lvm_calib (kind=*,
-   camera=*), via sdss_access -- a read-only listing (Access.set_stream()
-   without .commit()), so nothing is downloaded.
-3. Diffs the two sets and writes the command file, containing:
-   - a `rm -r` command for every local-only (stale) MJD
-   - a comment noting every remote-only (new) MJD, for visibility
-   - a single `drp get-calibs` line at the end to fetch anything new or
-     updated
-4. Prints a summary of what will be removed/added to the screen.
+    1. Lists local MJD folders under the calibration cache. Any subfolder
+       whose name is not purely digits (e.g. pixelmasks, stellar_models) is a
+       special non-MJD folder that get-calibs manages separately, and is
+       never treated as a removal candidate here.
+    2. Lists remote MJD folders available at Utah for lvm_calib (kind=*,
+       camera=*), via sdss_access -- a read-only listing (Access.set_stream()
+       without .commit()), so nothing is downloaded.
+    3. Diffs the two sets and writes the command file, containing:
+       - a `rm -r` command for every local-only (stale) MJD
+       - a comment noting every remote-only (new) MJD, for visibility
+       - a single `drp get-calibs` line at the end to fetch anything new or
+         updated
+    4. Prints a summary of what will be removed/added to the screen.
 
 Nothing in the generated file is executed automatically -- review it,
 then run it yourself, e.g. `bash SyncCalCommands.260714.txt`.

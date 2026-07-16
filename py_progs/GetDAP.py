@@ -23,10 +23,10 @@ Primary routines:
 
 Notes:
                                        
-History:
+History::
 
-250204 ksl Coding begun
-260714 ksl get_dap() rewritten to use sdss_access (Access.add_file)
+    250204 ksl Coding begun
+    260714 ksl get_dap() rewritten to use sdss_access (Access.add_file)
     instead of a hand-rolled rsync subprocess call against
     ~/.sdss_rsync_password -- dtn.sdss.org now requires 2FA for that
     rsync auth path, which sdss_access sidesteps via .netrc. sdss_access

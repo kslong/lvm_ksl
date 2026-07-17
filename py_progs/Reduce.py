@@ -75,6 +75,24 @@ History::
     reduced exposures, forcing the CMD-position fallback (ASRC='CMD
     position') every time regardless of what guider solution Utah actually
     had. Now fetches tel in ('sci', 'skye', 'skyw').
+    260717 ksl Fixed do_many() only joining its last-created
+    multiprocessing.Process instead of all of them: the loop that builds
+    `jobs` leaves `p` referring to the final job, and the old `p.join()`
+    at the end of do_many() waited on just that one. If an earlier job
+    outlived the last one (e.g. it was still downloading/reducing while a
+    later job started and quickly failed), do_many() -- and so
+    Reduce.py's own process -- could return while that earlier job was
+    still running in the background, letting a `source`d sequence of
+    Reduce.py calls race ahead into the next MJD while the previous one
+    was still active. This was observed directly: MJD 60194's exposure
+    4415 was still writing its log at 12:11 while the next DoW28 line's
+    (MJD 60203) logs had already started at 12:18. Now every job in
+    `jobs` is explicitly joined before do_many() returns.
+    260717 ksl process_one() now times the `drp run` subprocess call and
+    reports the elapsed wall-clock seconds alongside the
+    completed/FAILED message, so per-exposure reduction time is visible
+    in the (unredirected) Reduce.py output, not just inferred from xlog
+    file timestamps.
 
 '''
 
@@ -150,11 +168,13 @@ def process_one(mjd,i,clean):
                 xcommand=["drp", "run", "-c","-e", str(i)]
 
             print("Begin processing of ",i,"with command: ",xcommand)
+            start_time = timeit.default_timer()
             reduction_process = subprocess.run(xcommand, stdout=logfile, stderr=subprocess.STDOUT)
+            elapsed = timeit.default_timer() - start_time
         if reduction_process.returncode == 0:
-            print(f"Reduction for {i} completed successfully.")
+            print(f"Reduction for {i} completed successfully in {elapsed:.1f} seconds.")
         else:
-            print(f"FAILED to complete reduction for {i} on {mjd}, check log for errors.")
+            print(f"FAILED to complete reduction for {i} on {mjd} after {elapsed:.1f} seconds, check log for errors.")
 
         print('Type for logfile', type(logfile))
         print('Path ',os.path.isfile(logfile.name))
@@ -331,8 +351,9 @@ def do_many(xtab,clean=True,xcopy=True,nproc=8):
             njobs+=1
             i+=1
 
-    p.join()
-    p.close()
+    for one in jobs:
+        one.join()
+        one.close()
 
     elapsed = timeit.default_timer() - start_time
     print('Completed multiprocessing of  %d exposures  ' % (len(xtab)))

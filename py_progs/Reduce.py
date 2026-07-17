@@ -69,6 +69,12 @@ History::
     metadata regenerate -m` serially up front creates the store before
     the parallel processes start, so they only ever open an existing
     file.
+    260717 ksl get_data() was only ever fetching the Sci telescope's agcam
+    coadd (tel='sci'), never SkyE/SkyW. That meant load_guider_header() in
+    lvmdrp always found "file not found" for the sky telescopes on locally
+    reduced exposures, forcing the CMD-position fallback (ASRC='CMD
+    position') every time regardless of what guider solution Utah actually
+    had. Now fetches tel in ('sci', 'skye', 'skyw').
 
 '''
 
@@ -196,10 +202,11 @@ def get_data(mjd,i):
         a.remote()
         for camspec in CAMSPECS:
             a.add('lvm_raw', mjd=qmjd, hemi='s', camspec=camspec, expnum=i)
-        a.add('lvm_agcam_coadd', mjd=qmjd, tel='sci', specframe=i)
+        for tel in ('sci', 'skye', 'skyw'):
+            a.add('lvm_agcam_coadd', mjd=qmjd, tel=tel, specframe=i)
         a.set_stream()
         a.commit()
-        print(f"Raw frames and coadd for {xnumb} successfully downloaded.")
+        print(f"Raw frames and coadds for {xnumb} successfully downloaded.")
     except Exception as e:
         print(f"Failed to download raw frames/coadd for {xnumb}: {e}")
 

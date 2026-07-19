@@ -10,12 +10,17 @@ Reduce one or more  LVM datasets from one or more MJDs
 
 Command line usage (if any):
 
-    usage: Reduce.py [-h] [-keep] [-cp] [-np N] exposures_to_process
+    usage: Reduce.py [-h] [-keep] [-cp] [-np N] [-get] [-force] exposures_to_process
 
     where -h prints this help message, -keep retains the ancillary files which are otherwise
     deleted (the default is to delete these files to save disk space), -cp causes the routine
     to copy the reduced frames to a directory ./data relative to where the program is being run,
-    and -np N is the number of threads to use to process the data.
+    -np N is the number of threads to use to process the data, -get downloads the raw data
+    from Utah for the requested exposures without running the pipeline on them (useful for
+    pre-staging data ahead of time; -keep/-cp/-np are ignored in this mode), and -force
+    attempts the reduction even when raw spectrograph frames or the science-telescope
+    astrometry (agcam coadd) are missing -- by default such exposures are not reduced, and
+    the reason is written to xlog/log_<exposure>.txt instead.
 
     The exposures_to_process is a string of words interpreted as follows: a word greater than
     50000 is treated as an MJD, a word less than 500 means process this exposure, 500-510 means
@@ -93,6 +98,47 @@ History::
     completed/FAILED message, so per-exposure reduction time is visible
     in the (unredirected) Reduce.py output, not just inferred from xlog
     file timestamps.
+    260719 ksl Added -get, a download-only mode threaded through
+    do_one()/do_many() as get_only: it calls get_data() as usual but
+    returns before process_one() (the `drp run` call), so exposures can
+    be pre-staged from Utah without reducing them. In do_many(), -get
+    also skips ensure_metadata_store()'s serial priming step, since that
+    exists only to protect concurrent `drp run` calls and isn't needed
+    when nothing is being reduced.
+    260719 ksl Fixed get_data() silently downloading nothing when an
+    exposure has no agcam coadd (e.g. a calibration exposure taken
+    without active guiding): it used to queue all 9 raw camspecs and all
+    3 coadds in one sdss_access batch, and a.set_stream() raises before
+    a.commit() ever runs if any single queued file is missing remotely,
+    so one absent coadd aborted the whole batch and blocked every raw
+    camspec too, even though they existed remotely. Raw camspecs and
+    coadds are now fetched as two independent batches. Also added
+    check_local_files(), which verifies -- via sdss_access's own local
+    path templates -- which of the 9 raw camspecs and 3 coadds actually
+    landed on disk, and prints a clear status summary before
+    process_one() runs (or, under -get, before returning). A missing sci
+    coadd is called out explicitly, since it makes lvmdrp's
+    load_guider_header() fall back to the commanded (CMD) position
+    instead of a real astrometric solution for the science telescope.
+    get_data() now returns (qmjd, raw_ok, missing_coadd) instead of
+    either qmjd or the string 'Failed', so callers get an honest
+    raw_ok/missing_coadd status instead of an unconditional success.
+    260719 ksl Added -force. By default, do_one() now refuses to run
+    process_one() (the `drp run` call) if get_data() reports any raw
+    camspec missing or the science-telescope agcam coadd missing --
+    since a missing sci coadd means load_guider_header() would fall back
+    to the commanded (CMD) position instead of a real astrometric
+    solution. Rather than silently skipping, do_one() writes the reason
+    to xlog/log_<exp>.txt via the new write_skip_log(), using "ERROR:"
+    lines so CheckReduced.py's existing scan for ERROR lines across
+    xlog/log*.txt flags it exactly like a failed reduction. -force
+    overrides this block and attempts the reduction anyway. Threaded
+    through do_many() and steer() alongside get_only.
+    260719 ksl Trimmed parse()/steer()'s start-of-run diagnostic prints
+    (the raw words, the parsed MJD/ExpNo lists, and the echoed xtab) down
+    to a single "Beginning retrieval for ..." line, since they cluttered
+    the top of every run without adding information beyond what the
+    user just typed.
 
 '''
 
@@ -190,6 +236,51 @@ def process_one(mjd,i,clean):
 # Raw frames come from 3 cameras (b, r, z) x 3 spectrographs (1, 2, 3)
 CAMSPECS = [f'{cam}{spec}' for cam in ('b', 'r', 'z') for spec in (1, 2, 3)]
 
+# The telescopes with an agcam coadd; 'sci' is the one whose astrometry
+# actually matters for fiber-to-RA/Dec, see check_local_files().
+AGCAM_TELS = ('sci', 'skye', 'skyw')
+
+
+def check_local_files(mjd,i):
+    '''
+    Verify, using sdss_access's own local path templates, that the raw
+    camspec frames and agcam coadds for exposure i on mjd actually landed
+    on disk, and print a clear summary of what is/isn't there.
+
+    Returns raw_ok, missing_raw, missing_coadd:: the 9 raw camspecs are
+    considered essential (raw_ok is False if any are missing), while a
+    missing coadd is reported but does not by itself make raw_ok False.
+    A missing sci coadd is called out explicitly, since
+    load_guider_header() in lvmdrp falls back to the commanded (CMD)
+    position instead of a real guider astrometric solution for the
+    science telescope when that file is absent.
+    '''
+
+    a = Access(release='sdsswork')
+
+    missing_raw = [camspec for camspec in CAMSPECS
+                   if not os.path.isfile(a.full('lvm_raw', mjd=mjd, hemi='s', camspec=camspec, expnum=i))]
+
+    missing_coadd = [tel for tel in AGCAM_TELS
+                      if not os.path.isfile(a.full('lvm_agcam_coadd', mjd=mjd, tel=tel, specframe=i))]
+
+    print('--- Local file check for exposure %s (MJD %s) ---' % (i,mjd))
+    if not missing_raw:
+        print('  Raw camspecs: all %d present' % len(CAMSPECS))
+    else:
+        print('  Raw camspecs: MISSING %d of %d: %s' % (len(missing_raw),len(CAMSPECS),', '.join(missing_raw)))
+
+    if not missing_coadd:
+        print('  Agcam coadds: all present (%s)' % ', '.join(AGCAM_TELS))
+    else:
+        print('  Agcam coadds: MISSING: %s' % ', '.join(missing_coadd))
+        if 'sci' in missing_coadd:
+            print('  WARNING: science-telescope agcam coadd is missing -- fiber astrometry')
+            print('  for this exposure will fall back to the commanded (CMD) position')
+            print('  instead of a real guider solution when it is reduced.')
+
+    return len(missing_raw)==0, missing_raw, missing_coadd
+
 
 def get_data(mjd,i):
     '''
@@ -197,6 +288,24 @@ def get_data(mjd,i):
 
     Uses sdss_access (HTTPS + .netrc) rather than rsync, since dtn.sdss.org
     now requires 2FA for rsync access.
+
+    Raw camspecs and agcam coadds are fetched as two independent
+    sdss_access batches, then checked against what actually landed on
+    disk (see check_local_files()). They used to be queued together in a
+    single a.set_stream()/a.commit() pair -- but a.set_stream() raises
+    before a.commit() ever runs if any one queued file is missing
+    remotely, so one absent coadd (e.g. a calibration exposure with no
+    agcam data) silently aborted the whole batch and prevented every raw
+    camspec from being fetched, even when they existed remotely and would
+    otherwise have downloaded fine.
+
+    Always returns (qmjd, raw_ok, missing_coadd) -- it never hard-fails
+    itself. Even when the exposure can't be found remotely under either
+    mjd or mjd+1, it still falls through to check_local_files() (which
+    will simply report everything missing) so callers have one single,
+    consistent source of truth for whether there is enough data to
+    process this exposure. Deciding whether to actually proceed anyway
+    (-force) is left to the caller, not to get_data().
     '''
 
     os.environ["LVMAGCAM_DIR"] = os.path.join(os.environ["SAS_BASE_DIR"], "sdsswork/data/agcam/lco/")
@@ -211,26 +320,42 @@ def get_data(mjd,i):
     if a.exists('lvm_raw', remote=True, mjd=mjd, hemi='s', camspec='b1', expnum=i):
         print('All is OK with %s so proceeding' % mjd)
         qmjd=mjd
+        found_remotely=True
     elif a.exists('lvm_raw', remote=True, mjd=xmjd, hemi='s', camspec='b1', expnum=i):
         print('Failed on orginal %s, but succeeded with  %s' % (mjd,xmjd))
         qmjd=xmjd
+        found_remotely=True
     else:
-        print('Failed with both %s and %s so returning' % (mjd,xmjd))
-        return 'Failed'
+        print('Failed with both %s and %s -- no raw data found remotely for %s' % (mjd,xmjd,xnumb))
+        qmjd=mjd
+        found_remotely=False
 
-    try:
-        a.remote()
-        for camspec in CAMSPECS:
-            a.add('lvm_raw', mjd=qmjd, hemi='s', camspec=camspec, expnum=i)
-        for tel in ('sci', 'skye', 'skyw'):
-            a.add('lvm_agcam_coadd', mjd=qmjd, tel=tel, specframe=i)
-        a.set_stream()
-        a.commit()
-        print(f"Raw frames and coadds for {xnumb} successfully downloaded.")
-    except Exception as e:
-        print(f"Failed to download raw frames/coadd for {xnumb}: {e}")
+    if found_remotely:
+        try:
+            a_raw = Access(release='sdsswork')
+            a_raw.remote()
+            for camspec in CAMSPECS:
+                a_raw.add('lvm_raw', mjd=qmjd, hemi='s', camspec=camspec, expnum=i)
+            a_raw.set_stream()
+            a_raw.commit()
+            print(f"Raw frames for {xnumb} successfully downloaded.")
+        except Exception as e:
+            print(f"Failed to download raw frames for {xnumb}: {e}")
 
-    return qmjd
+        try:
+            a_coadd = Access(release='sdsswork')
+            a_coadd.remote()
+            for tel in AGCAM_TELS:
+                a_coadd.add('lvm_agcam_coadd', mjd=qmjd, tel=tel, specframe=i)
+            a_coadd.set_stream()
+            a_coadd.commit()
+            print(f"Agcam coadds for {xnumb} successfully downloaded.")
+        except Exception as e:
+            print(f"Failed to download agcam coadds for {xnumb}: {e}")
+
+    raw_ok, missing_raw, missing_coadd = check_local_files(qmjd,i)
+
+    return qmjd, raw_ok, missing_coadd
 
 
 def ensure_metadata_store(mjd,exp):
@@ -248,8 +373,8 @@ def ensure_metadata_store(mjd,exp):
     parallel `drp run` calls only ever open an existing file.
     '''
     print('Pre-creating metadata store for MJD %s using exposure %s' % (mjd,exp))
-    qmjd=get_data(mjd,exp)
-    if qmjd=='Failed':
+    qmjd,raw_ok,missing_coadd=get_data(mjd,exp)
+    if not raw_ok:
         print('WARNING: could not download exposure %s to prime metadata store for MJD %s' % (exp,mjd))
         return
     regen_process=subprocess.run(["drp","metadata","regenerate","-m",str(qmjd)])
@@ -257,24 +382,63 @@ def ensure_metadata_store(mjd,exp):
         print('WARNING: drp metadata regenerate failed for MJD %s' % qmjd)
 
 
-def do_one(mjd,exp,clean=True,xcopy=True):
+def write_skip_log(exp,reason_lines):
+    '''
+    Write xlog/log_<exp>.txt recording why this exposure was not
+    processed, in the same spot process_one() would otherwise have used,
+    so CheckReduced.py's scan of xlog/log*.txt for lines containing
+    "ERROR" flags it just like any other failed reduction.
+    '''
+    if os.path.isdir('./xlog')==False:
+        os.mkdir('./xlog')
+    logname="xlog/log_{}.txt".format(exp)
+    with open(logname,"w") as logfile:
+        for line in reason_lines:
+            logfile.write(line+'\n')
+    print('Reason for not processing %s written to %s' % (exp,logname))
+
+
+def do_one(mjd,exp,clean=True,xcopy=True,get_only=False,force=False):
     '''
     mjd is a string, as is qmjd
+
+    By default, if any raw camspec frame or the science-telescope agcam
+    coadd is missing, the exposure is not reduced -- pass force=True to
+    attempt the reduction anyway.
     '''
 
-    qmjd=get_data(mjd,exp)
-
-    if qmjd=='Failed':
-        return 1
+    qmjd,raw_ok,missing_coadd=get_data(mjd,exp)
 
     if mjd!=qmjd:
         print('Although these data were taken on %s, the are in SMJD %s' % (mjd,qmjd))
         mjd=qmjd
 
+    if get_only:
+        print("Downloaded %s only, as requested (-get); skipping reduction" % str(exp))
+        return 0
+
+    sci_missing = 'sci' in missing_coadd
+    blocked = (not raw_ok) or sci_missing
+
+    if blocked and not force:
+        reason=['ERROR: exposure %s was NOT processed' % str(exp)]
+        if not raw_ok:
+            reason.append('ERROR: one or more raw spectrograph camspec frames are missing for this exposure')
+        if sci_missing:
+            reason.append('ERROR: the science-telescope agcam coadd (astrometry) is missing for this exposure')
+        reason.append('Rerun Reduce.py with -force to attempt reduction anyway.')
+        for line in reason:
+            print(line)
+        write_skip_log(exp,reason)
+        return 1
+
+    if blocked and force:
+        print('WARNING: -force set -- attempting reduction of %s despite the missing data noted above' % str(exp))
+
     process_one(mjd,exp,clean)
 
 
-    
+
     if xcopy:
         print("Running LocateData and copying files on %s" % str(exp))
         locate_data_process = subprocess.run(["LocateData.py", "-cp", str(exp), str(exp)])
@@ -296,9 +460,18 @@ def get_no_jobs(jobs):
             njobs+=1
     return njobs
 
-def do_many(xtab,clean=True,xcopy=True,nproc=8):    
+def do_many(xtab,clean=True,xcopy=True,nproc=8,get_only=False,force=False):
     '''
     A routine to run the lvmdrp in parallel
+
+    If get_only is True, this only downloads the raw data from Utah for
+    each exposure and skips both the metadata-store priming (which exists
+    solely to protect concurrent `drp run` calls) and the reduction itself.
+
+    If force is False (the default), do_one() skips reduction (and writes
+    a reason to xlog/log_<exp>.txt) for any exposure missing raw camspec
+    frames or the science-telescope agcam coadd; force=True attempts the
+    reduction regardless.
     '''
 
 
@@ -309,22 +482,23 @@ def do_many(xtab,clean=True,xcopy=True,nproc=8):
 
     start_time = timeit.default_timer()
 
-    # Prime the metadata store for each distinct MJD serially, before any
-    # parallel `drp run` processes for that MJD start (see
-    # ensure_metadata_store for why).
-    seen_mjds=set()
-    for one in xtab:
-        mjd=one['MJD']
-        if mjd not in seen_mjds:
-            ensure_metadata_store(mjd,one['ExpNo'])
-            seen_mjds.add(mjd)
+    if not get_only:
+        # Prime the metadata store for each distinct MJD serially, before any
+        # parallel `drp run` processes for that MJD start (see
+        # ensure_metadata_store for why).
+        seen_mjds=set()
+        for one in xtab:
+            mjd=one['MJD']
+            if mjd not in seen_mjds:
+                ensure_metadata_store(mjd,one['ExpNo'])
+                seen_mjds.add(mjd)
 
     jobs=[]
     for one in xtab:
-        if int(one['MJD']) < 60177:
+        if not get_only and int(one['MJD']) < 60177:
             print('WARNING: THESE DATA ARE UNLIKELY BE CALIBRATABLE WITHOUT SPECIAL EFFORT, AS THEY WERE OBTAINED BEFORE MJD 60177')
 
-        p=multiprocessing.Process(target=do_one,args=[one['MJD'],one['ExpNo'],clean,xcopy])
+        p=multiprocessing.Process(target=do_one,args=[one['MJD'],one['ExpNo'],clean,xcopy,get_only,force])
         jobs.append(p)
 
     i=0
@@ -399,8 +573,6 @@ def doit(mjd,first_exp,last_exp,clean=True,xcopy=False):
 
 def parse(words):
 
-    print('Parsing ',words)
-
     mjd=[]
     xexp=[]
     mjd_now=0
@@ -437,8 +609,6 @@ def parse(words):
             except:
                 print('Badly formated inputs',words)
                 return []
-    print(mjd)
-    print(xexp)
     xtab=Table([mjd,xexp],names=['MJD','ExpNo'])
     return xtab
     
@@ -457,6 +627,8 @@ def steer(argv):
     xcopy=False
     clean=True
     nproc=1
+    get_only=False
+    force=False
 
     words=[]
 
@@ -468,9 +640,13 @@ def steer(argv):
             i+=1
             nproc=int(argv[i])
         elif argv[i]=='-cp':
-            xcopy=True 
+            xcopy=True
         elif argv[i]=='-keep':
             clean=False
+        elif argv[i]=='-get':
+            get_only=True
+        elif argv[i]=='-force':
+            force=True
         elif argv[i][0]=='-':
             print('Error: Could not parse command line: ', argv)
             return
@@ -478,9 +654,9 @@ def steer(argv):
             words.append(argv[i])
         i+=1
 
-    xtab=parse(words)
+    print('Beginning retrieval for %s' % ' '.join(words))
 
-    print(xtab)
+    xtab=parse(words)
 
     if len(xtab)==0:
         print('Error: Could not parse command line: ', argv)
@@ -491,9 +667,9 @@ def steer(argv):
             os.mkdir('./xlog')
 
         for one in xtab:
-            do_one(one['MJD'],one['ExpNo'],clean)
+            do_one(one['MJD'],one['ExpNo'],clean,get_only=get_only,force=force)
     else:
-        do_many(xtab,clean,xcopy,nproc)
+        do_many(xtab,clean,xcopy,nproc,get_only,force)
 
 if __name__ == "__main__":
     import sys

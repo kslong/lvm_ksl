@@ -88,9 +88,14 @@ the median.
 
 
 
-History:
+History::
 
-241201 ksl Coding begun
+    241201 ksl Coding begun
+    260719 ksl Switched the science telescope pointing header keywords
+        read in xcheck(), get_size(), and prep_tables_square() from the
+        commanded/reported pairs (POSCIRA/POSCIDE/POSCIPA, TESCIRA/
+        TESCIDE) to SCIRA/SCIDEC/SCIPA, the keywords actually populated
+        by current SFrame files.
 
 '''
 
@@ -189,12 +194,12 @@ def xcheck(xfiles):
             mjd.append(-99)
 
         try:
-            ra.append(xhead['POSCIRA'])
+            ra.append(xhead['SCIRA'])
         except:
             ra.append(-37.0)
 
         try:
-            dec.append(xhead['POSCIDE'])
+            dec.append(xhead['SCIDEC'])
         except:
             dec.append(-99.0)
 
@@ -292,7 +297,7 @@ def get_size(xfiles,rad=0.25):
     From SFrame images calculate the center and size of an image
     that would encompass them all.
 
-    Reads the telescope pointing coordinates (TESCIRA, TESCIDE) from
+    Reads the telescope pointing coordinates (SCIRA, SCIDEC) from
     each file's primary header to determine the bounding box.
 
     Parameters:
@@ -306,8 +311,8 @@ def get_size(xfiles,rad=0.25):
     dec=[]
     for one_file in xfiles:
         x=fits.open(one_file)
-        ra.append(x['PRIMARY'].header['TESCIRA'])
-        dec.append(x['PRIMARY'].header['TESCIDE'])
+        ra.append(x['PRIMARY'].header['SCIRA'])
+        dec.append(x['PRIMARY'].header['SCIDEC'])
     xtab=Table([xfiles,ra,dec],names=['Filename','RA','Dec'])
     ra_max=np.max(xtab['RA'])
     ra_min=np.min(xtab['RA'])
@@ -633,23 +638,23 @@ def prep_tables_square(wcs,filenames):
     for one_file in filenames:
         x=fits.open(one_file)
         xhead=x['PRIMARY'].header
-        # print('test',xhead['POSCIRA'])
-        # print('test',xhead['POSCIDE'])
-        # print('test',xhead['POSCIPA'])
+        # print('test',xhead['SCIRA'])
+        # print('test',xhead['SCIDEC'])
+        # print('test',xhead['SCIPA'])
         try:
-            ra.append(xhead['POSCIRA'])
+            ra.append(xhead['SCIRA'])
         except:
             print('no ra for %s' %filename)
             ra.append(0.0)
             ok=False
         try:
-            dec.append(xhead['POSCIDE'])
+            dec.append(xhead['SCIDEC'])
         except:
             print('no dec for %s' % filename)
-            dec.append(0.0)    
+            dec.append(0.0)
             ok=False
         try:
-            pos_ang.append(xhead['POSCIPA'])
+            pos_ang.append(xhead['SCIPA'])
         except:
             print('Position angle missing, assuming 0.0 for %s' % one_file)
             pos_ang.append(0.0)

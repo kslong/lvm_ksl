@@ -81,10 +81,14 @@ Notes:
     ellipse(81.501085,-66.082249,42.35",40.00",110.0) # text={SNR_N49}
 
 
-History:
+History::
 
-250102 ksl Coding begun
-250203 ksl Added separate fib_type parameter to align with rss_combine.py
+    250102 ksl Coding begun
+    250203 ksl Added separate fib_type parameter to align with rss_combine.py
+    260719 ksl No direct header reads here, but the rss_combine.xcheck()/
+        prep_tables_square() calls this routine relies on for file QC
+        now read SCIRA/SCIDEC/SCIPA instead of POSCIRA/POSCIDE/POSCIPA
+        -- see rss_combine.py's History.
 
 '''
 

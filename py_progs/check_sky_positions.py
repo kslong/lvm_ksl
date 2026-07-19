@@ -63,18 +63,25 @@ problem_type::
                  slot across a sequence of pointings, rather than
                  crossed between exactly two.  Worth a look before
                  writing off as unexplained.
-    'Unknown'    neither relationship holds -- no known pattern yet
+    'Mislabeled' neither relationship holds, but at least one bad side's
+                 true position IS a real, different catalog field --
+                 just not the specific sibling-swap pattern above
+    'Unknown'    every bad side's true position matches nothing in the
+                 catalog at all -- no known pattern, and not even a
+                 candidate real field to point to
 
 Output table columns: tileid, mjd, expnum, filename, skye_name,
 skyw_name, east_true, west_true (each side's real nearest-catalog
 position -- the literal string "None" if nothing in the catalog is
 within tol), problem_type.  Sorted by problem_type (Swapped, then
-HalfMatch, then Unknown) then mjd.
+HalfMatch, then Mislabeled, then Unknown) then mjd.
 
-The summary (exposures checked; problem count by type) is printed both
-at the start and again at the end, since the table itself can be
-hundreds of rows -- easy to lose the first copy off a terminal's visible
-scrollback.
+Both tables (per-exposure problem listing, per-name aggregate) are
+printed and written first; a consolidated SUMMARY section (exposure
+counts, an astrometry-source breakdown, and a per-name outcome count,
+each as a small table) always comes last, after both, so it's the last
+thing visible even when a table runs to hundreds of rows and scrolls
+the rest off a terminal.
 
 History::
 
@@ -105,6 +112,26 @@ History::
         real 'GDR coadd' astrometry, ruling that out for those.
     260713 ksl Both the per-exposure problem listing and the per-name
         aggregate are always produced together on every run.
+    260719 ksl Added a per-exposure astrometry-source (skye_asrc/skyw_asrc)
+        breakdown by problem_type, automating the by-hand check described
+        above (requires a SummarizeSkyHdr.py output file; a note is
+        printed in its place for a plain drpall-*.fits). Consolidated it
+        with the exposure-count and per-name summaries into a single
+        SUMMARY section printed once, at the very end of the run, after
+        both tables -- these had been scattered mid-output (the exposure
+        summary before the per-name table, then the astrometry-source
+        breakdown between the two tables) and printed as freeform text;
+        all three are now small astropy Tables, sharing one
+        drpall-file/catalog/postype/tolerance context line above them.
+    260719 ksl Split 'Unknown' into two problem_types: 'Mislabeled' (at
+        least one bad side's true position IS a real, different catalog
+        field -- just not the specific sibling-swap pattern) and a
+        narrower 'Unknown' (every bad side matches nothing in the
+        catalog at all). Exposure-level only (check_problems /
+        problem_type / the per-exposure summary table) -- the per-name
+        aggregate (check_positions) still lumps both into
+        n_unexplained, since that split isn't meaningful per-name the
+        same way.
 '''
 
 import sys
@@ -480,21 +507,29 @@ def check_problems(drpall_file, csv_file, tol=0.1, postype='adopted'):
                      by one slot across a sequence of pointings, rather
                      than crossed between exactly two.  Worth a look
                      before writing off as unexplained.
-        'Unknown'    neither relationship holds -- no known pattern yet
+        'Mislabeled' neither Swap/HalfMatch relationship holds, but at
+                     least one bad side's true position IS a real,
+                     different catalog field -- just not explained by the
+                     specific sibling-swap pattern above.  A row with one
+                     bad side matching some other real field and the
+                     other bad side matching nothing at all still counts
+                     as Mislabeled (the real-field match is the more
+                     informative half).
+        'Unknown'    every bad side's true position matches nothing in
+                     the catalog within tol at all -- no known pattern,
+                     and not even a candidate real field to point to
 
     Returns (problem_table, n_checked).  problem_table columns: tileid,
     mjd, expnum, filename, skye_name, skyw_name, east_true, west_true
     (each side's real nearest-catalog position -- the literal string
-    "None" if nothing in the catalog is within tol; this can only happen
-    when the position doesn't match any known field, since
-    nearest_catalog_match never returns a name unless it's within tol in
-    the first place), problem_type, and -- only when reading a
-    SummarizeSkyHdr.py file that has them -- sci_asrc/skye_asrc/skyw_asrc
-    (the astrometry-quality flags: 'GDR coadd' means a real guider
-    astrometry fit was used; 'CMD position' means it fell back to the
-    commanded position, i.e. no real astrometry at all -- a likely
-    explanation for some HalfMatch/Unknown rows).  Sorted by
-    problem_type (Swapped, then HalfMatch, then Unknown) then mjd.
+    "None" if nothing in the catalog is within tol), problem_type, and --
+    only when reading a SummarizeSkyHdr.py file that has them --
+    sci_asrc/skye_asrc/skyw_asrc (the astrometry-quality flags: 'GDR
+    coadd' means a real guider astrometry fit was used; 'CMD position'
+    means it fell back to the commanded position, i.e. no real astrometry
+    at all -- a likely explanation for some HalfMatch/Mislabeled/Unknown
+    rows).  Sorted by problem_type (Swapped, then HalfMatch, then
+    Mislabeled, then Unknown) then mjd.
     n_checked is the number of rows where both skye_name and skyw_name
     are real (non-blank/non-"None") labels, i.e. the total this was
     checked against.
@@ -502,14 +537,26 @@ def check_problems(drpall_file, csv_file, tol=0.1, postype='adopted'):
     rows, east_true, west_true, skye_name, skyw_name = _load_and_match_rows(
         drpall_file, csv_file, tol, postype=postype)
 
-    bad = (east_true != skye_name) | (west_true != skyw_name)
+    east_bad = (east_true != skye_name)
+    west_bad = (west_true != skyw_name)
+    bad = east_bad | west_bad
 
     half1 = (east_true == skyw_name)   # west's (wrong) label matches east's truth
     half2 = (west_true == skye_name)   # east's (wrong) label matches west's truth
     swap  = half1 & half2 & (skye_name != skyw_name)
     half_match = (half1 ^ half2) & ~swap
 
-    problem_type = np.full(len(skye_name), 'Unknown', dtype='<U9')
+    # Among rows not explained by Swap/HalfMatch: does either bad side's
+    # true match point at some real, different catalog field (rather than
+    # matching nothing at all)? half1/half2 are already false throughout
+    # this domain (see above), so east_true/west_true being non-blank
+    # here can only mean a field other than skye_name/skyw_name/each
+    # other.
+    mislabeled = (bad & ~swap & ~half_match &
+                 ((east_bad & (east_true != '')) | (west_bad & (west_true != ''))))
+
+    problem_type = np.full(len(skye_name), 'Unknown', dtype='<U10')
+    problem_type[mislabeled] = 'Mislabeled'
     problem_type[half_match] = 'HalfMatch'
     problem_type[swap] = 'Swapped'
 
@@ -533,7 +580,7 @@ def check_problems(drpall_file, csv_file, tol=0.1, postype='adopted'):
         if col in rows.colnames:
             problem_table[col] = np.array(rows[col])[bad]
 
-    _type_order = {'Swapped': 0, 'HalfMatch': 1, 'Unknown': 2}
+    _type_order = {'Swapped': 0, 'HalfMatch': 1, 'Mislabeled': 2, 'Unknown': 3}
     problem_table['_order'] = [_type_order[t] for t in problem_table['problem_type']]
     problem_table.sort(['_order', 'mjd'])
     problem_table.remove_column('_order')
@@ -541,11 +588,84 @@ def check_problems(drpall_file, csv_file, tol=0.1, postype='adopted'):
     return problem_table, len(rows)
 
 
-def _print_summary(n_checked, tol, postype, problem_table, n_swapped, n_halfmatch, n_unknown):
-    print('Checked %d exposures with both skye/skyw labeled '
-          '(tolerance %.3f deg, postype=%s)' % (n_checked, tol, postype))
-    print('%d problem exposures: %d Swapped, %d HalfMatch, %d Unknown'
-          % (len(problem_table), n_swapped, n_halfmatch, n_unknown))
+def _print_context(drpall_file, csv_file, postype, tol):
+    '''One-line header stating what's being compared, printed once above
+    the final summary tables so they're never read without knowing which
+    drpall file's recorded sky positions were checked against which
+    catalog.'''
+    print('Comparing %s recorded sky positions (postype=%s) against %s '
+          '(tolerance %.3f deg)' % (drpall_file, postype, csv_file, tol))
+
+
+def _exposure_summary_table(n_checked, problem_table, n_swapped, n_halfmatch,
+                            n_mislabeled, n_unknown):
+    '''One row per problem_type plus totals -- the exposure-count part of
+    the final summary section.'''
+    return Table(rows=[
+        ('Exposures checked', n_checked),
+        ('Swapped',           n_swapped),
+        ('HalfMatch',         n_halfmatch),
+        ('Mislabeled',        n_mislabeled),
+        ('Unknown',           n_unknown),
+        ('Total problems',    len(problem_table)),
+    ], names=['metric', 'count'])
+
+
+def _source_summary_table(rows, problem_table):
+    '''
+    Cross-tabulate astrometry source ('GDR coadd' = real guider fit vs
+    'CMD position' = fell back to the commanded position, no real
+    astrometry) against problem_type, for east (skye) and west (skyw)
+    separately -- the automated version of the by-hand check described in
+    the 260713 History entry ("'CMD position' is a candidate explanation
+    for some HalfMatch/Unknown rows, though Swapped rows turned out to
+    universally use real 'GDR coadd' astrometry").
+
+    rows: the full set of checked exposures (both skye_name/skyw_name
+    real), as returned by _load_and_match_rows -- supplies the 'All
+    checked' row.
+    problem_table: as returned by check_problems.
+
+    Returns a Table with one row per (side, category) -- category is
+    'All checked' or a problem_type -- and one count column per
+    astrometry-source value actually present in the data. Returns None
+    if the astrometry-source columns aren't present at all (i.e. the
+    input was a plain drpall-*.fits rather than a SummarizeSkyHdr.py
+    output file).
+    '''
+    if 'skye_asrc' not in rows.colnames:
+        return None
+
+    categories = sorted(set(np.array(rows['skye_asrc'])) | set(np.array(rows['skyw_asrc'])))
+
+    result_rows = []
+    for side, col in (('east', 'skye_asrc'), ('west', 'skyw_asrc')):
+        groups = [('All checked', rows)]
+        if col in problem_table.colnames:
+            for ptype in ('Swapped', 'HalfMatch', 'Mislabeled', 'Unknown'):
+                groups.append((ptype, problem_table[problem_table['problem_type'] == ptype]))
+        for label, subset in groups:
+            if len(subset) == 0:
+                continue
+            vals = np.array(subset[col])
+            counts = [int((vals == cat).sum()) for cat in categories]
+            result_rows.append((side, label, len(subset)) + tuple(counts))
+
+    return Table(rows=result_rows, names=['side', 'category', 'n'] + categories)
+
+
+def _name_summary_table(observed, n_clean, n_has_swap, n_has_half, n_has_unk):
+    '''One row per outcome type -- the per-name part of the final summary
+    section. Rows can overlap (a field can have more than one kind of
+    mismatch across its observations), so counts need not sum to
+    "Fields observed".'''
+    return Table(rows=[
+        ('Fields observed',      len(observed)),
+        ('Clean',                n_clean),
+        ('Swapped mismatch',     n_has_swap),
+        ('HalfMatch mismatch',   n_has_half),
+        ('Unexplained mismatch', n_has_unk),
+    ], names=['metric', 'count'])
 
 
 def steer(argv):
@@ -593,12 +713,10 @@ def steer(argv):
 
     # --- per-exposure problem listing ---------------------------------
     problem_table, n_checked = check_problems(drpall, csv, tol=tol, postype=postype)
-    n_swapped   = int((problem_table['problem_type'] == 'Swapped').sum())
-    n_halfmatch = int((problem_table['problem_type'] == 'HalfMatch').sum())
-    n_unknown   = int((problem_table['problem_type'] == 'Unknown').sum())
-
-    _print_summary(n_checked, tol, postype, problem_table, n_swapped, n_halfmatch, n_unknown)
-    print()
+    n_swapped    = int((problem_table['problem_type'] == 'Swapped').sum())
+    n_halfmatch  = int((problem_table['problem_type'] == 'HalfMatch').sum())
+    n_mislabeled = int((problem_table['problem_type'] == 'Mislabeled').sum())
+    n_unknown    = int((problem_table['problem_type'] == 'Unknown').sum())
 
     if len(problem_table) > 0:
         print(problem_table)
@@ -606,9 +724,6 @@ def steer(argv):
         print('\nWrote %s' % problem_outfile)
     else:
         print('No problem exposures found; nothing written.')
-
-    print('\n--- Summary ---')
-    _print_summary(n_checked, tol, postype, problem_table, n_swapped, n_halfmatch, n_unknown)
 
     # --- per-name aggregate ---------------------------------------------
     print('\n' + '=' * 70)
@@ -625,18 +740,37 @@ def steer(argv):
         for name in unmatched:
             print('    %s' % name)
 
+    # --- consolidated summary, always last so it survives scrollback ----
     observed    = position_table[position_table['n_observed'] > 0]
     n_clean     = int((observed['n_incorrect'] == 0).sum())
     n_has_swap  = int((observed['n_swapped'] > 0).sum())
     n_has_half  = int((observed['n_halfmatch'] > 0).sum())
     n_has_unk   = int((observed['n_unexplained'] > 0).sum())
 
+    rows_checked, _, _, _, _ = _load_and_match_rows(drpall, csv, tol=tol, postype=postype)
+    source_table = _source_summary_table(rows_checked, problem_table)
+
+    print('\n' + '=' * 70)
+    print('SUMMARY')
+    print('=' * 70)
+    _print_context(drpall, csv, postype, tol)
+
+    print('\n--- Per-exposure summary ---')
+    print(_exposure_summary_table(n_checked, problem_table, n_swapped, n_halfmatch,
+                                  n_mislabeled, n_unknown))
+
+    print('\n--- Per-exposure summary by astrometry source ---')
+    if source_table is None:
+        print('(astrometry-source flags not available -- pass a '
+              'SummarizeSkyHdr.py output file, not a plain drpall-*.fits, '
+              'to see this breakdown)')
+    else:
+        print(source_table)
+
     print('\n--- Per-name summary ---')
-    print('%d fields observed: %d clean, %d with a Swapped mismatch, '
-          '%d with a HalfMatch mismatch, %d with an Unexplained mismatch'
-          % (len(observed), n_clean, n_has_swap, n_has_half, n_has_unk))
-    print('(these can overlap -- a field can have more than one kind '
-          'across its observations)')
+    print('(rows can overlap -- a field can have more than one kind of '
+          'mismatch across its observations)')
+    print(_name_summary_table(observed, n_clean, n_has_swap, n_has_half, n_has_unk))
 
 
 if __name__ == '__main__':

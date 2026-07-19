@@ -5,13 +5,20 @@ A common task is to determine which LVM exposures cover a set of
 objects — for example, a catalog of supernova remnants, HII regions,
 or galaxies — and how much total integration time has been accumulated
 on each one.  The ``find_obs.py`` script does this by cross-matching
-the pointing positions recorded in an LVM drpall file against a
-user-supplied source catalog.
+the pointing positions recorded in an LVM drpall file (or a
+``SummarizeData.py`` observation summary) against a user-supplied
+source catalog.
 
 The drpall file is a FITS table maintained by the LVM Data Reduction
 Pipeline that contains one row per reduced exposure, including the
 telescope pointing position (``sci_ra``, ``sci_dec``), the MJD, the
-exposure time, the tile ID, and the file location on disk.
+exposure time, the tile ID, and the file location on disk.  As an
+alternative, ``find_obs.py`` also accepts the ``ascii.fixed_width_two_line``
+observation summary produced by ``SummarizeData.py`` -- useful when you
+already have a summary on hand and don't want to pull down the full
+drpall FITS file.  The two formats are told apart automatically by
+inspecting the file for the FITS magic keyword, so no extra switch is
+needed.
 
 
 Overview
@@ -29,15 +36,42 @@ The script produces two output files:
 ``<root>.matched.txt``
     One row for every observation-source pair that satisfied the match
     criterion.  Contains all columns from the source catalog and the
-    key drpall columns (exposure number, MJD, exposure time, RA, Dec,
-    tile ID, location), plus the angular separation in arcseconds
-    between the source position and the pointing centre.
+    key observation columns (exposure number, MJD, exposure time, RA,
+    Dec, tile ID, and -- when reading a drpall FITS file -- location),
+    plus the angular separation in arcseconds between the source
+    position and the pointing centre.
 
 ``<root>.sum.txt``
     One row per unique source in the catalog, summarising how many
     exposures matched (``Nobs``), the total accumulated exposure time
     in seconds (``TotExp``), and the median angular separation in
     arcseconds (``MedSep``).
+
+
+Observation File Formats
+-------------------------
+
+``find_obs.py`` accepts the ``drpall_file`` argument in either of two
+formats, distinguished automatically::
+
+    a FITS drpall file
+        The observation table in extension 1, with at least the
+        columns ``expnum``, ``mjd``, ``exptime``, ``sci_ra``,
+        ``sci_dec``, ``tileid``, and ``location``.
+
+    a SummarizeData.py ascii summary
+        An ``ascii.fixed_width_two_line`` table with at least the
+        columns ``expnum``, ``mjd``, ``exptime``, ``RA``, and ``Dec``
+        (``tileid`` is used if present).  Its own ``Source_name``
+        column, if any, is ignored in favor of a zero-padded exposure
+        number, matching the FITS-loader convention -- so grouping in
+        the output is consistent regardless of which input format was
+        used.
+
+Either way, rows with an unphysical Dec (outside -90 to +90 degrees,
+e.g. the ``-99.0``/``-999.0`` sentinels used for exposures without
+astrometry) are dropped before the cross-match, since they can't be
+passed to ``SkyCoord``.
 
 
 Source Catalog Format
@@ -73,7 +107,8 @@ Command line usage::
 **Positional arguments:**
 
 drpall_file
-    LVM drpall FITS file.
+    LVM drpall FITS file, or a ``SummarizeData.py`` ascii observation
+    summary (see `Observation File Formats`_ above).
 
 source_catalog
     ASCII source catalog with ``RA``, ``Dec``, and ``Source_name``
@@ -145,10 +180,12 @@ Understanding the Output
 The matched file contains all the information needed to identify and
 retrieve individual exposures.  The ``expnum`` column gives the LVM
 exposure number, which can be passed directly to ``LocateReduced.py``
-or ``GetFromUtah.py``.  The ``location`` column gives the path to the
-reduced file in the standard LVM data tree.  The ``separation`` column
-records how far the pointing centre was from the source position, which
-can be used to filter matches by proximity.
+or ``GetFromUtah.py``.  When the input was a FITS drpall file, a
+``location`` column also gives the path to the reduced file in the
+standard LVM data tree (this column is absent when the input was a
+``SummarizeData.py`` ascii summary, which doesn't carry it).  The
+``separation`` column records how far the pointing centre was from the
+source position, which can be used to filter matches by proximity.
 
 The summary file gives a quick overview of coverage.  Sources with
 ``Nobs = 0`` do not appear (they had no matches at all).  A source
@@ -168,7 +205,9 @@ same pointing.  Similarly, a single source can be matched by many
 overlapping exposures, including dithered or repeated visits.
 
 The drpall file must be obtained separately.  Current drpall files are
-available from the SDSS-V data archive at Utah.
+available from the SDSS-V data archive at Utah.  Alternatively, run
+``SummarizeData.py`` first and pass its output table in place of the
+drpall file.
 
 
 See Also

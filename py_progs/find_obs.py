@@ -14,8 +14,13 @@ Command line usage::
 
     find_obs.py [-root outroot] [-max sep_arcsec] drpall_file source_catalog
 
-The ``drpall_file`` argument is the LVM drpall FITS file containing one
-row per exposure with pointing coordinates, exposure times, and tile IDs.
+The ``drpall_file`` argument is either an LVM drpall FITS file
+containing one row per exposure with pointing coordinates, exposure
+times, and tile IDs, or an observation summary produced by
+``SummarizeData.py`` (an ``ascii.fixed_width_two_line`` table with
+``expnum``, ``mjd``, ``exptime``, ``RA``, and ``Dec`` columns).  The
+two formats are distinguished automatically by inspecting the file for
+the FITS magic keyword.
 
 The ``source_catalog`` argument is an ASCII table with at least three
 columns: ``RA`` (degrees), ``Dec`` (degrees), and ``Source_name``.
@@ -31,11 +36,13 @@ to the radius of one LVM pointing.
 
 Description:
 
-The routine reads the drpall FITS file and extracts the columns needed
-for the cross-match: exposure number, MJD, exposure time, pointing RA
-and Dec (``sci_ra``, ``sci_dec``), tile ID, and location.  It then reads
-the source catalog, which must contain ``RA``, ``Dec``, and
-``Source_name`` columns.
+The routine reads the drpall FITS file (or ``SummarizeData.py`` summary
+file) and extracts the columns needed for the cross-match: exposure
+number, MJD, exposure time, pointing RA and Dec, and tile ID (plus
+location, for the FITS format).  Rows with unphysical Dec values (e.g.
+the ``-99.0``/``-999.0`` sentinels used for exposures without
+astrometry) are dropped.  It then reads the source catalog, which must
+contain ``RA``, ``Dec``, and ``Source_name`` columns.
 
 A spherical cross-match is performed using astropy SkyCoord, returning
 all observation-source pairs within the specified match radius.  Each
@@ -69,9 +76,17 @@ Notes:
 The source catalog must be readable by ``astropy.io.ascii.read`` and
 must contain columns named ``RA``, ``Dec``, and ``Source_name``.
 
-The drpall file must be a FITS file with the observation table in
-extension 1 and at least the columns ``expnum``, ``mjd``, ``exptime``,
-``sci_ra``, ``sci_dec``, ``tileid``, and ``location``.
+The ``drpall_file`` argument may be either:
+
+- a FITS file with the observation table in extension 1 and at least
+  the columns ``expnum``, ``mjd``, ``exptime``, ``sci_ra``,
+  ``sci_dec``, ``tileid``, and ``location``; or
+- an ``ascii.fixed_width_two_line`` observation summary, such as those
+  produced by ``SummarizeData.py``, with at least the columns
+  ``expnum``, ``mjd``, ``exptime``, ``RA``, and ``Dec``.  Its
+  ``Source_name`` column, if present, is ignored -- a zero-padded
+  exposure number is used instead, matching the FITS-loader
+  convention.
 
 The routine will refuse to overwrite existing output files.  Use a
 different ``-root`` name if you want to rerun with different parameters.
@@ -82,9 +97,11 @@ can therefore appear multiple times if several sources lie within the
 match radius of the same pointing.
 
 
-History:
+History::
 
-260312 ksl  Coding begun
+    260312 ksl  Coding begun
+    260718 ksl  Added support for SummarizeData.py ascii observation
+        summaries as an alternative to the drpall FITS file
 
 '''
 
@@ -114,7 +131,21 @@ def _usage_from_doc(doc):
     return doc[:m.start()].rstrip() + '\n' if m else doc
 
 
-def load_observations(drpall_file):
+def _looks_like_fits(path):
+    '''
+    Return True if the file at ``path`` begins with the FITS magic
+    keyword ``SIMPLE``, used to distinguish a drpall FITS file from an
+    ascii ``SummarizeData.py`` summary without relying on the file
+    extension.
+    '''
+    try:
+        with open(path, 'rb') as fobj:
+            return fobj.read(6) == b'SIMPLE'
+    except OSError:
+        return False
+
+
+def _load_observations_fits(drpall_file):
     '''
     Read an LVM drpall FITS file and return a table of observations.
 
@@ -141,6 +172,82 @@ def load_observations(drpall_file):
     obs.rename_column('sci_ra', 'RA')
     obs.rename_column('sci_dec', 'Dec')
     obs['Source_name'] = ['%05d' % row['expnum'] for row in obs]
+
+    return obs
+
+
+def _load_observations_ascii(drpall_file):
+    '''
+    Read a ``SummarizeData.py`` observation summary and return a table
+    of observations.
+
+    Reads the ``ascii.fixed_width_two_line`` file and selects the
+    columns needed for position cross-matching: exposure number, MJD,
+    exposure time, RA, Dec, and tile ID (if present).  RA and Dec are
+    already present under those names in this format, so no renaming
+    is needed.  A ``Source_name`` column is (re)built from the
+    zero-padded exposure number, matching the FITS-loader convention,
+    rather than trusting the file's own ``Source_name`` column, whose
+    zero-padded digit strings ``ascii.read`` would otherwise silently
+    parse as integers (dropping the leading zeros).
+
+    Parameters:
+        drpall_file (str): Path to the observation summary file.
+
+    Returns:
+        astropy.table.Table: Table with columns expnum, mjd, exptime,
+        RA, Dec, Source_name, and tileid (if present in the input).
+    '''
+    print('Reading observation summary file: %s' % drpall_file)
+    xtab = ascii.read(drpall_file, format='fixed_width_two_line')
+
+    required = ('expnum', 'mjd', 'exptime', 'RA', 'Dec')
+    missing = [col for col in required if col not in xtab.colnames]
+    if missing:
+        raise ValueError('Observation summary file %s is missing required '
+                          'column(s): %s' % (drpall_file, ', '.join(missing)))
+
+    cols = ['expnum', 'mjd', 'exptime', 'RA', 'Dec']
+    if 'tileid' in xtab.colnames:
+        cols.append('tileid')
+
+    obs = xtab[cols]
+    obs['Source_name'] = ['%05d' % row['expnum'] for row in obs]
+
+    return obs
+
+
+def load_observations(drpall_file):
+    '''
+    Read an LVM observation table and return it in the form needed for
+    cross-matching.
+
+    Accepts either an LVM drpall FITS file or an
+    ``ascii.fixed_width_two_line`` observation summary produced by
+    ``SummarizeData.py``, distinguishing the two by inspecting the file
+    for the FITS magic keyword.  Rows with an unphysical Dec (outside
+    -90 to +90 degrees, e.g. the ``-99.0``/``-999.0`` sentinels used for
+    exposures without astrometry) are dropped, since they cannot be
+    passed to ``SkyCoord``.
+
+    Parameters:
+        drpall_file (str): Path to the LVM drpall FITS file or
+            ``SummarizeData.py`` observation summary.
+
+    Returns:
+        astropy.table.Table: Table with columns expnum, mjd, exptime,
+        RA, Dec, tileid (if available), and Source_name.
+    '''
+    if _looks_like_fits(drpall_file):
+        obs = _load_observations_fits(drpall_file)
+    else:
+        obs = _load_observations_ascii(drpall_file)
+
+    good = (obs['Dec'] >= -90.0) & (obs['Dec'] <= 90.0)
+    n_bad = len(obs) - int(np.sum(good))
+    if n_bad > 0:
+        print('  Dropping %d observation(s) with invalid/missing coordinates' % n_bad)
+        obs = obs[good]
 
     print('  Loaded %d observations' % len(obs))
     return obs

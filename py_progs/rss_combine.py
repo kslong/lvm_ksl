@@ -96,6 +96,29 @@ History::
         commanded/reported pairs (POSCIRA/POSCIDE/POSCIPA, TESCIRA/
         TESCIDE) to SCIRA/SCIDEC/SCIPA, the keywords actually populated
         by current SFrame files.
+    260719 ksl Added a pre-flight disk-space check (estimate_temp_bytes/
+        check_disk_space) to do_combine, prompted by a 50-file run on a
+        large mosaic that filled 255 GB of xtmp/ and crashed with a
+        low-level astropy OSError after hours of processing. Runs as
+        early as possible -- right after the output grid is sized, before
+        the (potentially slow) apportionment step -- and estimates the
+        combined size of every per-file xtmp/ temp file (one
+        full-output-grid-sized array per input file; that part of the
+        underlying algorithm is unchanged) plus the final output FITS
+        file itself, which coexists with xtmp/ on disk until cleanup
+        runs. Uses a 20% margin (validated against two real full-scale
+        runs post-fix: 264 GB estimated vs 255 GB actually used on the
+        original crash, and the -med run below tracked similarly).
+        Aborts with a clear message before writing anything if it won't
+        fit, and states whether xtmp/ will be deleted or kept
+        (keep_tmp) once the run finishes. This is a pre-flight check
+        only -- it doesn't reduce how much disk space a run actually
+        needs, just predicts it up front instead of finding out after
+        hours of processing.
+    260719 ksl Confirmed both -ave and -med write the same xtmp/ temp
+        files (c_type only changes how they're combined on read-back,
+        via process_remapped_images' nanmean vs nanmedian), so the
+        disk-space check applies identically to both.
 
 '''
 
@@ -976,7 +999,95 @@ def remap_one(filename, q, final_slitmap, shape):
     x.writeto('xtmp/%s' % xfilename,overwrite=True)
     x.close()
 
-    return 
+    return
+
+
+def estimate_temp_bytes(n_files, n_rows, n_wave=12401, n_arrays=4, bytes_per_val=4,
+                        mask_bytes_per_val=8):
+    '''
+    Estimate total peak disk usage (bytes) for a do_combine/do_fixed
+    run: the n_files temp files remap_one writes into xtmp/, PLUS the
+    one final output FITS file -- both exist on disk at the same time,
+    since xtmp/ isn't cleaned up until after the output file is
+    written.
+
+    Each xtmp/ temp file holds n_arrays float arrays (FLUX/IVAR/LSF/
+    EXPOSURE by default) of shape (n_rows, n_wave) -- the full output
+    fiber grid, once per input file. The final output file has the
+    same n_arrays float arrays (one copy, not one per input file) plus
+    a MASK array of the same shape but stored as int64 rather than
+    float32 (8 bytes/value vs 4). Header/SLITMAP/WAVE overhead is
+    ignored throughout since it's negligible next to the flux-array
+    sizes.
+
+    Parameters:
+        n_files (int): Number of input files that will be remapped
+            (one xtmp/ temp file each).
+        n_rows (int): Number of output fibers (rows) per file -- i.e.
+            shape[0] in do_combine/do_fixed.
+
+    Returns:
+        int: Estimated total bytes (xtmp/ temp files + final output file).
+    '''
+    xtmp_bytes = n_files * n_rows * n_wave * bytes_per_val * n_arrays
+    output_bytes = n_rows * n_wave * (n_arrays * bytes_per_val + mask_bytes_per_val)
+    return xtmp_bytes + output_bytes
+
+
+def check_disk_space(required_bytes, target_dir='xtmp', margin=1.20, keep_tmp=False):
+    '''
+    Compare required_bytes (with a safety margin) against free space on
+    the filesystem holding target_dir, print a clear summary either
+    way, and return True if there's enough room, False if not.
+
+    Meant to be called before writing any temp files, so a run that
+    can't possibly fit aborts immediately with a clear message instead
+    of crashing with an opaque low-level OSError after hours of
+    processing (see History 260719, prompted by a run that filled
+    255 GB of xtmp/ and crashed that way).
+
+    Parameters:
+        required_bytes (int): Estimated bytes needed (e.g. from
+            estimate_temp_bytes), before the safety margin.
+        target_dir (str): Directory the temp files will be written
+            into. Doesn't need to exist yet -- its parent is checked
+            instead in that case, since that's the filesystem it will
+            be created on.
+        margin (float): Safety-margin multiplier applied to
+            required_bytes. Default 1.20 (20% headroom) -- bumped up
+            from an initial 1.15 after a real comparison against the
+            255 GB crash (see History 260719): estimate_temp_bytes
+            doesn't count each file's fixed per-file extension overhead
+            (MASK/SKY/SKY_IVAR/FLUXCAL_*, copied verbatim from the
+            input file regardless of the run's size), which showed up
+            as a consistent few-percent undercount in testing.
+        keep_tmp (bool): The caller's own keep_tmp setting -- reported
+            in the printed message only, so it's clear up front whether
+            target_dir will be deleted once the run finishes.
+
+    Returns:
+        bool: True if there's enough free space, False otherwise.
+    '''
+    check_path = target_dir if os.path.isdir(target_dir) else (os.path.dirname(os.path.abspath(target_dir)) or '.')
+    free = shutil.disk_usage(check_path).free
+    needed = required_bytes * margin
+
+    print('\nTemp disk space check (%s):' % target_dir)
+    print('  Estimated requirement: %.1f GB (includes a %.0f%% safety margin; '
+          'covers xtmp/ temp files plus the final output file)' % (needed/1e9, (margin-1)*100))
+    print('  Free on that filesystem: %.1f GB' % (free/1e9))
+    print('  %s will be %s once this run finishes' %
+          (target_dir, 'KEPT (keep_tmp=True)' if keep_tmp else 'automatically DELETED (keep_tmp=False)'))
+
+    if free < needed:
+        print('  ERROR: not enough free disk space -- aborting before writing any '
+              'temporary files. Free up space, point xtmp/ at a larger filesystem, '
+              'or combine fewer files at a time.')
+        return False
+
+    print('  OK')
+    return True
+
 
 def process_remapped_images(file_list, extension='FLUX', xproc='med', memory_limit=1_000_000_000):
     """
@@ -1068,10 +1179,13 @@ def do_combine(filenames, outroot='', fib_type='xy', c_type='ave', keep_tmp=Fals
 
     The basic steps are: (1) create a WCS for the output fibers,
     (2) calculate the positions of output and input fibers on this WCS,
-    (3) calculate how much of each input fiber should be apportioned to
-    the output fibers, (4) create intermediate images with apportioned fluxes,
-    (5) average or median filter the flux results, (6) calculate new IVAR
-    and MASK extensions, and (7) write everything to an output FITS file.
+    (3) check that there's enough free disk space for the xtmp/ temp
+    files this run will write (see estimate_temp_bytes/check_disk_space),
+    aborting early if not, (4) calculate how much of each input fiber
+    should be apportioned to the output fibers, (5) create intermediate
+    images with apportioned fluxes, (6) average or median filter the
+    flux results, (7) calculate new IVAR and MASK extensions, and
+    (8) write everything to an output FITS file.
 
     Parameters
     ----------
@@ -1132,6 +1246,17 @@ def do_combine(filenames, outroot='', fib_type='xy', c_type='ave', keep_tmp=Fals
 
     # new_slitmap represents the beginning of the final SLITMAP table
 
+    shape=[len(new_slitmap_table),12401]
+
+    # remap_one later writes one full-shape temp file per input file --
+    # check there's room for all of them before doing any of the
+    # (potentially slow) apportionment work below, so a run that can't
+    # possibly fit fails immediately instead of after several minutes
+    # of "Apportioning fractional contributions..." (see History 260719)
+    required = estimate_temp_bytes(len(filenames), shape[0])
+    if not check_disk_space(required, target_dir='xtmp', keep_tmp=keep_tmp):
+        return
+
     # Now create a list of tables that contains the positions of all of the fibers in the WCS that was created
 
     slit=prep_tables_square(wcs, filenames)
@@ -1170,8 +1295,7 @@ def do_combine(filenames, outroot='', fib_type='xy', c_type='ave', keep_tmp=Fals
     data = np.random.rand(6, 6)
     image_hdu = fits.ImageHDU(data=data, header=xheader, name="WCS_INFO")
     final.append(image_hdu)
-    
-    shape=[len(new_slitmap_table),12401]
+
     xzero_array = np.zeros(shape, dtype=np.float32)
 
     final['FLUX'].data=xzero_array.copy()

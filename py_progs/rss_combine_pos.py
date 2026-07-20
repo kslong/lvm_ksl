@@ -89,6 +89,16 @@ History::
         prep_tables_square() calls this routine relies on for file QC
         now read SCIRA/SCIDEC/SCIPA instead of POSCIRA/POSCIDE/POSCIPA
         -- see rss_combine.py's History.
+    260719 ksl do_fixed has the same write-all-temp-files-then-read-
+        them-back pattern as rss_combine.do_combine, so it got the same
+        pre-flight disk-space check (rss_combine.estimate_temp_bytes/
+        check_disk_space): run as early as possible (right after the
+        output grid is sized, before the region-cropping/apportionment
+        work), estimating xtmp/'s temp files plus the final output
+        file, with a 20% margin, and stating whether xtmp/ will be
+        deleted or kept (keep_tmp) once the run finishes. See
+        rss_combine.py's History for the full rationale and the
+        prompting crash.
 
 '''
 
@@ -152,6 +162,11 @@ def do_fixed(filenames, ra, dec, pa, size, fib_type='xy', c_type='ave', outroot=
     * Filters input fibers to only those within the specified region
     * Always uses a regular grid (no 'orig' option)
 
+    Like rss_combine.do_combine, it checks free disk space against the
+    estimated xtmp/ + output-file requirement before doing any of the
+    (potentially slow) apportionment work, aborting early if it won't
+    fit -- see rss_combine.estimate_temp_bytes/check_disk_space.
+
     The fib_type and c_type parameters work the same as in rss_combine.py,
     where fib_type controls apportionment method and c_type controls
     combination method.
@@ -200,6 +215,19 @@ def do_fixed(filenames, ra, dec, pa, size, fib_type='xy', c_type='ave', outroot=
         print(qtab)
         gtab=xtab[xtab['Good']=='Yes']
         filenames=gtab['Filename']
+
+    shape=[len(new_slitmap_table),12401]
+
+    # rss_combine.remap_one later writes one full-shape temp file per
+    # input file -- check there's room for all of them before doing any
+    # of the (potentially slow) apportionment work below, so a run that
+    # can't possibly fit fails immediately instead of after several
+    # minutes of "Apportioning fractional contributions..." (see
+    # rss_combine.py's History 260719)
+    required = rss_combine.estimate_temp_bytes(len(filenames), shape[0])
+    if not rss_combine.check_disk_space(required, target_dir='xtmp', keep_tmp=keep_tmp):
+        return
+
     slit=rss_combine.prep_tables_square(wcs, filenames)
     # print(slit)
     # this list has many more fibers than we want
@@ -244,7 +272,6 @@ def do_fixed(filenames, ra, dec, pa, size, fib_type='xy', c_type='ave', outroot=
     image_hdu = fits.ImageHDU(data=data, header=xheader, name="WCS_INFO")
     final.append(image_hdu)
 
-    shape=[len(new_slitmap_table),12401]
     xzero_array = np.zeros(shape, dtype=np.float32)
 
     final['FLUX'].data=xzero_array.copy()

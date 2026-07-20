@@ -20,7 +20,7 @@ cd docs && make html
 ```
 Builds Sphinx documentation with AutoAPI. Output in `docs/html/`.
 
-**Rule: after editing any docstring or `.rst` file, rebuild the docs and fix any new warnings/errors before considering the change done.**
+**Rule: rebuild the docs and finalize History entries at commit time, not after every iterative edit.** During a work session, docstrings/History may go through several drafts as the approach changes — don't rebuild docs or polish History after each one; that's wasted effort if the design isn't settled yet. Once the change is actually ready to commit: rebuild the docs and fix any new warnings/errors, and consolidate History into a clean final entry (or entries) that reflects what was actually built, not a blow-by-blow of intermediate attempts.
 
 ```bash
 cd docs && rm -rf source/api html doctrees && make html

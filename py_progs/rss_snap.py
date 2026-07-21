@@ -13,7 +13,7 @@ containing the exposures asscoated with each object.
 
 Command line usage::
 
-    rss_snap.py [-h] [-keep] [-redo] [-all] [-med] [-size arcmin] xfile source_name
+    rss_snap.py [-h] [-keep] [-redo] [-all] [-med] [-size arcmin] [-lmc] [-smc] [-vel vel] xfile source_name
 
 Arguments: xfile is a version of an expanded master file containing
 the source names and associated exposures (one row per exposure to be
@@ -38,6 +38,16 @@ Options:
 -med
     Use median for combining remapped images. By default, mean is used.
 
+-lmc
+    Applies the LMC radial velocity (~262 km/s) when fitting nebular lines.
+
+-smc
+    Applies the SMC radial velocity (~146 km/s) when fitting nebular lines.
+
+-vel vel
+    Applies an arbitrary radial velocity (km/s) when fitting nebular lines.
+    The default is 0.
+
 Description:
 
 Primary routines:
@@ -56,7 +66,6 @@ import os
 import sys
 from lvm_ksl import rss_combine_pos
 from lvm_ksl import lvm_gaussfit
-from lvm_ksl.get_vel import get_vel
 
 
 from astropy.io import ascii, fits
@@ -367,7 +376,7 @@ smc=146
 galaxy=0
 
 
-def one_snapshot(xsum,source_name,size_arcmin=10.,keep_tmp=False,redo=True,c_type='ave'):
+def one_snapshot(xsum,source_name,size_arcmin=10.,keep_tmp=False,redo=True,c_type='ave',vel=0.):
 
     print('OK sports fans: ', redo)
     root_fit='Snap/%s.%s'  % (source_name,c_type)
@@ -397,7 +406,6 @@ def one_snapshot(xsum,source_name,size_arcmin=10.,keep_tmp=False,redo=True,c_typ
 
     os.makedirs('./Snap_gauss',exist_ok=True)
     root_spec='./Snap_gauss/%s' % source_name
-    vel=get_vel(ra,dec)
 
     results=lvm_gaussfit.do_all('%s.fits' % root_fit, vel=vel,outname=root_spec,xplot=False)
 
@@ -413,7 +421,7 @@ def one_snapshot(xsum,source_name,size_arcmin=10.,keep_tmp=False,redo=True,c_typ
 
 def steer(argv):
     '''
-    Usage: rss_snap.py [-h] [-keep] [-redo] [-all] [-med] [-size arcmin] xfile source_name
+    Usage: rss_snap.py [-h] [-keep] [-redo] [-all] [-med] [-size arcmin] [-lmc] [-smc] [-vel vel] xfile source_name
     '''
 
     sources=[]
@@ -423,6 +431,7 @@ def steer(argv):
     xall=False
     redo=False
     c_type='ave'
+    vel=0.
 
     i=1
     while i<len(argv):
@@ -440,6 +449,13 @@ def steer(argv):
         elif argv[i]=='-size':
             i+=1
             size=eval(argv[i])
+        elif argv[i]=='-lmc':
+            vel=lmc
+        elif argv[i]=='-smc':
+            vel=smc
+        elif argv[i]=='-vel':
+            i+=1
+            vel=eval(argv[i])
         elif argv[i][0]=='-':
             print('Error: Could not parse command line',argv)
             return
@@ -461,7 +477,7 @@ def steer(argv):
         print('!! Beginning: %s: %d of %d sources to process' % (source_name,i+1,len(sources)))
         print('What ', redo)
 
-        one_snapshot(xfile,source_name,size_arcmin=size,keep_tmp=keep_tmp,redo=redo,c_type=c_type)
+        one_snapshot(xfile,source_name,size_arcmin=size,keep_tmp=keep_tmp,redo=redo,c_type=c_type,vel=vel)
 
         print('!! Finished : %s: %d of %d sources to process' % (source_name,i+1,len(sources)))
 

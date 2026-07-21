@@ -84,10 +84,12 @@ For each source, ``rss_snap.py`` performs the following steps:
    - Combines multiple exposures using mean (default) or median (-med)
    - Writes the combined RSS FITS file
 
-3. **Velocity Determination**
+3. **Velocity Selection**
 
-   Looks up the expected radial velocity at the source position using
-   a velocity model (based on position in LMC, SMC, or Galaxy).
+   Applies a radial velocity offset (km/s) used to shift the expected
+   emission line wavelengths before fitting. This is not looked up
+   automatically; the user supplies it via ``-lmc``, ``-smc``, or
+   ``-vel`` (default: 0, no shift). See Options below.
 
 4. **Emission Line Fitting**
 
@@ -137,7 +139,7 @@ Command Line Usage
 
 Basic syntax::
 
-    rss_snap.py [-h] [-keep] [-redo] [-all] [-med] [-size arcmin] xfile source_name
+    rss_snap.py [-h] [-keep] [-redo] [-all] [-med] [-size arcmin] [-lmc] [-smc] [-vel vel] xfile source_name
 
 **Arguments:**
 
@@ -170,6 +172,18 @@ source_name
 -size arcmin
     Size of the output region in arcminutes (default: 10).
 
+-lmc
+    Apply the LMC radial velocity (~262 km/s) when fitting emission
+    lines.
+
+-smc
+    Apply the SMC radial velocity (~146 km/s) when fitting emission
+    lines.
+
+-vel vel
+    Apply an arbitrary radial velocity (km/s) when fitting emission
+    lines. The default is 0 (no shift).
+
 
 Examples
 --------
@@ -193,6 +207,10 @@ Reprocess all sources using median combination::
 Process with a larger extraction region (15 arcmin)::
 
     rss_snap.py -all -size 15 lmc_snr.out
+
+Process a catalog of LMC sources with the LMC velocity applied::
+
+    rss_snap.py -all -lmc lmc_snr.out
 
 
 Notes

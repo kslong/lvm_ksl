@@ -14,6 +14,10 @@ including spectral fitting with the DAP or custom analysis tools. Both of
 these scripts can be used combine exposures of a single dithered tile, or
 alternatively of an extended region that extends over multiple tiles.
 
+Once you have a combined RSS file, a common next step is to collapse it
+into a 2D FITS image for a quick look -- see `Viewing the Combined Output`_
+below, which uses ``rss2image.py``.
+
 
 Why Combine RSS Files?
 ----------------------
@@ -125,6 +129,35 @@ filenames
     rss_combine_pos.py -med -size 15 -out N49B 81.342 -65.996 lvmSFrame-*.fits
 
 
+Viewing the Combined Output
+----------------------------
+
+The FITS files produced by ``rss_combine.py`` and ``rss_combine_pos.py``
+are row-stacked spectra, not images, so they cannot be displayed directly
+in a tool like DS9. ``rss2image.py`` collapses the FLUX extension (or any
+other extension of the same shape) over a wavelength range and projects
+the fiber positions onto a regular pixel grid, producing a standard 2D
+FITS image with WCS.
+
+**Command line usage**::
+
+    rss2image.py [-no_back] [-band filter] [-ext IVAR] filename(s)
+
+**Example**::
+
+    # Combine a tile, then make a quick H-alpha image of the result
+    rss_combine.py -orig -med -outroot tile12345 lvmSFrame-*12345*.fits
+    rss2image.py -band ha tile12345.med.fits
+
+    # View the image (output is named FLUX_<input_root>_<band>.fits)
+    ds9 FLUX_tile12345.med_ha.fits
+
+This is often the fastest way to sanity-check a combination before moving
+on to spectral fitting. See :doc:`visualization` for the full set of
+options (predefined and custom wavelength bands, extension selection,
+background subtraction).
+
+
 How Flux Apportionment Works
 ----------------------------
 
@@ -224,5 +257,7 @@ See Also
 --------
 
 - :doc:`snapshots` - Batch processing of source catalogs with fitting
+- :doc:`visualization` - rss2image.py and other imaging/mapping tools
 - :doc:`api/rss_combine/index` - API documentation for rss_combine
 - :doc:`api/rss_combine_pos/index` - API documentation for rss_combine_pos
+- :doc:`api/rss2image/index` - API documentation for rss2image

@@ -17,7 +17,7 @@ exposures for a single tile into one RSS image with
 
 Command line usage::
 
-    rss_combine.py [-orig] [-sum] [-med] [-keep] [-outroot xxxx] filenames
+    rss_combine.py [-orig] [-sum] [-med] [-keep] [-no_helio] [-outroot xxxx] filenames
 
 The ``-outroot xxxx`` option sets the name for the output file.
 
@@ -37,6 +37,10 @@ how flux is apportioned (that is controlled by -orig and -sum).
 The ``-keep`` option keeps the temporary xtmp/ directory containing
 intermediate remapped files. By default, this directory is deleted
 after processing.
+
+The ``-no_helio`` option disables the heliocentric whole-pixel wavelength
+shift (see compute_helio_shifts) that is otherwise applied by default to
+each input file, based on its WAVE HELIORV_SCI header value.
 
 
 Description:
@@ -119,6 +123,39 @@ History::
         files (c_type only changes how they're combined on read-back,
         via process_remapped_images' nanmean vs nanmedian), so the
         disk-space check applies identically to both.
+    260721 ksl Added an optional heliocentric whole-pixel wavelength
+        shift, applied per input exposure before apportionment, to
+        correct for the fact that WAVE HELIORV_SCI (each exposure's
+        heliocentric velocity correction) varies from file to file
+        while the underlying WAVE grid does not -- combining exposures
+        taken months apart without this correction smears spectral
+        lines by up to a few pixels. The grid is linear at 0.5 A/pixel,
+        so a single whole-pixel shift can only be exact at one
+        wavelength; compute_helio_shifts() converts each file's
+        HELIORV_SCI to a pixel shift referenced to Halpha (6563 A) and
+        picks the sub-pixel reference phase that minimizes the total
+        rounding error across all files being combined. do_combine()
+        computes these shifts once (keyed by filename, since files may
+        be dropped/reordered by the quality-check step) and passes them
+        into remap_one(), which now applies the shift (np.roll on
+        FLUX/IVAR/LSF/MASK, masking the vacated edge column(s)) before
+        the per-fiber apportionment loop. Diagnostics are both printed
+        (per-file HELIORV_SCI/shift/residual) and written into the
+        output primary header: HELIOCOR/HELIOLAM/HELIOREF/HELIONSH plus
+        a HIERARCH HELIO FILE/RV/SHIFT triplet per input file, alongside
+        a HISTORY note that the inherited WAVE HELIORV_SCI (copied from
+        input file 1) is not representative of the combined output. On
+        by default; -no_helio disables it (HELIOCOR=False, no other
+        HELIO* keywords written). Verified against real SFrame data
+        (W28 dataset) and confirmed by the user to improve the fitted
+        Ha line FWHM (via lvm_gaussfit) relative to no correction.
+    260721 ksl Fixed a pre-existing bug in xcheck() where the 'RA' and
+        'HeleoV' output columns were swapped (the data list and the
+        names list were built in different orders), so xtab['HeleoV']
+        actually contained RA and vice versa. Found because it broke
+        the new heliocentric-shift feature above, which reads
+        xtab['HeleoV']. CheckData.py has a similarly-named xcheck() but
+        was checked and does not have this bug.
 
 '''
 
@@ -256,7 +293,7 @@ def xcheck(xfiles):
 
 
 
-    xtab=Table([xfiles,mjd,drp,commit,fluxcal,unit,helio,ra,dec,tile,exptime,obj,good],names=['Filename','MJD','DRP','Commit','FluxCal','BUNIT','RA','HeleoV','Dec','Tile_ID','EXPTIME','Source_name','Good'])
+    xtab=Table([xfiles,mjd,drp,commit,fluxcal,unit,helio,ra,dec,tile,exptime,obj,good],names=['Filename','MJD','DRP','Commit','FluxCal','BUNIT','HeleoV','RA','Dec','Tile_ID','EXPTIME','Source_name','Good'])
     xtab.sort((['Filename']))
 
 
@@ -281,6 +318,67 @@ def xcheck(xfiles):
 
     # print(xtab)
     return xtab
+
+
+def compute_helio_shifts(helio_velocities, lam_ref=6563.0, dlambda=0.5, missing_value=-99.0):
+    '''
+    Convert per-file heliocentric velocity corrections (WAVE HELIORV_SCI)
+    into whole-pixel wavelength shifts, choosing the reference phase that
+    minimizes the total rounding error across all files.
+
+    The WAVE grid is linear at dlambda A/pixel, so the velocity-to-pixel
+    conversion factor depends on lam_ref; a single whole-pixel shift can
+    only be exact at that one wavelength (see project discussion -- this
+    is an approximation, not a full heliocentric resampling). For each
+    file the continuous shift raw_shift = v/(c*dlambda/lam_ref) is
+    computed, then a reference phase o (in [-0.5, 0.5) pixel units) is
+    found by brute-force search that minimizes
+    sum((raw_shift - o - round(raw_shift - o))**2) across all files with
+    a valid velocity -- this is the phase that makes the collective set
+    of required shifts land as close to whole pixels as possible.
+
+    Parameters:
+        helio_velocities (array-like): Per-file WAVE HELIORV_SCI values [km/s].
+        lam_ref (float): Reference wavelength for the velocity<->pixel conversion [Angstrom]. Default 6563.0 (Halpha).
+        dlambda (float): Wavelength grid spacing [Angstrom]. Default 0.5.
+        missing_value (float): Sentinel used upstream (xcheck) for a missing HELIORV_SCI; such files get shift=0.
+
+    Returns:
+        tuple: (shift_int, o_best, v_per_pix, raw_shift) -- shift_int is the
+            integer pixel shift per file, o_best is the chosen reference
+            phase, v_per_pix is the km/s-per-pixel conversion factor used,
+            and raw_shift is the continuous (unrounded) pixel shift per file.
+    '''
+    c = 2.99792458e5
+    v_per_pix = c * dlambda / lam_ref
+    helio = np.asarray(helio_velocities, dtype=float)
+    raw_shift = helio / v_per_pix
+    valid = helio != missing_value
+
+    shift_int = np.zeros(len(helio), dtype=int)
+    o_best = 0.0
+
+    if np.sum(valid) == 0:
+        print('Warning: compute_helio_shifts: no valid HELIORV_SCI values found; no shift applied')
+        return shift_int, o_best, v_per_pix, raw_shift
+
+    offsets = np.linspace(-0.5, 0.5, 2001)
+    best_err = None
+    for o in offsets:
+        resid = raw_shift[valid] - o - np.round(raw_shift[valid] - o)
+        err = np.sum(resid**2)
+        if best_err is None or err < best_err:
+            best_err = err
+            o_best = o
+
+    shift_int[valid] = np.round(raw_shift[valid] - o_best).astype(int)
+
+    n_missing = int(np.sum(~valid))
+    if n_missing > 0:
+        print('Warning: compute_helio_shifts: %d file(s) missing HELIORV_SCI, shift set to 0' % n_missing)
+
+    return shift_int, o_best, v_per_pix, raw_shift
+
 
 def check_array_info(arr):
     '''
@@ -905,7 +1003,7 @@ def check_for_nan(flux, max_frac=0.5):
     else:
         return False
 
-def remap_one(filename, q, final_slitmap, shape):
+def remap_one(filename, q, final_slitmap, shape, wave_shift=0):
     '''
     Remap flux from one input file to the output fiber grid.
 
@@ -918,6 +1016,10 @@ def remap_one(filename, q, final_slitmap, shape):
         q (astropy.table.Table): Table containing the fractional mapping with fiberid, fib_master, and frac columns.
         final_slitmap (astropy.table.Table): The output fiber position table.
         shape (tuple): Shape of the output arrays (n_fibers, n_wavelengths).
+        wave_shift (int): Whole-pixel heliocentric wavelength shift to apply to this
+            exposure's FLUX/IVAR/LSF/MASK arrays before apportionment (see
+            compute_helio_shifts). Applied uniformly to every fiber, since
+            WAVE HELIORV_SCI is a single value per exposure. Default 0 (no shift).
 
     Returns:
         None: Writes remapped data to xtmp directory.
@@ -932,7 +1034,7 @@ def remap_one(filename, q, final_slitmap, shape):
 
     if os.path.isdir('xtmp')==False:
         os.makedirs('xtmp')
-    
+
     VERY_BIG = 1e50
     VERY_SMALL = 1e-50
 
@@ -940,6 +1042,18 @@ def remap_one(filename, q, final_slitmap, shape):
 
     print('\nStart    %s' % (filename))
     x=fits.open(filename)
+
+    if wave_shift != 0:
+        for ext in ['FLUX', 'IVAR', 'LSF']:
+            x[ext].data = np.roll(x[ext].data, wave_shift, axis=1)
+        mask_shifted = np.roll(x['MASK'].data, wave_shift, axis=1)
+        if wave_shift > 0:
+            mask_shifted[:, :wave_shift] = 1
+        else:
+            mask_shifted[:, wave_shift:] = 1
+        x['MASK'].data = mask_shifted
+        print('Applied heliocentric pixel shift of %+d to %s' % (wave_shift, filename))
+
     print('Flux  %10.3e %10.3e %10.e %10.3e'  % (np.nanmedian(x['FLUX'].data),np.nanstd(x['FLUX'].data),np.nanmin(x['FLUX'].data),np.nanmax(x['FLUX'].data)))
     zmax=np.nanmax(x['IVAR'].data)
     print('Ivar  %10.3e %10.3e %10.e %10.3e'  % (np.nanmedian(x['IVAR'].data),zmax*np.nanstd(x['IVAR'].data/zmax),np.nanmin(x['IVAR'].data),np.nanmax(x['IVAR'].data)))
@@ -1173,7 +1287,7 @@ def process_remapped_images(file_list, extension='FLUX', xproc='med', memory_lim
     return xximage
 
 
-def do_combine(filenames, outroot='', fib_type='xy', c_type='ave', keep_tmp=False):
+def do_combine(filenames, outroot='', fib_type='xy', c_type='ave', keep_tmp=False, helio_shift=True):
     '''
     Main routine that carries out the entire RSS combining process.
 
@@ -1206,6 +1320,11 @@ def do_combine(filenames, outroot='', fib_type='xy', c_type='ave', keep_tmp=Fals
     keep_tmp : bool
         If True, keep the temporary xtmp/ directory containing intermediate
         remapped files. Default is False (deletes temp files).
+    helio_shift : bool
+        If True (default), apply the heliocentric whole-pixel wavelength
+        shift computed from each file's WAVE HELIORV_SCI header value (see
+        compute_helio_shifts). If False, no shift is applied and the
+        HELIO* header keywords are omitted except HELIOCOR=False.
 
     Returns
     -------
@@ -1223,6 +1342,29 @@ def do_combine(filenames, outroot='', fib_type='xy', c_type='ave', keep_tmp=Fals
         for one in xbad:
             print('Eliminated %s' % one['Filename'])
         filenames=xgood['Filename']
+
+    # Compute per-file heliocentric whole-pixel shifts from WAVE HELIORV_SCI,
+    # referenced to Halpha (see compute_helio_shifts). shift_map/helio_map are
+    # keyed by filename (not position) since xgood may be filtered/reordered
+    # relative to the caller's original filenames list.
+    if helio_shift:
+        lam_ref_helio = 6563.0
+        shift_int, o_best, v_per_pix, raw_shift = compute_helio_shifts(xgood['HeleoV'], lam_ref=lam_ref_helio)
+        helio_ref_vel = o_best * v_per_pix
+        shift_map = dict(zip(xgood['Filename'], shift_int))
+        helio_map = dict(zip(xgood['Filename'], xgood['HeleoV']))
+
+        n_shifted = int(np.sum(shift_int != 0))
+        print('\nHeliocentric pixel-shift diagnostics (reference wavelength %.1f A, %.3f km/s/pixel):' % (lam_ref_helio, v_per_pix))
+        print('Effective heliocentric velocity of output grid (HELIOREF): %.3f km/s' % helio_ref_vel)
+        print('%d of %d files require a nonzero shift' % (n_shifted, len(shift_int)))
+        for fname, hv, raw, sh in zip(xgood['Filename'], xgood['HeleoV'], raw_shift, shift_int):
+            print('  %-40s HELIORV_SCI=%8.3f  shift=%+d pixels  residual=%+.3f pixels' %
+                  (fname.split('/')[-1], hv, sh, raw-o_best-sh))
+    else:
+        print('\nHeliocentric pixel shift disabled (-no_helio)')
+        shift_map={}
+        helio_map=dict(zip(xgood['Filename'], xgood['HeleoV']))
 
 
     print('\nCombining images using %s for fluxes' %  (c_type))
@@ -1324,7 +1466,7 @@ def do_combine(filenames, outroot='', fib_type='xy', c_type='ave', keep_tmp=Fals
         q=zslit[i]
         for one_row in q:
             new_slitmap_table['EXPOSURE'][one_row['fib_master']-1]+=one_row['frac']
-        remap_one(filenames[i],q,new_slitmap_table,shape)
+        remap_one(filenames[i],q,new_slitmap_table,shape,wave_shift=shift_map.get(filenames[i],0))
         print('Finished remapping %s\n' % (filenames[i]),flush=True)
         i+=1
 
@@ -1404,6 +1546,20 @@ def do_combine(filenames, outroot='', fib_type='xy', c_type='ave', keep_tmp=Fals
     final['PRIMARY'].header['COMBTYPE'] = (c_type, 'Combination method (ave/med)')
     final['PRIMARY'].header['NFILES'] = (len(filenames), 'Number of input files combined')
 
+    final['PRIMARY'].header['HELIOCOR'] = (helio_shift, 'Heliocentric whole-pixel shift correction applied')
+    if helio_shift:
+        final['PRIMARY'].header['HELIOLAM'] = (lam_ref_helio, 'Reference wavelength for shift calc [Angstrom]')
+        final['PRIMARY'].header['HELIOREF'] = (helio_ref_vel, 'Effective heliocentric velocity of output grid [km/s]')
+        final['PRIMARY'].header['HELIONSH'] = (n_shifted, 'Number of input files shifted by nonzero amount')
+        final['PRIMARY'].header['HISTORY'] = ('WAVE HELIORV_SCI above is inherited from input file 1 and is '
+                                               'NOT representative of the combined output; use HELIOREF instead.')
+        for idx, fname in enumerate(filenames):
+            n = idx + 1
+            base = fname.split('/')[-1]
+            final['PRIMARY'].header['HIERARCH HELIO FILE%03d' % n] = (base, 'input file %d' % n)
+            final['PRIMARY'].header['HIERARCH HELIO RV%03d' % n] = (float(helio_map[fname]), 'HELIORV_SCI for file %d [km/s]' % n)
+            final['PRIMARY'].header['HIERARCH HELIO SHIFT%03d' % n] = (int(shift_map[fname]), 'pixel shift applied to file %d' % n)
+
     print ('\n Final Stats for output image : %s.fits' % outroot)
     print('Combined  FLUX  %10.3e %10.3e %10.e %10.3e'  % (np.nanmedian(final['FLUX'].data),np.nanstd(final['FLUX'].data),np.nanmin(final['FLUX'].data),np.nanmax(final['FLUX'].data)))
     zmax=np.nanmax(final['IVAR'].data)
@@ -1439,6 +1595,7 @@ def steer(argv):
     fib_type='xy'
     c_type='ave'
     keep_tmp=False
+    helio_shift=True
     i=1
     while i<len(argv):
         if argv[i][0:2]=='-h':
@@ -1455,6 +1612,8 @@ def steer(argv):
             c_type='med'
         elif argv[i]=='-keep':
             keep_tmp=True
+        elif argv[i]=='-no_helio':
+            helio_shift=False
         elif argv[i][0]=='-':
             print('Could not parse command line:',argv)
             return
@@ -1486,7 +1645,7 @@ def steer(argv):
             print(one_file)
         print('\n')
 
-    do_combine(files,outroot,fib_type,c_type,keep_tmp)   
+    do_combine(files,outroot,fib_type,c_type,keep_tmp,helio_shift)
     
 
 

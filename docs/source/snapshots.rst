@@ -236,3 +236,4 @@ See Also
 - :doc:`api/rss_combine_pos/index` - Lower-level RSS combination for fixed positions
 - :doc:`api/rss_combine/index` - General RSS combination utilities
 - :doc:`api/lvm_gaussfit/index` - Emission line fitting
+- :doc:`plotting_outputs` - ``radec_plot.py``, which the diagnostic maps in ``fig1()`` now use

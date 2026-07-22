@@ -301,8 +301,9 @@ plot_sky_gaussfit.py — Sky Subtraction Residual Maps
 
 Visualises fiber-by-fiber sky Gaussian fit results produced by
 ``sky_gaussfit.py`` as spatial scatter maps (fiber RA vs Dec coloured by
-the residual), one page per fitted quantity.  Three PNG files are written
-per input file:
+the residual), one page per fitted quantity, via
+:doc:`plotting_outputs`'s ``radec_plot.plot_scatter()``.  Three PNG files
+are written per input file:
 
 - ``<root>_wave.png`` — centroid wavelength residuals (Å)
 - ``<root>_flux.png`` — flux residuals (fractional)
@@ -325,7 +326,9 @@ deviation.
     Ignored when multiple files are provided (each uses its own stem).
 
 -s size
-    Scatter marker size in points² (default 30).
+    Scatter marker size in points² (default: auto -- sized from the
+    fiber spacing and the axes' rendered size; see
+    :doc:`plotting_outputs`).
 
 **Arguments:**
 
@@ -654,3 +657,4 @@ See Also
 - :doc:`api/QuickLook/index` - API documentation
 - :doc:`summarize` - Tools for cataloging and summarizing exposures
 - :doc:`spectral_fitting` - ``sky_gaussfit.py`` produces the input tables for ``plot_sky_gaussfit.py``
+- :doc:`plotting_outputs` - ``radec_plot.py``, which ``plot_sky_gaussfit.py`` now uses for its spatial rendering

@@ -27,7 +27,8 @@ Command line usage::
     -out root    Root name for output PNG files when a single input file is
                  given.  Ignored when multiple files are supplied (each file
                  uses its own stem as the root).
-    -s size      Scatter marker size in points^2 (default 30).
+    -s size      Scatter marker size in points^2 (default: auto,
+                 sized from fiber spacing -- see radec_plot.py).
     filename     One or more ASCII tables written by sky_gaussfit.py.
                  Each file is plotted independently; no stacking is done.
 
@@ -59,6 +60,7 @@ matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 from astropy.table import Table, vstack
 from astropy.io import ascii
+from lvm_ksl import radec_plot
 
 
 import re
@@ -128,10 +130,13 @@ VRANGE_LABEL = {
 }
 
 
-def plot_panel(ax, xtable, var, quantity, marker_size=30, line_wave=None):
+def plot_panel(ax, xtable, var, quantity, marker_size=None, line_wave=None):
     '''
-    Draw one scatter panel for xtable[var] on ax.
-    Subtracts the median, applies fixed color limits, and returns
+    Draw one scatter panel for xtable[var] on ax, via
+    radec_plot.plot_scatter() -- gets cos(dec) correction, RA-axis
+    inversion, equal aspect, and (if marker_size is None) data-density-
+    aware marker sizing from there.  The median-subtraction, MAD-std,
+    and quantity-specific color range stay local to this file.  Returns
     (median_val, mad_std) or (None, None).
 
     For quantity='fwhm', pass line_wave (A) to convert FWHM from Angstroms
@@ -172,16 +177,16 @@ def plot_panel(ax, xtable, var, quantity, marker_size=30, line_wave=None):
             vmin = np.percentile(finite, 5)
             vmax = np.percentile(finite, 95)
 
-    sc = ax.scatter(xtable['ra'], xtable['dec'], c=col, cmap='viridis',
-                    vmin=vmin, vmax=vmax, s=marker_size, linewidths=0, alpha=1)
-    plt.colorbar(sc, ax=ax)
+    radec_plot.plot_scatter(xtable, col, ymin=vmin, ymax=vmax,
+                             label=QUANTITY_LABEL.get(quantity, var),
+                             ax=ax, marker_size=marker_size)
     ax.set_xlabel('RA', fontsize=7)
     ax.set_ylabel('Dec', fontsize=7)
     ax.tick_params(labelsize=7)
     return median_val, mad_std
 
 
-def plot_quantity(xtable, quantity, outroot, title='', marker_size=30):
+def plot_quantity(xtable, quantity, outroot, title='', marker_size=None):
     '''
     Create one 6×3 grid page showing all SKY_LINES for the given quantity
     (wave, flux, or fwhm) and save it to FIG_DIR/<outroot>_<quantity>.png.
@@ -221,7 +226,7 @@ def plot_quantity(xtable, quantity, outroot, title='', marker_size=30):
     plt.close(fig)
 
 
-def plot_all(xtable, outroot='sky_gaussfit2', title='', marker_size=30):
+def plot_all(xtable, outroot='sky_gaussfit2', title='', marker_size=None):
     '''
     Produce wave, flux, and fwhm pages for all 18 sky lines.
     '''
@@ -232,7 +237,7 @@ def plot_all(xtable, outroot='sky_gaussfit2', title='', marker_size=30):
 def steer(argv):
     outroot = ''
     filenames = []
-    marker_size = 30
+    marker_size = None
 
     i = 1
     while i < len(argv):

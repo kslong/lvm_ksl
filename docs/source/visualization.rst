@@ -370,6 +370,10 @@ See Also
 
 - :doc:`rss_combining` - Combining multiple exposures before mapping
 - :doc:`spectral_fitting` - Fitting emission lines in extracted spectra
+- :doc:`plotting_outputs` - Plotting table columns (e.g. fitted line
+  fluxes) against RA/Dec, as distinct from the WCS images built here
+  directly from RSS/CFrame files; a planned future step is bringing
+  both under one consistent plotting layer
 - :doc:`api/kslmap/index` - API documentation
 - :doc:`api/quick_map/index` - API documentation
 - :doc:`api/GetSpec/index` - API documentation

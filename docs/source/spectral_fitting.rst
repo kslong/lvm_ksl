@@ -1,5 +1,5 @@
-Spectral Fitting
-================
+Spectral Fitting: local routines
+================================
 
 The lvm_ksl package provides tools for fitting emission lines in LVM
 spectra. These tools can fit Gaussian profiles to standard emission
@@ -499,6 +499,8 @@ Notes
 See Also
 --------
 
+- :doc:`dap` - Running LVM-DAP for stellar-population + emission-line
+  fits, an alternative to the ``lmfit``-based tools on this page
 - :doc:`snapshots` - Batch processing with automatic fitting
 - :doc:`summarize` - Summarizing exposures; ``gauss_offset.py`` for airglow monitoring
 - :doc:`data_quality` - ``plot_sky_gaussfit.py`` for spatial maps of sky Gaussian fit residuals

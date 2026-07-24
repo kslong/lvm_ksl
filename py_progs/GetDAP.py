@@ -11,18 +11,31 @@ Retrieve DAP files from Utah
 
 Command line usage (if any):
 
-    usage: GetDAP.py [-h] filename.txt
+    usage: GetDAP.py [-h] [-no_cp] [-drp VERSION] filename.txt
+    usage: GetDAP.py [-h] [-no_cp] [-drp VERSION] mjd expstart [expstop]
 
-    where filename is an astropy table containg suffiencient information to locate the DAP file
+    The first form reads an ascii table with mjd/expnum columns (an optional
+    tileid column, if present, is used directly and skips the lookup below).
+    The second form retrieves a range of exposures from a single MJD directly
+    from the command line, matching GetFromUtah.py's convention; since this
+    script needs an exact tileid (unlike GetFromUtah.py, which can wildcard
+    it), one is looked up automatically for each exposure via a read-only
+    remote listing (see GetFromUtah.resolve_tileid) -- this is an extra
+    network round-trip per exposure, so the table form is faster if you
+    already know the tileids.
+    -drp VERSION sets the DRP version used to locate the DAP files (default: 1.2.1).
+    -no_cp skips copying each retrieved DAP file into a local ./DAP directory,
+    leaving it only in the SAS_BASE_DIR-mirrored location that sdss_access
+    downloads it to (by default it is copied into ./DAP as well).
 
-Description:  
+Description:
 
 Primary routines:
 
     doit
 
 Notes:
-                                       
+
 History::
 
     250204 ksl Coding begun
@@ -36,14 +49,34 @@ History::
     DAP2tab.py/DAPGauss2tab.py) instead of the old `*fits.gz` glob --
     confirmed via a real download this is ~5s vs ~4min for listing the
     whole per-exposure directory. Dropped unused sys/np imports.
+    260723 ksl sdss_access is now imported inside get_dap() instead of
+    at module level, and steer() checks SAS_BASE_DIR exists before
+    doing anything else -- sdss_access.Access eagerly os.makedirs()'s
+    SAS_BASE_DIR on import, which previously crashed even -h with a raw
+    traceback if e.g. an external drive backing SAS_BASE_DIR wasn't
+    mounted (encountered while travelling).
+    260723 ksl Default drpver changed from 1.1.1 to 1.2.1, and it is
+    now settable from the command line with -drp, matching
+    GetFromUtah.py's convention. Briefly made the ./DAP copy opt-in
+    via -cp (matching GetFromUtah.py's -cp), then reverted: copying
+    into local ./DAP stays the default behavior, since other tools
+    (e.g. DAP2tab.py) assume it is there; -no_cp skips it instead.
+    260723 ksl Now also accepts "mjd expstart [expstop]" on the command
+    line as an alternative to the table-input mode, matching
+    GetFromUtah.py. Since this script (unlike GetFromUtah.py) needs an
+    exact tileid to build its download path, tileid is looked up via
+    the new GetFromUtah.resolve_tileid() (a read-only remote listing)
+    whenever it isn't already supplied by a table's tileid column.
+    check_sas_base_dir(), resolve_tileid(), and read_exposures_table()
+    are now imported from GetFromUtah.py rather than duplicated.
 
 '''
 
 from astropy.io import ascii
 import os
 import shutil
-from sdss_access import Access
 
+from lvm_ksl import GetFromUtah
 
 import re
 
@@ -70,12 +103,20 @@ DAP_TOP='sdsswork/lvm/spectro/analysis'
 # download and listing a whole exposure's DAP directory is much slower.
 DAP_CONFIG='rsp108-sn20'
 
-def get_dap(drpver, tileid, mjd, expnum):
+def get_dap(drpver, tileid, mjd, expnum, copy=True):
     '''
     Uses sdss_access (HTTPS/rsync + .netrc) rather than a raw rsync
     subprocess, since dtn.sdss.org now requires 2FA for interactive
-    rsync password auth.
+    rsync password auth. sdss_access is imported here rather than at
+    module level so that just importing/parsing-args-for this script
+    (e.g. -h) doesn't touch it -- see GetFromUtah.check_sas_base_dir().
+
+    a.commit() always leaves the file in the SAS_BASE_DIR-mirrored
+    location (local_full); copy=True (the default) additionally copies
+    it into a local ./DAP directory, which other tools (e.g.
+    DAP2tab.py) expect by default -- pass copy=False (-no_cp) to skip.
     '''
+    from sdss_access import Access
 
     xtile='%07d' % tileid
     xtile='%sXX' % xtile[:4]
@@ -85,42 +126,89 @@ def get_dap(drpver, tileid, mjd, expnum):
                                str(tileid), str(mjd), '%08d' % expnum, remote_name)
     print(local_full)
 
-    if os.path.isdir('DAP')==False:
-        os.makedirs('DAP')
-
     a = Access(release='sdsswork')
     try:
         a.remote()
         a.add_file(local_full)
         a.set_stream()
         a.commit()
-        shutil.copy(local_full, 'DAP/')
         print(f"%s successfully downloaded." % remote_name)
+        if copy:
+            if os.path.isdir('DAP')==False:
+                os.makedirs('DAP')
+            shutil.copy(local_full, 'DAP/')
     except Exception as e:
         print(f"Failed to download %s: %s" % (remote_name, e))
 
 
+def _resolve_exposures(words, drpver):
+    '''
+    Accepts either a single table filename (mjd/expnum columns, and an
+    optional tileid column) or "mjd expstart [expstop]" -- matching
+    GetFromUtah.py's two input modes. Returns a list of
+    (tileid, mjd, expnum) tuples, resolving tileid via
+    GetFromUtah.resolve_tileid() for any exposure that doesn't already
+    have one (skipping that exposure, with an error already printed by
+    resolve_tileid, if it can't be resolved). Returns None (after
+    printing why) on a usage error.
+    '''
+    if len(words)==1:
+        exposures=GetFromUtah.read_exposures_table(words[0])
+        if exposures is None:
+            return None
+    elif len(words)>=2:
+        mjd=int(words[0])
+        exp_start=int(words[1])
+        exp_stop=int(words[2]) if len(words)>2 else exp_start
+        exposures=[(None,mjd,expnum) for expnum in range(exp_start,exp_stop+1)]
+    else:
+        print('Error: expected either a table filename (mjd/expnum[/tileid] columns) '
+              'or "mjd expstart [expstop]", got:', words)
+        return None
+
+    resolved=[]
+    for tileid,mjd,expnum in exposures:
+        if tileid is None:
+            tileid=GetFromUtah.resolve_tileid(drpver,mjd,expnum)
+            if tileid is None:
+                continue
+        resolved.append((tileid,mjd,expnum))
+    return resolved
+
+
 def steer(argv):
 
-    drpver='1.1.1'
-    
-    filename=''
+    drpver='1.2.1'
+    copy=True
+
+    words=[]
 
     i=1
     while i<len(argv):
         if argv[i][0:2]=='-h':
             print(_usage_from_doc(__doc__))
             return
+        elif argv[i]=='-no_cp':
+            copy=False
+        elif argv[i]=='-drp':
+            i+=1
+            drpver=argv[i]
         elif  argv[i][0]=='-':
             print('Unknown option :', argv)
             return
         else:
-            filename=argv[i]
+            words.append(argv[i])
         i+=1
 
-    xtab=ascii.read(filename)
-    for one_row in xtab:
-        get_dap(drpver,one_row['tileid'],one_row['mjd'],one_row['expnum'])
+    if not GetFromUtah.check_sas_base_dir():
+        return
+
+    exposures=_resolve_exposures(words,drpver)
+    if not exposures:
+        return
+
+    for tileid,mjd,expnum in exposures:
+        get_dap(drpver,tileid,mjd,expnum,copy=copy)
 
     return
 

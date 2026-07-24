@@ -32,13 +32,18 @@ History::
     rsync auth path, which sdss_access sidesteps via .netrc. Flat
     -outdir destination behavior unchanged. Dropped unused sys/np
     imports.
+    260723 ksl sdss_access is now imported inside get_file() instead of
+    at module level, and steer() checks SAS_BASE_DIR exists before
+    doing anything else -- sdss_access.Access eagerly os.makedirs()'s
+    SAS_BASE_DIR on import, which previously crashed even -h with a raw
+    traceback if e.g. an external drive backing SAS_BASE_DIR wasn't
+    mounted (encountered while travelling).
 
 '''
 
 from astropy.io import ascii
 import os
 import shutil
-from sdss_access import Access
 
 
 import re
@@ -58,6 +63,27 @@ def _usage_from_doc(doc):
     return doc[:m.start()].rstrip() + '\n' if m else doc
 
 
+def _check_sas_base_dir():
+    '''
+    SAS_BASE_DIR must point to an existing, reachable directory --
+    sdss_access's Tree eagerly os.makedirs()'s it as a side effect of
+    just importing sdss_access, which raises an unhelpful traceback if
+    e.g. the external drive it lives on isn't mounted (as happens while
+    travelling). Caught here, up front, with a clear message instead.
+    '''
+    sas_base_dir = os.environ.get('SAS_BASE_DIR')
+    if not sas_base_dir:
+        print('Error: SAS_BASE_DIR is not set')
+        return False
+    if not os.path.isdir(sas_base_dir):
+        print('Error: SAS_BASE_DIR (%s) does not exist' % sas_base_dir)
+        print('If it lives on an external/network drive, check that the drive is mounted.')
+        print('Otherwise, point SAS_BASE_DIR at a location that exists, e.g.:')
+        print('    export SAS_BASE_DIR=/some/other/path')
+        return False
+    return True
+
+
 def get_file(xfile,path='data'):
     '''
     xfile is the exact sdsswork-relative location of a file to retrieve,
@@ -65,8 +91,11 @@ def get_file(xfile,path='data'):
 
     Uses sdss_access (HTTPS/rsync + .netrc) rather than a raw rsync
     subprocess, since dtn.sdss.org now requires 2FA for interactive
-    rsync password auth.
+    rsync password auth. sdss_access is imported here rather than at
+    module level so that just importing/parsing-args-for this script
+    (e.g. -h) doesn't touch it -- see _check_sas_base_dir().
     '''
+    from sdss_access import Access
 
     print(xfile)
     if xfile[0]!='/':
@@ -110,6 +139,10 @@ def steer(argv):
         else:
             filename=argv[i]
         i+=1
+
+    if not _check_sas_base_dir():
+        return
+
     xtab=ascii.read(filename)
     for one_row in xtab:
         get_file(one_row['location'],path=path)

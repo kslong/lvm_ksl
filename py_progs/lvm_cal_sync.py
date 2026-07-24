@@ -51,16 +51,21 @@ only::
 Nothing in the generated file is executed automatically -- review it,
 then run it yourself, e.g. `bash SyncCalCommands.260714.txt`.
 
-History:
+History::
 
     260714 ksl Coding begun.
+    260723 ksl sdss_access is now imported inside get_remote_mjds()
+    instead of at module level, and steer() checks SAS_BASE_DIR exists
+    before doing anything else -- sdss_access.Access eagerly
+    os.makedirs()'s SAS_BASE_DIR on import, which previously crashed
+    even -h with a raw traceback if e.g. an external drive backing
+    SAS_BASE_DIR wasn't mounted (encountered while travelling).
 '''
 
 import sys
 import os
 import re
 import time
-from sdss_access import Access
 
 
 def _usage_from_doc(doc):
@@ -72,7 +77,7 @@ def _usage_from_doc(doc):
     search) so it can't misfire on "History:" appearing mid-sentence,
     and returns doc unchanged if no such line is present.
     '''
-    m = re.search(r'^\s*History:\s*$', doc, re.MULTILINE)
+    m = re.search(r'^\s*History:{0,2}\s*$', doc, re.MULTILINE)
     return doc[:m.start()].rstrip() + '\n' if m else doc
 
 
@@ -82,17 +87,43 @@ _USAGE = _usage_from_doc(__doc__)
 _MJD_RE = re.compile(r'^\d+$')
 
 
+def _check_sas_base_dir():
+    '''
+    SAS_BASE_DIR must point to an existing, reachable directory --
+    sdss_access's Tree eagerly os.makedirs()'s it as a side effect of
+    just importing sdss_access, which raises an unhelpful traceback if
+    e.g. the external drive it lives on isn't mounted (as happens while
+    travelling). Caught here, up front, with a clear message instead.
+    '''
+    sas_base_dir = os.environ.get('SAS_BASE_DIR')
+    if not sas_base_dir:
+        print('Error: SAS_BASE_DIR is not set')
+        return False
+    if not os.path.isdir(sas_base_dir):
+        print('Error: SAS_BASE_DIR (%s) does not exist' % sas_base_dir)
+        print('If it lives on an external/network drive, check that the drive is mounted.')
+        print('Otherwise, point SAS_BASE_DIR at a location that exists, e.g.:')
+        print('    export SAS_BASE_DIR=/some/other/path')
+        return False
+    return True
+
+
 def get_remote_mjds(kind='*', camera='*'):
     '''
     Read-only: lists MJD folders available remotely at Utah for lvm_calib,
     without downloading anything. Access.set_stream() alone resolves the
     listing (an rsync dry-run under the hood); only a subsequent .commit()
     would actually transfer files, and this never calls .commit().
+    sdss_access is imported here rather than at module level so that
+    just importing/parsing-args-for this script (e.g. -h) doesn't touch
+    it -- see _check_sas_base_dir().
 
     Returns (mjds, access) -- the Access instance is returned too so its
     path-template resolution (.full()) can be reused to locate the local
     calib directory.
     '''
+    from sdss_access import Access
+
     a = Access()
     a.remote()
     a.add('lvm_calib', kind=kind, mjd='*', camera=camera)
@@ -173,6 +204,9 @@ def steer(argv):
 
     if not outfile:
         outfile = 'SyncCalCommands.%s.txt' % time.strftime('%y%m%d')
+
+    if not _check_sas_base_dir():
+        return
 
     print('Querying remote calibration listing at Utah (read-only, no download)...')
     remote_mjds, a = get_remote_mjds()

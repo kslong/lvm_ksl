@@ -31,6 +31,7 @@ data archive to a local machine.
 **Usage**::
 
     GetFromUtah.py [-h] [-cp] [-CFrame] [-drp VERSION] [-out OUTDIR] mjd expstart [expstop]
+    GetFromUtah.py [-h] [-cp] [-CFrame] [-drp VERSION] [-out OUTDIR] filename.txt
 
 **Options:**
 
@@ -60,10 +61,19 @@ expstart
 expstop
     Last exposure number (optional, defaults to expstart).
 
+filename.txt
+    Alternative to ``mjd expstart [expstop]``: an ASCII table with
+    ``mjd``/``expnum`` columns, one row per exposure -- not required to
+    share a single MJD or be contiguous. A ``tileid`` column, if
+    present, is ignored (downloads always use a wildcard tileid).
+
 **Example**::
 
     # Retrieve exposures 4155-4160 from MJD 60188
     GetFromUtah.py -drp 1.2.0 60188 4155 4160
+
+    # Retrieve an arbitrary, possibly multi-MJD list of exposures from a table
+    GetFromUtah.py -drp 1.2.0 -cp exposures.txt
 
 Running the DRP Locally
 -----------------------
@@ -271,6 +281,7 @@ Notes
 See Also
 --------
 
+- :doc:`dap` - Retrieving DAP output (``GetDAP.py``) and running/post-processing LVM-DAP fits
 - :doc:`summarize` - Tools for cataloging and summarizing data
 - :doc:`api/GetFromUtah/index` - API documentation
 - :doc:`api/Reduce/index` - API documentation

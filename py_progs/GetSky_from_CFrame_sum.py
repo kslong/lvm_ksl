@@ -12,6 +12,7 @@ Synopsis:
 Command line usage (if any):
 
     usage: GetSky_from_CFrame_sum.py [-h] [--output PATH] [--n-print N]
+                                     [--csv FILE] [--tol DEG]
                                      fits_file [source_name]
 
     where
@@ -28,6 +29,13 @@ Command line usage (if any):
 
     --n-print N   number of top sky fields to print in summary mode
                   (default: 10).
+
+    --csv FILE    sky-tile position catalog used for the position-
+                  consistency check in extraction mode (default:
+                  data/final_sky_tiles.csv).
+
+    --tol DEG     position-agreement tolerance in degrees for the
+                  position-consistency check (default: 0.1).
 
 Description:
 
@@ -53,6 +61,13 @@ Description:
         each spectrum row.  Science-pointing columns (sci_ra, sci_dec, etc.)
         are removed as they do not pertain to the sky field.
 
+        Before extraction, each candidate row's recorded skye_ra/skye_dec or
+        skyw_ra/skyw_dec is checked against the sky-tile catalog (--csv,
+        default data/final_sky_tiles.csv) using the same nearest-match logic
+        as check_sky_positions.py.  Rows whose nearest catalog match is not
+        source_name itself are dropped, since skye_name/skyw_name is known
+        to sometimes disagree with where the telescope actually pointed.
+
     Output FITS structure (extraction mode):
         PRIMARY   header: SOURCE, INPUT, N_EAST, N_WEST, N_TOTAL
         WAVE      float32 (Npix,)       wavelength array (Å)
@@ -67,11 +82,20 @@ Primary routines:
 Notes:
 
     If source_name is not found in the file, the program exits with a
-    non-zero status and prints the top 10 available sky fields.
+    non-zero status and prints the top 10 available sky fields.  If every
+    matching row fails the position-consistency check, the program also
+    exits with a non-zero status.
 
-History:
+History::
 
     260628  ksl  Coding begun based on LocateSky.ipynb
+    260725  ksl  Added a position-consistency check to extraction mode:
+        rows whose recorded skye_ra/skye_dec or skyw_ra/skyw_dec does not
+        match source_name's own catalog position (via
+        check_sky_positions.load_csv_positions/nearest_catalog_match) are
+        dropped before extraction, since skye_name/skyw_name is known to
+        sometimes disagree with the actual telescope pointing.  New --csv/
+        --tol options control the catalog file and tolerance.
 '''
 
 import argparse
@@ -81,6 +105,14 @@ from pathlib import Path
 import numpy as np
 from astropy.io import fits
 from astropy.table import Table, vstack
+
+from check_sky_positions import load_csv_positions, nearest_catalog_match
+
+# Default sky-tile position catalog used to weed out spectra whose recorded
+# skye_ra/skye_dec or skyw_ra/skyw_dec do not actually correspond to the
+# requested source_name (see check_sky_positions.py, which diagnoses this
+# same name/position mismatch across a whole drpall file).
+DEFAULT_CSV = Path(__file__).resolve().parent.parent / "data" / "final_sky_tiles.csv"
 
 
 # ---------------------------------------------------------------------------
@@ -212,12 +244,20 @@ def _merge_sky_columns(tab):
 # Extraction mode
 # ---------------------------------------------------------------------------
 
-def get_sky_spectra(fits_file, source_name, outpath=None):
+def get_sky_spectra(fits_file, source_name, outpath=None,
+                     csv_file=DEFAULT_CSV, tol=0.1):
     """Extract sky spectra for a named sky field from an XCframe summary file.
 
     Rows where skye_name == source_name are drawn from the SKY_EAST extension;
     rows where skyw_name == source_name are drawn from SKY_WEST.  The combined
     spectra and metadata are written to a FITS file.
+
+    Before extraction, each candidate row's recorded position (skye_ra/
+    skye_dec or skyw_ra/skyw_dec) is matched against the nearest entry in the
+    sky-tile catalog (see check_sky_positions.py, which diagnoses this same
+    name/position mismatch across a whole drpall file).  Rows whose nearest
+    catalog match is not source_name itself are dropped, since their skye_name/
+    skyw_name label does not agree with where the telescope actually pointed.
 
     Parameters
     ----------
@@ -228,6 +268,11 @@ def get_sky_spectra(fits_file, source_name, outpath=None):
     outpath : str or Path or None
         Output FITS path.  Defaults to Sky_<source_name>.fits in the current
         directory.
+    csv_file : str or Path
+        Sky-tile position catalog used for the position-consistency check
+        (default: data/final_sky_tiles.csv).
+    tol : float
+        Position-agreement tolerance in degrees (default: 0.1).
     """
     if outpath is None:
         outpath = f"Sky_{source_name}.fits"
@@ -270,6 +315,35 @@ def get_sky_spectra(fits_file, source_name, outpath=None):
         print(f"\n       Run without a source name to see the full list.")
         sys.exit(1)
 
+    # Position-consistency check: skye_name/skyw_name is only a label, and
+    # is known to sometimes disagree with where the telescope actually
+    # pointed (see check_sky_positions.py). Keep only rows whose recorded
+    # position's nearest catalog match is source_name itself.
+    cat_names, cat_ra, cat_dec = load_csv_positions(csv_file)
+
+    skye_true = nearest_catalog_match(
+        np.array(drp["skye_ra"], dtype=float), np.array(drp["skye_dec"], dtype=float),
+        cat_names, cat_ra, cat_dec, tol)
+    skyw_true = nearest_catalog_match(
+        np.array(drp["skyw_ra"], dtype=float), np.array(drp["skyw_dec"], dtype=float),
+        cat_names, cat_ra, cat_dec, tol)
+
+    skye_good = skye_mask & (skye_true == source_name)
+    skyw_good = skyw_mask & (skyw_true == source_name)
+
+    n_east_bad = int((skye_mask & ~skye_good).sum())
+    n_west_bad = int((skyw_mask & ~skyw_good).sum())
+
+    skye_mask, skyw_mask = skye_good, skyw_good
+    n_east  = int(skye_mask.sum())
+    n_west  = int(skyw_mask.sum())
+    n_total = n_east + n_west
+
+    if n_total == 0:
+        print(f"\nERROR: all rows for '{source_name}' failed the position "
+              f"consistency check; nothing to extract.")
+        sys.exit(1)
+
     skye_rows = drp[skye_mask].copy()
     skyw_rows = drp[skyw_mask].copy()
     skye_rows["tel"] = "SKY_EAST"
@@ -279,6 +353,8 @@ def get_sky_spectra(fits_file, source_name, outpath=None):
     print(f"  SKY_EAST observations: {n_east}")
     print(f"  SKY_WEST observations: {n_west}")
     print(f"  Total:                 {n_total}")
+    print(f"  Dropped (position check, {Path(csv_file).name}, tol={tol} deg): "
+          f"{n_east_bad} SKY_EAST, {n_west_bad} SKY_WEST")
 
     skye_spec = sky_east[skye_rows["line_no"]] if n_east > 0 else np.empty((0, wave.size))
     skyw_spec = sky_west[skyw_rows["line_no"]] if n_west > 0 else np.empty((0, wave.size))
@@ -323,13 +399,20 @@ def main():
                         "default: Sky_<source_name>.fits)")
     p.add_argument("--n-print", type=int, default=10,
                    help="Number of top sky fields to print in summary mode")
+    p.add_argument("--csv", default=DEFAULT_CSV,
+                   help="Sky-tile position catalog for the position-"
+                        "consistency check (extraction mode only)")
+    p.add_argument("--tol", type=float, default=0.1,
+                   help="Position-agreement tolerance in degrees for the "
+                        "position-consistency check (extraction mode only)")
     args = p.parse_args()
 
     if args.source_name is None:
         tab = summarise_sky_fields(args.fits_file, n_print=args.n_print)
         save_summary(tab, args.fits_file)
     else:
-        get_sky_spectra(args.fits_file, args.source_name, outpath=args.output)
+        get_sky_spectra(args.fits_file, args.source_name, outpath=args.output,
+                        csv_file=args.csv, tol=args.tol)
 
 
 if __name__ == "__main__":

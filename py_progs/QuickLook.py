@@ -39,9 +39,44 @@ Notes:
 
     The links in the html file are relative to the html file
                                        
-History:
+History::
 
-240427 ksl Coding begun
+    240427 ksl Coding begun
+    260727 ksl Switched the science/sky telescope pointing header
+        keywords read in eval_qual_sframe() and create_overview() from
+        the stale commanded/reported pairs (TESCIRA/TESCIDE, POSCIPA,
+        POSKYERA/POSKYEDE/POSKYEPA, POSKYWRA/POSKYWDE/POSKYWPA) to
+        SCIRA/SCIDEC/SCIPA, SKYERA/SKYEDEC/SKYEPA, SKYWRA/SKYWDEC/
+        SKYWPA -- the keywords actually populated by current SFrame
+        files, matching the migration already done in rss_combine.py.
+        Fixed a 'partition will ignore the mask' UserWarning by
+        switching several np.median/np.nanmedian calls on masked
+        arrays to np.ma.median. Fixed a 'figure with num: N already
+        exists' UserWarning by closing each matplotlib figure right
+        after it's saved, in both eval_qual_sframe panels and
+        plot_fits_image (eval_standard.py's compare_with_gaia had the
+        same issue plus a leak on its GAIA-lookup-failure path, fixed
+        there too).
+        eval_qual_sframe()'s sky-comparison figure: the top panel
+        (SkyE/SkyW noise floor) used a crude fixed 0.2x rescale of the
+        full autoscaled range, which let a few cosmic-ray/bad-sky-line
+        spikes dominate the visible range. The middle panel (SkyE-SkyW
+        total-flux delta) had a real bug -- its y-limits were set from
+        a stale `ymax` left over from the top panel's pre-rescale
+        get_ylim(), a copy-paste leftover from the science figure's
+        semilogy panel (dead giveaway: a commented-out line still
+        referencing the science-panel variable) -- which silently
+        clipped away every negative excursion of the delta. Both are
+        now set via new get_percentile_yscale() (1st/99th percentile
+        for the top panel, 1st/99.9th for the middle, since the real
+        sky-mismatch spikes there only emerge past the 99th), clamped
+        to span at least +/-2x the MW 5 sigma reference line
+        (MW_5SIGMA constant) so the axis never zooms in tighter than
+        the scale at which the subtraction is already considered good.
+        make_html()'s standard-star comparison section now shows the
+        specific reason from eval_standard.qual_eval() when the
+        comparison fails or partially fails, instead of a generic
+        "could not do" message.
 
 '''
 
@@ -154,6 +189,7 @@ def get_moon_info_las_campanas(datetime_utc,verbose=False):
     return xreturn
 
 RADIAN=57.29578
+MW_5SIGMA=5.9e-15 # Milky Way sky background 5 sigma sensitivity limit (see the red dotted reference lines)
 
 def distance(r1,d1,r2,d2):
     '''
@@ -217,12 +253,36 @@ def limit_spectrum(wave,flux,wmin,wmax):
     return w,f
 
 def get_yscale(f,ymin,ymax):
-    new_mask=np.isnan(f.data) 
+    new_mask=np.isnan(f.data)
     f.mask = np.logical_or(f.mask, new_mask)
     med=np.ma.median(f)
     zmin=ymin+med
     zmax=ymax+med
     print('check',zmin,zmax,med,ymin,ymax)
+    return zmin,zmax
+
+
+def get_percentile_yscale(arr,low,high,min_half_range=None):
+    '''
+    Get y-axis limits from the low/high percentiles of arr, ignoring
+    NaNs and masked entries. Trims outlier spikes (cosmic rays, bad
+    sky lines) directly from the data, rather than via an ad hoc
+    rescale factor applied to the full autoscaled range.
+
+    If min_half_range is given, the limits are widened (never
+    narrowed) so they span at least +/-min_half_range -- there is no
+    diagnostic value in zooming in tighter than the scale at which the
+    subtraction is already considered good.
+    '''
+    if isinstance(arr,np.ma.MaskedArray):
+        data=np.ma.filled(arr.astype(float),np.nan)
+    else:
+        data=np.asarray(arr,dtype=float)
+    zmin=np.nanpercentile(data,low)
+    zmax=np.nanpercentile(data,high)
+    if min_half_range is not None:
+        zmin=min(zmin,-min_half_range)
+        zmax=max(zmax,min_half_range)
     return zmin,zmax
 
 
@@ -248,14 +308,14 @@ def eval_qual_sframe(filename='data/lvmSFrame-00011061.fits',ymin=-0.2e-13,ymax=
     mjd=hdr['MJD']
     exposure=hdr['EXPOSURE']
 
-    ra=get_header_value(hdr,'TESCIRA')
-    dec=get_header_value(hdr,'TESCIDE')
+    ra=get_header_value(hdr,'SCIRA')
+    dec=get_header_value(hdr,'SCIDEC')
 
-    ra_sky_e=get_header_value(hdr,'POSKYERA')
-    dec_sky_e=get_header_value(hdr,'POSKYEDE')
+    ra_sky_e=get_header_value(hdr,'SKYERA')
+    dec_sky_e=get_header_value(hdr,'SKYEDEC')
 
-    ra_sky_w=get_header_value(hdr,'POSKYWRA')
-    dec_sky_w=get_header_value(hdr,'POSKYWDE')
+    ra_sky_w=get_header_value(hdr,'SKYWRA')
+    dec_sky_w=get_header_value(hdr,'SKYWDEC')
 
 
     distance_sky_w=distance(ra,dec,ra_sky_w,dec_sky_w)
@@ -325,7 +385,7 @@ def eval_qual_sframe(filename='data/lvmSFrame-00011061.fits',ymin=-0.2e-13,ymax=
     wmax=5100
 
     xwav,xsci_flux_med=limit_spectrum(wav,sci_flux_med,wmin,wmax)
-    xmedian=np.nanmedian(xsci_flux_med)
+    xmedian=np.ma.median(xsci_flux_med)
     xsci_flux_med-=xmedian
     ax3.plot(xwav,xsci_flux_med,label='Sky-Subtracted Science',zorder=2)
 
@@ -343,7 +403,7 @@ def eval_qual_sframe(filename='data/lvmSFrame-00011061.fits',ymin=-0.2e-13,ymax=
     wmax=6800
 
     xwav,xsci_flux_med=limit_spectrum(wav,sci_flux_med,wmin,wmax)
-    xmedian=np.median(xsci_flux_med)
+    xmedian=np.ma.median(xsci_flux_med)
     xsci_flux_med-=xmedian
     ax4.plot(xwav,xsci_flux_med,label=r'H$\alpha$/[NII]/[SII]',zorder=2)
 
@@ -361,7 +421,7 @@ def eval_qual_sframe(filename='data/lvmSFrame-00011061.fits',ymin=-0.2e-13,ymax=
     wmin=9480
     wmax=9586
     xwav,xsci_flux_med=limit_spectrum(wav,sci_flux_med,wmin,wmax)
-    xmedian=np.median(xsci_flux_med)
+    xmedian=np.ma.median(xsci_flux_med)
     xsci_flux_med-=xmedian
     
 
@@ -384,6 +444,7 @@ def eval_qual_sframe(filename='data/lvmSFrame-00011061.fits',ymin=-0.2e-13,ymax=
     root=words[-1].replace('.fits','')
     figname='%s/%s.png' % (location,root)
     plt.savefig(figname)
+    plt.close(fig)
 
     # Now make another plot for the sky fibers
 
@@ -398,13 +459,11 @@ def eval_qual_sframe(filename='data/lvmSFrame-00011061.fits',ymin=-0.2e-13,ymax=
     ax1.plot([3600,9600],[5.9e-15,5.9e-15],':r',label=r'$Med \pm$ MW 5 $\sigma$' )
     ax1.plot([3600,9600],[-5.9e-15,-5.9e-15],':r')
     ax1.set_xlim(3600,9600)
-    ymin,ymax=ax1.get_ylim()
-    ax1.set_ylim(0.2*ymin,0.2*ymax)
+    ymin,ymax=get_percentile_yscale(np.ma.concatenate([skye_flux_med,skyw_flux_med]),1,99,min_half_range=2*MW_5SIGMA)
+    ax1.set_ylim(ymin,ymax)
     ax1.legend()
 
     ax2 = fig.add_subplot(gs[1, :])
-    # ax2.semilogy(wav,sci_flux_med+sci_sky_med,label='Science Total',zorder=2)
-    # ax2.semilogy(wav,sci_sky_med,label='Science Sky',zorder=1)
     delta=skyw_flux_med+skyw_sky_med-(skye_flux_med+skye_sky_med)
     if distance_sky_w<distance_sky_e:
         ax2.plot(wav,delta,label='SkyW-SkyE (Nearer-Further)',zorder=1)
@@ -412,9 +471,8 @@ def eval_qual_sframe(filename='data/lvmSFrame-00011061.fits',ymin=-0.2e-13,ymax=
         delta=-delta
         ax2.plot(wav,delta,label='SkyE-SkyW (Nearer-Further)',zorder=1)
 
-    # ymin,ymax=plt.ylim()
-    # ymax=np.max(sci_flux_med+sci_sky_med)
-    ax2.set_ylim(1e-3*ymax,1.1*ymax)
+    ymin,ymax=get_percentile_yscale(delta,1,99.9,min_half_range=2*MW_5SIGMA)
+    ax2.set_ylim(ymin,ymax)
     ax2.set_xlim(3600,9600)
     ax2.legend()
 
@@ -428,9 +486,9 @@ def eval_qual_sframe(filename='data/lvmSFrame-00011061.fits',ymin=-0.2e-13,ymax=
 
 
     xwav,delta_limit=limit_spectrum(wav,delta,wmin,wmax)
-    delta_median=np.median(delta_limit)
+    delta_median=np.ma.median(delta_limit)
     delta_limit-=delta_median
-    delta_median=np.median(delta_limit)
+    delta_median=np.ma.median(delta_limit)
     ax3.plot(xwav,delta_limit,label='SkyE-Subtracted SkyE',zorder=1)
 
     # ax3.plot(xwav,xskyw_flux_med,label='SkyW-Subtracted SkyW',zorder=0)
@@ -451,9 +509,9 @@ def eval_qual_sframe(filename='data/lvmSFrame-00011061.fits',ymin=-0.2e-13,ymax=
 
     xwav,delta_limit=limit_spectrum(wav,delta,wmin,wmax)
 
-    delta_median=np.median(delta_limit)
+    delta_median=np.ma.median(delta_limit)
     delta_limit-=delta_median
-    delta_median=np.median(delta_limit)
+    delta_median=np.ma.median(delta_limit)
 
     ax4.plot(xwav,delta_limit,zorder=1)
 
@@ -471,9 +529,9 @@ def eval_qual_sframe(filename='data/lvmSFrame-00011061.fits',ymin=-0.2e-13,ymax=
     wmax=9586
     xwav,xsci_flux_med=limit_spectrum(wav,sci_flux_med,wmin,wmax)
     xwav,delta_limit=limit_spectrum(wav,delta,wmin,wmax)
-    delta_median=np.median(delta_limit)
+    delta_median=np.ma.median(delta_limit)
     delta_limit-=delta_median
-    delta_median=np.median(delta_limit)
+    delta_median=np.ma.median(delta_limit)
 
 
     ax5.plot(xwav,delta_limit,label='SkyE-Subtracted SkyE',zorder=1)
@@ -489,8 +547,7 @@ def eval_qual_sframe(filename='data/lvmSFrame-00011061.fits',ymin=-0.2e-13,ymax=
     root=words[-1].replace('.fits','')
     sky_figname='%s/%s_sky.png' % (location,root)
     plt.savefig(sky_figname)
-
-
+    plt.close(fig)
 
 
     return figname,sky_figname
@@ -563,21 +620,17 @@ def create_overview(filename='data/lvmSFrame-00011061.fits'):
     obs_time=get_header_string(hdr,'OBSTIME')
     drp_version=get_header_string(hdr,'DRPVER')
     drp_commit=get_header_string(hdr,'COMMIT')
-    ra=get_header_value(hdr,'TESCIRA')
-    dec=get_header_value(hdr,'TESCIDE')
-    try:
-        pa=get_header_value(hdr,'POSCIPA')
-    except:
-        print('Error: PSCIIPA keyword is missing, assuming PA is zero')
-        pa=0
+    ra=get_header_value(hdr,'SCIRA')
+    dec=get_header_value(hdr,'SCIDEC')
+    pa=get_header_value(hdr,'SCIPA',default_value=0)
 
-    ra_sky_e=get_header_value(hdr,'POSKYERA')
-    dec_sky_e=get_header_value(hdr,'POSKYEDE')
-    pa_sky_e=get_header_value(hdr,'POSKYEPA')
+    ra_sky_e=get_header_value(hdr,'SKYERA')
+    dec_sky_e=get_header_value(hdr,'SKYEDEC')
+    pa_sky_e=get_header_value(hdr,'SKYEPA')
 
-    ra_sky_w=get_header_value(hdr,'POSKYWRA')
-    dec_sky_w=get_header_value(hdr,'POSKYWDE')
-    pa_sky_w=get_header_value(hdr,'POSKYWPA')
+    ra_sky_w=get_header_value(hdr,'SKYWRA')
+    dec_sky_w=get_header_value(hdr,'SKYWDEC')
+    pa_sky_w=get_header_value(hdr,'SKYWPA')
 
 
     distance_sky_w=distance(ra,dec,ra_sky_w,dec_sky_w)
@@ -644,7 +697,7 @@ def plot_fits_image(filename,title='Cont.(5000-8000)',outname='test.png'):
     ra_max, dec_max = wcs.all_pix2world(data.shape[1], data.shape[0], 0)
     
     # Plot the image
-    plt.figure(figsize=(8, 8))
+    fig=plt.figure(figsize=(8, 8))
     cmap=plt.get_cmap('hot')
     cmap.set_bad(color='gray', alpha=0.2)
     plt.imshow(data, cmap=cmap, vmin=min_val, vmax=max_val, origin='lower', extent=(0, data.shape[1], 0, data.shape[0]))
@@ -669,6 +722,7 @@ def plot_fits_image(filename,title='Cont.(5000-8000)',outname='test.png'):
     
 
     plt.savefig(outname)
+    plt.close(fig)
 
 
 
@@ -778,12 +832,14 @@ def make_html(filename='data/lvmSFrame-00011061.fits', outroot=''):
     string+=xhtml.paragraph('Comparision between the flux calibrated star fibers to the GAIA spectra of the stars')
 
     outname='figs_qual/standard_%s.png' % outroot
-    status=eval_standard.qual_eval(filename,outname)
+    status,message=eval_standard.qual_eval(filename,outname)
 
     if status==True:
         string+=xhtml.image(outname,width=900,height=900)
+        if message:
+            string+=xhtml.paragraph('Warning: %s' % message)
     else:
-        string+=xhtml.paragraph('Could not do standard standard star comparision')
+        string+=xhtml.paragraph('Could not compare standard stars to GAIA: %s' % message)
     
     string+=xhtml.hline()
 

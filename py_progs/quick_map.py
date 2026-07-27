@@ -29,11 +29,17 @@ Notes:
 
     This version creates images with the standard orientation for ds9
                                        
-History:
+History::
 
-231216 ksl Coding begun
-240303 ksl Added redshift corrections if RA and DEC are near the LMC or SMC
-240630 ksl Modified to use ra and dec's recorded in the SLITMAP extension
+    231216 ksl Coding begun
+    240303 ksl Added redshift corrections if RA and DEC are near the LMC or SMC
+    240630 ksl Modified to use ra and dec's recorded in the SLITMAP extension
+    260727 ksl Switched doit() from the stale commanded/reported header
+        keywords (POSCIRA/POSCIDE falling back to TESCIRA/TESCIDE,
+        POSCIPA with an 'assuming 0' fallback printed on every call) to
+        SCIRA/SCIDEC/SCIPA, the keywords actually populated by current
+        SFrame files, matching the migration already done in
+        rss_combine.py.
 
 '''
 
@@ -172,21 +178,9 @@ def doit(filename,out_label='',wrange=[6560,6566],
         xstart='z'
 
 
-    try:
-        RAobs  = rss['PRIMARY'].header['POSCIRA']
-    except:
-        RAobs  = rss['PRIMARY'].header['TESCIRA']
-
-    try:
-        DECobs = rss['PRIMARY'].header['POSCIDE']
-    except:
-        DECobs = rss['PRIMARY'].header['TESCIDE']
-
-    try:
-        posang = rss['PRIMARY'].header['POSCIPA']
-    except:
-        print('Error: POSCIPA is missing, assuming 0')
-        posang=0
+    RAobs  = rss['PRIMARY'].header['SCIRA']
+    DECobs = rss['PRIMARY'].header['SCIDEC']
+    posang = rss['PRIMARY'].header['SCIPA']
     
     # Read fibermap and get x,y coordinates of fibers
     slittab = rss['SLITMAP'].data

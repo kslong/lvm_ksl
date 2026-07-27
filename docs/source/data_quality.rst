@@ -391,9 +391,11 @@ Gaia BP/RP reference spectra.
 eval_standard.py — Flux Standard Calibration Plot
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-Compares the observed standard star spectra in a CFrame file against
-their Gaia BP/RP reference spectra, providing a visual check of the
-flux calibration quality.
+Compares the observed spectra of the Gaia-matched field stars in an
+lvmSFrame file -- identified via the ``SCI#ID``/``SCI#FIB`` header
+keywords written by the DRP's flux calibration -- against their Gaia
+XP reference spectra, providing a visual check of the flux calibration
+quality.
 
 **Command line usage**::
 
@@ -402,22 +404,29 @@ flux calibration quality.
 **Arguments:**
 
 filename
-    One or more lvmCFrame FITS files to evaluate.
+    One or more lvmSFrame FITS files to evaluate.
 
 **Output:**
 
 One PNG file per input file, named ``standard_<basename>.png``, written
-to the current directory.  If no Gaia spectra can be retrieved for any
-standard in the file, no plot is produced and a warning is printed.
+to the current directory.  If none of the matched stars' Gaia spectra
+can be retrieved or plotted, no plot is produced; the caller (and, from
+``Quicklook.py``, the HTML report) gets a message explaining why -- e.g.
+no ``SCI#ID``/``SCI#FIB`` keywords in the header, or no network access
+to the Gaia archive with nothing cached locally either.
 
 **Notes:**
 
-Requires ``lvmdrp`` to be installed (uses ``ancillary_func.retrive_gaia_star``
-to fetch Gaia reference spectra).
+Requires ``lvmdrp`` to be installed.  Gaia XP spectra are fetched via
+``lvmdrp.core.fluxcal.GaiaXPSpectra``, which caches spectra under
+``$LVM_MASTER_DIR/gaia_cache`` -- the same directory the DRP's own flux
+calibration populates during reduction, so spectra it already
+downloaded there are reused instead of being re-queried from the
+archive.
 
 **Example**::
 
-    eval_standard.py data/lvmCFrame-00012345.fits
+    eval_standard.py data/lvmSFrame-00012345.fits
 
 
 Sky Telescope Pointing
@@ -635,8 +644,10 @@ not every keyword is present in every DRP version's headers.
 **Notes:**
 
 The standard-star comparison panel requires ``lvmdrp`` (via
-``eval_standard.py``); if it isn't available, the report notes that the
-comparison could not be done and continues without it.
+``eval_standard.py``); if the comparison fails -- e.g. no matched
+standards in the header, or no Gaia spectra could be retrieved -- the
+report includes the specific reason in place of the plot and continues
+without it.
 
 **Example**::
 

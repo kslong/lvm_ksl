@@ -171,6 +171,12 @@ History:
                 evaluation tool, not subtraction) can reuse this function
                 with engine='local' -- this module's own two call sites
                 don't pass engine, so behavior here is unchanged.
+    260727 ksl  _run_captured/_get_sky_model gained a verbose=True
+                parameter, so SkyObsESOCompare.py (another reuser of
+                _get_sky_model, doing many fetches per batch run) can pass
+                verbose=False to suppress the per-call progress echo
+                without losing anything -- this module's own two call
+                sites don't pass verbose, so behavior here is unchanged.
 
 '''
 
@@ -235,23 +241,32 @@ Options:
 # ESO sky model fetch
 # ──────────────────────────────────────────────────────────────
 
-def _run_captured(func, *args, **kwargs):
+def _run_captured(func, *args, verbose=True, **kwargs):
     '''
-    Call func, capturing anything it prints to stdout, echoing it back
-    to the terminal unchanged (so live progress monitoring is
-    unaffected), and returning (result, captured_text) so the printed
-    diagnostics can also be folded into an error message if needed.
+    Call func, capturing anything it prints to stdout, and returning
+    (result, captured_text) so the printed diagnostics can also be folded
+    into an error message if needed.
+
+    verbose : bool, default True -- if True (this module's own historical
+        behavior), also echo the captured text back to the terminal
+        unchanged, so live progress monitoring of a single slow run is
+        unaffected; if False, the text is still captured and returned,
+        just not printed -- for a caller doing many fetches in a batch
+        (e.g. SkyObsESOCompare.py), where echoing every call's routine
+        progress would flood the terminal without adding information
+        (the same text is already available via the returned err_msg on
+        failure).
     '''
     buf = io.StringIO()
     with contextlib.redirect_stdout(buf):
         result = func(*args, **kwargs)
     captured = buf.getvalue()
-    if captured:
+    if captured and verbose:
         print(captured, end='' if captured.endswith('\n') else '\n')
     return result, captured.strip()
 
 
-def _get_sky_model(ra, dec, obstime, engine='auto'):
+def _get_sky_model(ra, dec, obstime, engine='auto', verbose=True):
     '''
     Fetch an ESO sky model spectrum for the given coordinates/time.
 
@@ -269,12 +284,18 @@ def _get_sky_model(ra, dec, obstime, engine='auto'):
         and remote-fallback rows within one evaluation run would
         contaminate a judgement of model quality.
 
+    verbose : bool, default True -- passed straight through to
+        _run_captured; set False to suppress the per-call progress echo
+        (e.g. SkyObsESOCompare.py does, for large batch runs) without
+        losing anything -- the same diagnostic text is still returned in
+        err_msg on failure regardless of verbose.
+
     Returns (model_tab, err_msg).  model_tab is an astropy Table with
     WAVE, MOON, ZODI, DIFFUSE columns, and err_msg is ''.  If both the
     local model and the web fallback fail, model_tab is None and err_msg
     is whatever run_sky_obs printed while trying each engine.
     '''
-    outroot, captured = _run_captured(EsoSkyObs.run_sky_obs,
+    outroot, captured = _run_captured(EsoSkyObs.run_sky_obs, verbose=verbose,
                                       ra=ra, dec=dec, xtime=obstime, engine=engine)
 
     if outroot == '':

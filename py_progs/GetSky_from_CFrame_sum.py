@@ -67,6 +67,8 @@ Description:
         as check_sky_positions.py.  Rows whose nearest catalog match is not
         source_name itself are dropped, since skye_name/skyw_name is known
         to sometimes disagree with where the telescope actually pointed.
+        Rows whose DRP_ALL fluxcal column equals 'NONE' (no flux calibration
+        applied to that exposure) are also dropped.
 
     Output FITS structure (extraction mode):
         PRIMARY   header: SOURCE, INPUT, N_EAST, N_WEST, N_TOTAL
@@ -83,8 +85,8 @@ Notes:
 
     If source_name is not found in the file, the program exits with a
     non-zero status and prints the top 10 available sky fields.  If every
-    matching row fails the position-consistency check, the program also
-    exits with a non-zero status.
+    matching row fails the position/flux-calibration screening, the program
+    also exits with a non-zero status.
 
 History::
 
@@ -95,7 +97,13 @@ History::
         check_sky_positions.load_csv_positions/nearest_catalog_match) are
         dropped before extraction, since skye_name/skyw_name is known to
         sometimes disagree with the actual telescope pointing.  New --csv/
-        --tol options control the catalog file and tolerance.
+        --tol options control the catalog file and tolerance.  Also added a
+        flux-calibration screen: rows whose DRP_ALL fluxcal column is 'NONE'
+        (confirmed via a real XCframe summary file's DRP_ALL table --
+        fluxcal is a per-exposure string column with values 'MOD'/'SCI'/
+        'STD'/'NONE') are dropped, since no flux calibration was applied to
+        that exposure.  Both screens' dropped-row counts are reported per
+        telescope in the extraction summary.
 '''
 
 import argparse
@@ -321,18 +329,28 @@ def get_sky_spectra(fits_file, source_name, outpath=None,
     # position's nearest catalog match is source_name itself.
     cat_names, cat_ra, cat_dec = load_csv_positions(csv_file)
 
-    skye_true = nearest_catalog_match(
+    skye_pos_ok = nearest_catalog_match(
         np.array(drp["skye_ra"], dtype=float), np.array(drp["skye_dec"], dtype=float),
-        cat_names, cat_ra, cat_dec, tol)
-    skyw_true = nearest_catalog_match(
+        cat_names, cat_ra, cat_dec, tol) == source_name
+    skyw_pos_ok = nearest_catalog_match(
         np.array(drp["skyw_ra"], dtype=float), np.array(drp["skyw_dec"], dtype=float),
-        cat_names, cat_ra, cat_dec, tol)
+        cat_names, cat_ra, cat_dec, tol) == source_name
 
-    skye_good = skye_mask & (skye_true == source_name)
-    skyw_good = skyw_mask & (skyw_true == source_name)
+    # Flux-calibration check: fluxcal is a per-exposure DRP_ALL column
+    # (values e.g. 'MOD', 'SCI', 'STD', 'NONE') recording what standard the
+    # exposure's flux calibration was derived from -- 'NONE' means no flux
+    # calibration was applied at all, so the sky spectrum isn't usable.
+    # It describes the exposure as a whole, so it applies to whichever of
+    # skye/skyw came from that row.
+    fluxcal_ok = np.char.strip(np.array(drp["fluxcal"], dtype=str)) != "NONE"
 
-    n_east_bad = int((skye_mask & ~skye_good).sum())
-    n_west_bad = int((skyw_mask & ~skyw_good).sum())
+    skye_good = skye_mask & skye_pos_ok & fluxcal_ok
+    skyw_good = skyw_mask & skyw_pos_ok & fluxcal_ok
+
+    n_east_bad_pos     = int((skye_mask & ~skye_pos_ok).sum())
+    n_west_bad_pos     = int((skyw_mask & ~skyw_pos_ok).sum())
+    n_east_bad_fluxcal = int((skye_mask & skye_pos_ok & ~fluxcal_ok).sum())
+    n_west_bad_fluxcal = int((skyw_mask & skyw_pos_ok & ~fluxcal_ok).sum())
 
     skye_mask, skyw_mask = skye_good, skyw_good
     n_east  = int(skye_mask.sum())
@@ -340,8 +358,8 @@ def get_sky_spectra(fits_file, source_name, outpath=None,
     n_total = n_east + n_west
 
     if n_total == 0:
-        print(f"\nERROR: all rows for '{source_name}' failed the position "
-              f"consistency check; nothing to extract.")
+        print(f"\nERROR: all rows for '{source_name}' failed the position/"
+              f"flux-calibration screening; nothing to extract.")
         sys.exit(1)
 
     skye_rows = drp[skye_mask].copy()
@@ -354,7 +372,9 @@ def get_sky_spectra(fits_file, source_name, outpath=None,
     print(f"  SKY_WEST observations: {n_west}")
     print(f"  Total:                 {n_total}")
     print(f"  Dropped (position check, {Path(csv_file).name}, tol={tol} deg): "
-          f"{n_east_bad} SKY_EAST, {n_west_bad} SKY_WEST")
+          f"{n_east_bad_pos} SKY_EAST, {n_west_bad_pos} SKY_WEST")
+    print(f"  Dropped (fluxcal == 'NONE'): "
+          f"{n_east_bad_fluxcal} SKY_EAST, {n_west_bad_fluxcal} SKY_WEST")
 
     skye_spec = sky_east[skye_rows["line_no"]] if n_east > 0 else np.empty((0, wave.size))
     skyw_spec = sky_west[skyw_rows["line_no"]] if n_west > 0 else np.empty((0, wave.size))

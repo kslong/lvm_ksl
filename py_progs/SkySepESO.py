@@ -184,6 +184,7 @@ import sys
 import os
 import io
 import contextlib
+import uuid
 from pathlib import Path
 
 # ensure py_progs siblings are importable when running directly
@@ -294,9 +295,20 @@ def _get_sky_model(ra, dec, obstime, engine='auto', verbose=True):
     WAVE, MOON, ZODI, DIFFUSE columns, and err_msg is ''.  If both the
     local model and the web fallback fail, model_tab is None and err_msg
     is whatever run_sky_obs printed while trying each engine.
+
+    Passes its own process-and-call-unique outroot (PID + a random UUID
+    suffix) into run_sky_obs rather than relying on its content-derived
+    default (SkyE_<mjd>_<ra>_<dec>) -- this function reads modelfile back
+    then deletes it (below), and a shared, content-derived name is
+    exactly the read-then-delete pattern that can race across two
+    concurrent callers requesting the same or coincidentally
+    same-rounded geometry.  run_sky_obs's own internal scratch files
+    (config/output/data) are independently isolated per call inside
+    EsoSkyObs.run_local/run_remote -- see their docstrings.
     '''
+    outroot = 'EsoSkyModel_%d_%s' % (os.getpid(), uuid.uuid4().hex[:8])
     outroot, captured = _run_captured(EsoSkyObs.run_sky_obs, verbose=verbose,
-                                      ra=ra, dec=dec, xtime=obstime, engine=engine)
+                                      ra=ra, dec=dec, xtime=obstime, engine=engine, outroot=outroot)
 
     if outroot == '':
         err_msg = captured or 'EsoSkyObs.run_sky_obs failed, no message'

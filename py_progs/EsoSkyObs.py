@@ -22,7 +22,7 @@ is not set up.
 
 Command line usage::
 
-    EsoSkyObs.py [-h] [-engine local|remote|auto] [-msol flux] [-out root] [-site lco|paranal] ra dec time
+    EsoSkyObs.py [-h] [-engine local|remote|auto] [-msol flux] [-out root] [-site lco|paranal] [-pres hPa] [-keep_workdir] ra dec time
 
 Arguments: ra and dec are positions in the sky in degrees; time is in one
 of several formats (date_time string, MJD, or JD).
@@ -40,6 +40,21 @@ Options::
                       the position and time)
     -site S           'lco' (default) or 'paranal' -- see Notes on why this
                       is an approximation, not a full site swap
+    -pres hPa         override the site's default pressure (lco: 765,
+                      paranal: 744) -- see SITE_PRESSURE_HPA; local engine
+                      only, ignored by -engine remote
+    -keep_workdir     debugging switch: by default, calcskymodel's inputs/
+                      outputs (config/*.par, output/*.fits for the local
+                      engine; *.json/*.fits scratch files for the remote
+                      engine) live in a fresh, auto-deleted temp directory
+                      per call -- concurrency-safe, but nothing survives
+                      to inspect.  -keep_workdir instead writes them
+                      directly into the current directory (./config,
+                      ./data as a symlink, ./output) and leaves them there
+                      -- the pre-260730 behavior, and where calcskymodel
+                      itself looks if you cd there and run it by hand.
+                      NOT concurrency-safe -- only use this for one call
+                      at a time.
 
 Description:
 
@@ -127,6 +142,28 @@ History::
     (non-symlink) directory, only symlinks; setup() now raises RuntimeError
     if 'data' already exists as a real directory rather than silently
     destroying it.
+    260801 ksl Added SITE_PRESSURE_HPA and -pres: the local engine's config
+    pres value was previously hardcoded to 744 hPa (the model's own
+    built-in default, and PALACE's own fixed value) regardless of site.
+    site='lco' now defaults pres to 765 hPa (nominal LCO barometric
+    pressure) instead, via the new SITE_PRESSURE_HPA dict (paranal
+    unchanged at 744); -pres/create_local_inputs's pressure argument
+    overrides either default.  Local engine only -- skycalc_cli exposes no
+    separate pressure parameter.
+    260801 ksl Added -keep_workdir as a debugging switch: run_local()/
+    run_remote() normally write calcskymodel's/skycalc_cli's inputs and
+    outputs into a fresh, auto-deleted tempfile.TemporaryDirectory() per
+    call (via the new _scratch_dir() helper) -- concurrency-safe, but
+    nothing survives a run to inspect.  -keep_workdir instead restores
+    the pre-260730 behavior: config/*.par, the data symlink, and
+    output/*.fits are written directly into the CALLER's current
+    directory and left there, matching exactly where calcskymodel itself
+    looks if you cd there and run it by hand -- confirmed by the binary
+    itself, which errors with the literal message "File/dir does not
+    exist: config/" when that directory isn't present relative to its
+    cwd (calcskymodel hardcodes 'config', 'data', and 'output' internally
+    and offers no way to rename any of them).  NOT concurrency-safe --
+    only use it for one call at a time.
 
 '''
 
@@ -135,6 +172,8 @@ import sys
 import json
 import time
 import subprocess
+import tempfile
+import contextlib
 import warnings
 
 import numpy as np
@@ -164,6 +203,34 @@ warnings.simplefilter('ignore', NonRotationTransformationWarning)
 FIBER_AREA_ARCSEC2 = np.pi * (37 / 2) ** 2
 
 
+@contextlib.contextmanager
+def _scratch_dir(prefix, workdir=None):
+    '''
+    Yield a per-call scratch directory for run_local()/run_remote().
+
+    workdir=None (default): a fresh tempfile.TemporaryDirectory(),
+    removed automatically on exit even on failure/exception -- the
+    module's usual concurrency-safe behavior (see module Notes): each
+    call gets its own randomly-named directory, so there's nothing
+    shared for concurrent calls to race on.
+
+    workdir=<path> (-keep_workdir uses '.'; -workdir uses whatever path
+    was given): that directory is used directly instead (created if it
+    does not exist) and is NEVER removed -- for a single interactive/
+    manual run where you want config/*.par, the data symlink, and
+    output/*.fits somewhere predictable you can inspect, hand-edit, and
+    rerun calcskymodel in yourself.  NOT concurrency-safe -- do not point
+    two simultaneous calls at the same path.
+    '''
+    if workdir:
+        os.makedirs(workdir, exist_ok=True)
+        print('Using working directory: %s' % workdir)
+        yield workdir
+    else:
+        with tempfile.TemporaryDirectory(prefix=prefix) as tmp:
+            yield tmp
+
+
 def safe_remove(path):
     '''
     Remove a symlink at path, if one exists.  Deliberately does NOT
@@ -174,58 +241,75 @@ def safe_remove(path):
         os.unlink(path)
 
 
-def setup(eso_sky_dir='', config=True):
+def setup(eso_sky_dir='', workdir='.', config=True):
     '''
     Set up the directories (config/, output/, a data/ symlink) that the
-    local calcskymodel binary needs in the current working directory.
-    Moved here (260711) from the now-retired SkyModelObs.py.
+    local calcskymodel binary needs, inside workdir (default '.', the
+    current working directory -- but run_local() always passes an
+    isolated per-call temporary directory instead, unless -keep_workdir;
+    see its own docstring and module Notes on why).  Moved here (260711)
+    from the now-retired SkyModelObs.py.
 
-    Refuses to touch 'data' if it already exists as a real directory
-    (raises RuntimeError) rather than deleting it -- this used to call
-    shutil.rmtree() unconditionally on 'data' (via safe_remove), which on
-    260711 destroyed this repo's own real data/ directory (528MB of
-    vendored PALACE reference data, sky_mask.fits, etc.) when a model
-    fetch was accidentally run with the repo root as the working
+    config/, data, and output/ are always named exactly that -- not
+    renameable -- because calcskymodel itself hardcodes those names
+    (confirmed from the binary: it errors with the literal message "File/
+    dir does not exist: config/" when run without them, and filepath=data,
+    kernelfile=output/kernel.dat in inst_base hardcode the other two) and
+    looks for them relative to its own cwd, wherever calcskymodel is run
+    from.
+
+    Refuses to touch '<workdir>/data' if it already exists as a real
+    directory (raises RuntimeError) rather than deleting it -- this used
+    to call shutil.rmtree() unconditionally on 'data' (via safe_remove),
+    which on 260711 destroyed this repo's own real data/ directory
+    (528MB of vendored PALACE reference data, sky_mask.fits, etc.) when
+    a model fetch was accidentally run with the repo root as the working
     directory instead of a scratch directory -- fully recovered via git
     checkout since everything was committed, but that was luck, not
     safety.  'data' should only ever be a symlink this function itself
     created; a real directory there means setup() is running somewhere
-    it shouldn't.
+    it shouldn't.  Kept as an unconditional guard even though run_local's
+    fresh-per-call temporary directory can no longer trigger it at all
+    -- cheap, and defends any future/direct caller that passes a
+    workdir of its own.
     '''
+    data_path   = os.path.join(workdir, 'data')
+    output_path = os.path.join(workdir, 'output')
+    config_path = os.path.join(workdir, 'config')
+
     if config == False:
         icheck = True
-        if os.path.isdir('config') == False:
+        if os.path.isdir(config_path) == False:
             icheck = False
-        if os.path.isdir('output') == False:
+        if os.path.isdir(output_path) == False:
             icheck = False
-        if os.path.isdir('data') == False and os.path.islink('data') == False:
+        if os.path.isdir(data_path) == False and os.path.islink(data_path) == False:
             icheck = False
         if icheck == True:
             return
 
-    if os.path.isdir('data') and not os.path.islink('data'):
+    if os.path.isdir(data_path) and not os.path.islink(data_path):
         raise RuntimeError(
-            "setup(): 'data' already exists as a real directory in %s, not "
+            "setup(): '%s' already exists as a real directory, not "
             "a symlink -- refusing to remove it. This usually means the "
             "local ESO Sky Model engine is being run from the wrong working "
             "directory (it needs a scratch directory of its own, not one "
             "with real data already in it). cd to a scratch directory, or "
             "remove/rename this data/ directory yourself if you are certain "
-            "it is not needed." % os.getcwd())
+            "it is not needed." % data_path)
 
     xdir = os.getenv('ESO_SKY_MODEL')
     if eso_sky_dir == '':
         eso_sky_dir = xdir
 
     data_dir = '%s/sm-01_mod2/data' % eso_sky_dir
-    print('What is going on:', data_dir)
     if os.path.isdir(data_dir) == False:
         print('Error: %s really does not appear to exist' % data_dir)
         return
-    safe_remove('data')
-    os.symlink(data_dir, 'data')
-    os.makedirs('output', exist_ok=True)
-    os.makedirs('config', exist_ok=True)
+    safe_remove(data_path)
+    os.symlink(data_dir, data_path)
+    os.makedirs(output_path, exist_ok=True)
+    os.makedirs(config_path, exist_ok=True)
     return
 
 
@@ -340,7 +424,7 @@ def get_info_las_campanas(datetime_utc, ra, dec, verbose=False):
 
 
 _USAGE = '''
-Usage:  EsoSkyObs.py [-h] [-engine local|remote|auto] [-msol flux] [-out root] [-site lco|paranal] ra dec time
+Usage:  EsoSkyObs.py [-h] [-engine local|remote|auto] [-msol flux] [-out root] [-site lco|paranal] [-pres hPa] [-keep_workdir] ra dec time
 
     ra, dec    position in decimal degrees
     time       observation time: ISO string, MJD, or JD
@@ -350,6 +434,14 @@ Usage:  EsoSkyObs.py [-h] [-engine local|remote|auto] [-msol flux] [-out root] [
     -out root                   output file root name
     -site lco|paranal           observatory height/pressure physics (default: lco);
                                  see module Notes -- not a full site swap for -engine remote
+    -pres hPa                    override the site's default pressure (lco: 765, paranal: 744);
+                                  local engine only, see SITE_PRESSURE_HPA
+    -keep_workdir                debugging: write directly into ./config, ./data (symlink),
+                                  ./output in the current directory -- where calcskymodel itself
+                                  looks if you cd there and run it by hand -- instead of the
+                                  default per-call temp directory, and leave them there so the
+                                  inputs can be inspected/edited and calcskymodel rerun directly.
+                                  NOT concurrency-safe: only use this for one call at a time
 '''
 
 
@@ -414,8 +506,9 @@ altmoon  = %.1f
 # distance to Moon (mean distance = 1; [0.91,1.08])
 moondist = %.2f
 
-# pressure at observer altitude in hPa (default: 744)
-pres     = 744.
+# pressure at observer altitude in hPa (default: 744; site defaults below
+# -- see SITE_PRESSURE_HPA / -pres)
+pres     = %.1f
 
 # single scattering albedo for aerosols [0,1] (default: 0.97)
 ssa      = 0.97
@@ -494,13 +587,30 @@ SITE_HEIGHT_KM = {
 }
 
 
+# Pressure [hPa] used for the local engine's pres parameter, keyed by site --
+# same role as SITE_HEIGHT_KM but for pressure rather than height.  Only
+# applies to the local engine; skycalc_cli (remote) does not expose pressure
+# as a separate parameter, only via its 'observatory' name.  Overridable
+# per call via -pres / create_local_inputs's pressure argument.
+SITE_PRESSURE_HPA = {
+    'lco': 765.0,       # nominal LCO barometric pressure
+    'paranal': 744.0,   # the model's own built-in default; matches PALACE's
+                        # own hardcoded p, see SITE_HEIGHT_KM
+}
+
+
 def create_local_inputs(ra=296.242608, dec=-14.811007, obstime='2023-08-29T03:20:43.668', msol=0,
-                        site='lco', verbose=False):
+                        site='lco', pressure=None, workdir='.', verbose=False):
     '''
-    Write config/skymodel_etc.par and config/instrument_etc.par for
-    calcskymodel, given the observing geometry and a resolved solar flux.
-    If msol<=0, the model's own long-term-average default (101 sfu) is used.
-    site selects SITE_HEIGHT_KM's sm_h value ('lco' default, or 'paranal').
+    Write <workdir>/config/skymodel_etc.par and
+    <workdir>/config/instrument_etc.par for calcskymodel, given the
+    observing geometry and a resolved solar flux.  If msol<=0, the
+    model's own long-term-average default (101 sfu) is used.  site
+    selects SITE_HEIGHT_KM's sm_h value ('lco' default, or 'paranal').
+    pressure overrides SITE_PRESSURE_HPA's site-keyed default (hPa) if
+    given and positive.
+    workdir defaults to '.' but run_local() always passes an isolated
+    per-call temporary directory instead -- see module Notes.
     '''
     info = get_info_las_campanas(obstime, ra=ra, dec=dec, verbose=verbose)
 
@@ -512,13 +622,14 @@ def create_local_inputs(ra=296.242608, dec=-14.811007, obstime='2023-08-29T03:20
 
     xmsol = msol if msol > 0 else 101.
     sm_h = SITE_HEIGHT_KM[site]
+    xpres = pressure if pressure and pressure > 0 else SITE_PRESSURE_HPA[site]
 
-    with open('config/skymodel_etc.par', 'w') as xout:
+    with open(os.path.join(workdir, 'config', 'skymodel_etc.par'), 'w') as xout:
         xout.write(obs_base % (sm_h, info['SourceAlt'], info['Moon-Sun_Separation'], info['Moon-Source_Separation'],
-                                info['MoonAlt'], info['MoonDistanceInMeanUnits'],
+                                info['MoonAlt'], info['MoonDistanceInMeanUnits'], xpres,
                                 longitude, info['SourceEclipLat'], xmsol))
 
-    with open('config/instrument_etc.par', 'w') as xinst:
+    with open(os.path.join(workdir, 'config', 'instrument_etc.par'), 'w') as xinst:
         xinst.write(inst_base)
 
 
@@ -537,37 +648,63 @@ def local_engine_available(eso_sky_dir=''):
     return False, ''
 
 
-def run_local(ra, dec, xtime_iso, msol=0, outroot='', eso_sky_dir='', site='lco'):
+def run_local(ra, dec, xtime_iso, msol=0, outroot='', eso_sky_dir='', site='lco', pressure=None,
+             keep_workdir=False):
     '''
     Run the local ESO Sky Model (calcskymodel) for ra, dec, xtime_iso and
-    write outroot.fits.  Returns outroot on success, '' on failure.
+    write outroot.fits (in the CALLER's current directory -- unchanged
+    from before).  Returns outroot on success, '' on failure.
     site: 'lco' (default) or 'paranal' -- see SITE_HEIGHT_KM.
+    pressure overrides SITE_PRESSURE_HPA's site-keyed default (hPa) if
+    given and positive -- see create_local_inputs().
+
+    By default, everything calcskymodel itself reads/writes (config/*.par,
+    output/*.fits/.dat, the data symlink) lives in a fresh
+    tempfile.TemporaryDirectory() private to this one call, not the
+    caller's working directory -- see module Notes.  This is what makes
+    concurrent calls (separate processes OR threads of one process) safe:
+    each gets its own directory with a globally-unique random name, so
+    there's nothing shared to race on.  The directory and everything in
+    it is removed automatically when this function returns, even on
+    failure/exception.
+
+    keep_workdir=True (-keep_workdir) instead writes directly into
+    './config', './data' (symlink), './output' in the CALLER's current
+    directory -- the pre-260730 behavior -- and leaves them there, so the
+    inputs can be inspected, hand-edited, and calcskymodel rerun directly
+    from that same directory.  NOT concurrency-safe -- do not use this
+    from more than one call at a time; see _scratch_dir() and module
+    Notes.
     '''
     available, binary = local_engine_available(eso_sky_dir)
     if not available:
         print('Error: local ESO Sky Model is not available (check ESO_SKY_MODEL)')
         return ''
 
-    setup(eso_sky_dir)
-    create_local_inputs(ra=ra, dec=dec, obstime=xtime_iso, msol=msol, site=site)
+    with _scratch_dir('EsoSkyObs_local_', workdir='.' if keep_workdir else None) as workdir:
+        setup(eso_sky_dir, workdir=workdir)
+        create_local_inputs(ra=ra, dec=dec, obstime=xtime_iso, msol=msol, site=site, pressure=pressure,
+                            workdir=workdir)
 
-    result = subprocess.run([binary], capture_output=True, text=True)
-    if len(result.stderr):
-        print('stderr:', result.stderr)
-        print('Could not create local sky model: ra %f dec %f time %s' % (ra, dec, xtime_iso))
-        return ''
+        result = subprocess.run([binary], capture_output=True, text=True, cwd=workdir)
+        if len(result.stderr):
+            print('stderr:', result.stderr)
+            print('Could not create local sky model: ra %f dec %f time %s' % (ra, dec, xtime_iso))
+            return ''
 
-    rad = fits.open('output/radspec.fits')
-    trans = fits.open('output/transspec.fits')
-    rtab = Table(rad[1].data)
-    ttab = Table(trans[1].data)
-    ztab = join(rtab, ttab, join_type='left')
-    ztab['lam'] *= 1000.   # microns -> nm, to match the remote engine's native units
-    header = rad[0].header
+        rad = fits.open(os.path.join(workdir, 'output', 'radspec.fits'))
+        trans = fits.open(os.path.join(workdir, 'output', 'transspec.fits'))
+        rtab = Table(rad[1].data)
+        ttab = Table(trans[1].data)
+        ztab = join(rtab, ttab, join_type='left')
+        ztab['lam'] *= 1000.   # microns -> nm, to match the remote engine's native units
+        header = rad[0].header
+        rad.close()
+        trans.close()
 
-    ztab = finalize_table(ztab)
-    write_output_fits(ztab, header, outroot, engine='local', ra=ra, dec=dec, xtime_iso=xtime_iso, msol=msol,
-                      site=site)
+        ztab = finalize_table(ztab)
+        write_output_fits(ztab, header, outroot, engine='local', ra=ra, dec=dec, xtime_iso=xtime_iso, msol=msol,
+                          site=site)
     return outroot
 
 
@@ -611,10 +748,13 @@ REMOTE_SITE_NAME = {
 }
 
 
-def write_remote_inputs(ra, dec, xtime_iso, msol=0, outroot='test', site='lco'):
+def write_remote_inputs(ra, dec, xtime_iso, msol=0, outroot='test', site='lco', workdir='.'):
     '''
-    Write outroot.json, the per-observation input file for skycalc_cli.
-    site: 'lco' (default) or 'paranal' -- see REMOTE_SITE_NAME.
+    Write <workdir>/<outroot>.json, the per-observation input file for
+    skycalc_cli.  site: 'lco' (default) or 'paranal' -- see
+    REMOTE_SITE_NAME.  workdir defaults to '.' but run_remote() always
+    passes an isolated per-call temporary directory instead -- see
+    module Notes.
     '''
     xdict = json.loads(default)
     xdict.update({'ra': ra})
@@ -629,7 +769,7 @@ def write_remote_inputs(ra, dec, xtime_iso, msol=0, outroot='test', site='lco'):
         xdict['msolflux'] = msol
 
     jsonString = json.dumps(xdict, indent=4, sort_keys=False)
-    with open('%s.json' % outroot, 'w') as jsonFile:
+    with open(os.path.join(workdir, '%s.json' % outroot), 'w') as jsonFile:
         jsonFile.write(jsonString)
 
 
@@ -641,47 +781,61 @@ def is_recent(filepath, minutes=10):
     return age_seconds < (minutes * 60)
 
 
-def run_remote(ra, dec, xtime_iso, msol=0, outroot='', print_output=False, site='lco'):
+def run_remote(ra, dec, xtime_iso, msol=0, outroot='', print_output=False, site='lco', keep_workdir=False):
     '''
     Run the ESO SkyCalc web service via skycalc_cli for ra, dec, xtime_iso
-    and write outroot.fits.  Returns outroot on success, '' on failure.
+    and write outroot.fits (in the CALLER's current directory --
+    unchanged from before).  Returns outroot on success, '' on failure.
     site: 'lco' (default) or 'paranal' -- see REMOTE_SITE_NAME.
+
+    By default, skycalc_cli's own scratch inputs/output (<outroot>.json,
+    xsky.json, and its raw <outroot>.fits before finalize_table/
+    write_output_fits convert it) live in a fresh
+    tempfile.TemporaryDirectory() private to this one call, same
+    reasoning as run_local() -- see module Notes.
+
+    keep_workdir=True (-keep_workdir) instead writes those scratch files
+    directly into the CALLER's current directory and leaves them there --
+    the pre-260730 behavior.  NOT concurrency-safe; see _scratch_dir().
     '''
-    write_remote_inputs(ra, dec, xtime_iso, msol=msol, outroot=outroot, site=site)
+    with _scratch_dir('EsoSkyObs_remote_', workdir='.' if keep_workdir else None) as workdir:
+        write_remote_inputs(ra, dec, xtime_iso, msol=msol, outroot=outroot, site=site, workdir=workdir)
 
-    xsky_dict = json.loads(xdefaults)
-    xsky_dict['observatory'] = REMOTE_SITE_NAME[site]
-    with open('xsky.json', 'w') as g:
-        json.dump(xsky_dict, g, indent=4, sort_keys=False)
-    time.sleep(1)
+        xsky_dict = json.loads(xdefaults)
+        xsky_dict['observatory'] = REMOTE_SITE_NAME[site]
+        with open(os.path.join(workdir, 'xsky.json'), 'w') as g:
+            json.dump(xsky_dict, g, indent=4, sort_keys=False)
+        time.sleep(1)
 
-    command_line = ('skycalc_cli -i xsky.json -a %s.json -o %s.fits' % (outroot, outroot)).split()
+        command_line = ('skycalc_cli -i xsky.json -a %s.json -o %s.fits' % (outroot, outroot)).split()
 
-    try:
-        result = subprocess.run(command_line, capture_output=True, text=True)
-    except FileNotFoundError:
-        print("Error: 'skycalc_cli' not found in your PATH.")
-        return ''
+        try:
+            result = subprocess.run(command_line, capture_output=True, text=True, cwd=workdir)
+        except FileNotFoundError:
+            print("Error: 'skycalc_cli' not found in your PATH.")
+            return ''
 
-    Xerror = result.returncode != 0 or 'Traceback' in result.stderr
-    if print_output or Xerror:
-        print('stdout:', result.stdout)
-        print('stderr:', result.stderr)
-    if Xerror:
-        print('ERROR: skycalc_cli failed to execute successfully.')
-        return ''
+        Xerror = result.returncode != 0 or 'Traceback' in result.stderr
+        if print_output or Xerror:
+            print('stdout:', result.stdout)
+            print('stderr:', result.stderr)
+        if Xerror:
+            print('ERROR: skycalc_cli failed to execute successfully.')
+            return ''
 
-    if is_recent('%s.fits' % outroot) == False:
-        print('Error: cannot verify that %s.fits was recently created' % outroot)
-        return ''
+        raw_fits = os.path.join(workdir, '%s.fits' % outroot)
+        if is_recent(raw_fits) == False:
+            print('Error: cannot verify that %s.fits was recently created' % outroot)
+            return ''
 
-    x = fits.open('%s.fits' % outroot)
-    ztab = Table(x[1].data)
-    header = x[0].header
+        x = fits.open(raw_fits)
+        ztab = Table(x[1].data)
+        header = x[0].header
+        x.close()
 
-    ztab = finalize_table(ztab)
-    write_output_fits(ztab, header, outroot, engine='remote', ra=ra, dec=dec, xtime_iso=xtime_iso, msol=msol,
-                      site=site)
+        ztab = finalize_table(ztab)
+        write_output_fits(ztab, header, outroot, engine='remote', ra=ra, dec=dec, xtime_iso=xtime_iso, msol=msol,
+                          site=site)
     return outroot
 
 
@@ -760,7 +914,7 @@ def resolve_solar_flux(xtime_iso, msol=-1):
 
 
 def run_sky_obs(ra, dec, xtime, outroot='', msol=-1, engine='auto', print_output=False, eso_sky_dir='',
-                site='lco'):
+                site='lco', pressure=None, keep_workdir=False):
     '''
     Generate a predicted sky spectrum for ra, dec, xtime using the real ESO
     Sky Model.  By default (engine='auto') the local calcskymodel install is
@@ -771,6 +925,19 @@ def run_sky_obs(ra, dec, xtime, outroot='', msol=-1, engine='auto', print_output
     site: 'lco' (default) or 'paranal' -- see module Notes; primarily for
     comparison runs against PALACE, whose own atmosphere physics is fixed
     to Cerro Paranal.
+
+    pressure overrides SITE_PRESSURE_HPA's site-keyed default (hPa) for the
+    local engine only -- see create_local_inputs()/-pres in the CLI help;
+    has no effect on the remote engine (skycalc_cli exposes no separate
+    pressure parameter).
+
+    keep_workdir=True (-keep_workdir) trades the default concurrency-safe
+    behavior (a fresh, auto-deleted temp directory per call) for the pre-
+    260730 behavior: writes directly into './config', './data' (symlink),
+    './output' in the CALLER's current directory and leaves them there,
+    for debugging -- the inputs can be inspected, hand-edited, and
+    calcskymodel rerun directly from that same directory.  NOT
+    concurrency-safe; see run_local()/run_remote()/_scratch_dir().
     '''
     xtime_iso = convert_time(xtime, 'iso_ms')
     msol_resolved = resolve_solar_flux(xtime_iso, msol)
@@ -787,7 +954,7 @@ def run_sky_obs(ra, dec, xtime, outroot='', msol=-1, engine='auto', print_output
 
     if engine in ('local', 'auto'):
         xroot = run_local(ra, dec, xtime_iso, msol=msol_resolved, outroot=outroot, eso_sky_dir=eso_sky_dir,
-                          site=site)
+                          site=site, pressure=pressure, keep_workdir=keep_workdir)
         if xroot:
             used_engine = 'local'
         elif engine == 'local':
@@ -797,7 +964,7 @@ def run_sky_obs(ra, dec, xtime, outroot='', msol=-1, engine='auto', print_output
         if engine == 'auto':
             print('Local ESO Sky Model unavailable or failed; falling back to the ESO SkyCalc web service')
         xroot = run_remote(ra, dec, xtime_iso, msol=msol_resolved, outroot=outroot, print_output=print_output,
-                           site=site)
+                           site=site, keep_workdir=keep_workdir)
         if xroot:
             used_engine = 'remote'
 
@@ -821,6 +988,8 @@ def steer(argv):
     msol = -1
     engine = 'auto'
     site = 'lco'
+    pres = -1
+    keep_workdir = False
 
     i = 1
     while i < len(argv):
@@ -839,6 +1008,11 @@ def steer(argv):
         elif argv[i][:5] == '-site':
             i += 1
             site = argv[i]
+        elif argv[i][:5] == '-pres':
+            i += 1
+            pres = eval(argv[i])
+        elif argv[i][:13] == '-keep_workdir':
+            keep_workdir = True
         elif argv[i][0] == '-' and ra < 0.0:
             print(_USAGE)
             print('Error: unknown option: ', argv)
@@ -859,7 +1033,8 @@ def steer(argv):
         print('Error: -site must be one of lco, paranal')
         return
 
-    run_sky_obs(ra=ra, dec=dec, xtime=xtime, outroot=outroot, msol=msol, engine=engine, site=site)
+    run_sky_obs(ra=ra, dec=dec, xtime=xtime, outroot=outroot, msol=msol, engine=engine, site=site,
+               pressure=pres if pres > 0 else None, keep_workdir=keep_workdir)
 
 
 # Next lines permit one to run the routine from the command line

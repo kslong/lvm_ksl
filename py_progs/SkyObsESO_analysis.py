@@ -50,7 +50,7 @@ Primary routines::
     add_near_far_columns, add_flux_error_columns, add_fit_quality_columns
     weighted_mean, summarize, find_outliers
     plot_scale_cdf, plot_scale_hist, plot_scale_cdf_sep_vs_final, plot_cross_telescope,
-    plot_vs_condition, plot_vs_brightness
+    plot_fit_quality_correlation, plot_vs_condition, plot_vs_brightness
     make_standard_plots     the standard-set driver this script's CLI calls
 
 Notes::
@@ -606,6 +606,59 @@ def plot_cross_telescope(tab, quantity, tel_x, tel_y, lims=(0, 2), alpha=0.1,
     return ax
 
 
+def plot_fit_quality_correlation(tab, telescopes=('SCI', 'NEAR', 'FAR'), lims=(0, 15),
+                                 alpha=0.1, title=None, ax=None):
+    '''
+    Scatter of <TEL>_FIT_QUALITY_CONT (x) vs <TEL>_FIT_QUALITY_LINE (y),
+    one color per telescope, Pearson r annotated per telescope in the
+    legend (e.g. "SCI (r=0.62)") rather than pooled across telescopes --
+    SCI carries real source flux on top of sky while NEAR/FAR don't (see
+    SkyObsESOCompare.py Notes), so pooling could conflate genuinely
+    different populations' continuum-vs-line relationships into one
+    misleading number.
+
+    Motivation: the FINAL line residual is measured against flux - CONT1,
+    with CONT1 fit only on clean pixels and then extrapolated (never
+    refit) into the line-affected pixels, and the line fit itself is a
+    single non-negative amplitude on the LINES template with no freedom
+    to absorb a smooth continuum offset/slope (see SkyObsESOCompare.py's
+    one_row).  So a continuum SHAPE error can leak straight through into
+    FIT_QUALITY_LINE, indistinguishable there from a genuine line-shape
+    mismatch.  A strong positive correlation here is evidence that's
+    actually happening at scale -- i.e. that solving the continuum
+    problem would substantially fix the apparent line problem too, rather
+    than the two being independent issues that both need separate work.
+    '''
+    if ax is None:
+        _, ax = plt.subplots(figsize=(6, 6))
+
+    for i, tel in enumerate(telescopes):
+        xcol, ycol = '%s_FIT_QUALITY_CONT' % tel, '%s_FIT_QUALITY_LINE' % tel
+        if xcol not in tab.colnames or ycol not in tab.colnames:
+            continue
+        x = np.asarray(tab[xcol], dtype=float)
+        y = np.asarray(tab[ycol], dtype=float)
+        good = np.isfinite(x) & np.isfinite(y)
+        x, y = x[good], y[good]
+        color = 'C%d' % (i % 10)
+        label = tel
+        if len(x) > 2:
+            r = pearsonr(x, y)[0]
+            label = '%s (r=%.2f)' % (tel, r)
+        ax.plot(x, y, '.', alpha=alpha, color=color, label=label)
+
+    ax.set_xlim(*lims)
+    ax.set_ylim(*lims)
+    ax.set_xlabel('FIT_QUALITY_CONT')
+    ax.set_ylabel('FIT_QUALITY_LINE')
+    if title:
+        ax.set_title(title, fontsize=9)
+    ax.legend(fontsize=8)
+    _thicken_axes(ax)
+    ax.figure.tight_layout()
+    return ax
+
+
 def _binned_trend(x, y, yerr=None, nbins=20):
     '''
     Core binning logic shared by plot_vs_condition and plot_vs_brightness:
@@ -734,7 +787,7 @@ def plot_vs_brightness(tab, quantity, telescopes=('SCI', 'SKYE', 'SKYW'), compon
         ax.set_xscale('log')
     if ylims:
         ax.set_ylim(*ylims)
-    ax.set_xlabel('predicted %s brightness' % component.lower())
+    ax.set_xlabel('Predicted %s Brightness' % component.capitalize())
     ax.set_ylabel(quantity)
     if title:
         ax.set_title(title)
@@ -776,7 +829,8 @@ def make_standard_plots(tab, outdir, telescopes=_STANDARD_TELESCOPES, outlier_th
         near_far_vs_moonalt_cont_scale.png, near_far_vs_moonalt_line_scale.png
             (skipped under the same condition, or if moon_alt is absent)
         flux_error_cont_vs_brightness.png, flux_error_line_vs_brightness.png
-        fit_quality_cont_sep_vs_final.png, fit_quality_line_sep_vs_final.png
+        fit_quality_cont_sep_vs_final.png, fit_quality_line_sep_vs_final.png,
+        fit_quality_cont_vs_line.png
             (skipped if SEP_FIT_QUALITY_CONT isn't present for every
             telescope -- needs a 260728+ SkyObsESOCompare.py run)
         line_frac_10sig_sep_vs_final.png, line_frac_1e15_sep_vs_final.png,
@@ -862,6 +916,11 @@ def make_standard_plots(tab, outdir, telescopes=_STANDARD_TELESCOPES, outlier_th
             show_sep=not final_only,
             title='Line Fit Quality: Excess/Intrinsic Variation')
         _save(ax.figure, 'fit_quality_line_sep_vs_final.png')
+
+        ax = plot_fit_quality_correlation(
+            tab, telescopes=telescopes,
+            title='FIT_QUALITY_CONT vs FIT_QUALITY_LINE: shared continuum origin?')
+        _save(ax.figure, 'fit_quality_cont_vs_line.png')
     else:
         print('Skipping fit-quality plots: SEP_FIT_QUALITY_CONT not present '
              'for every telescope (older SkyObsESOCompare.py output?).')

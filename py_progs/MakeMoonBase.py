@@ -68,11 +68,13 @@ Notes:
     airmass dependence of the scattering are both real effects this
     single static curve does not capture.
 
-    EsoSkyObs.setup() (called by run_local(), via run_sky_obs()) writes
-    config/, output/, and a data/ symlink into the *current working
-    directory* -- run this script from a scratch directory, not from
-    py_progs/, or clean those up afterward (they are not meant to be
-    tracked).
+    EsoSkyObs.run_local() (via run_sky_obs()) isolates its own config/,
+    output/, and data/-symlink scratch files inside a private
+    tempfile.TemporaryDirectory() per call (fixed 260730 -- previously
+    these were written into the *current working directory*, requiring
+    this script to be run from a scratch directory rather than py_progs/
+    to avoid leaving cruft behind or colliding with concurrent runs) --
+    no scratch-directory precaution is needed here any more.
 
     data/moon_rolo_albedo.dat (the raw Kieffer & Stone 2005 ROLO
     coefficients) is not used by this script -- it was the first,

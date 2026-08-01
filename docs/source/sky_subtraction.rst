@@ -150,7 +150,7 @@ both of those scripts have since been retired and removed (see note below).
 
 **Usage**::
 
-    EsoSkyObs.py [-h] [-engine local|remote|auto] [-msol flux] [-out root] [-site lco|paranal] ra dec time
+    EsoSkyObs.py [-h] [-engine local|remote|auto] [-msol flux] [-out root] [-site lco|paranal] [-pres hPa] [-keep_workdir] ra dec time
 
 **Arguments:**
 
@@ -183,6 +183,24 @@ time
     Observatory height/pressure physics used by the model (default
     ``lco``).  See Notes below — this is an approximation for comparing
     against PALACE, not a full site swap.
+
+-pres hPa
+    Override the site's default pressure (``lco``: 765, ``paranal``: 744
+    — see ``SITE_PRESSURE_HPA``).  Local engine only; ignored by
+    ``-engine remote`` (``skycalc_cli`` exposes no separate pressure
+    parameter).
+
+-keep_workdir
+    Debugging switch.  By default, ``calcskymodel``'s/``skycalc_cli``'s
+    inputs and outputs live in a fresh, automatically-deleted temporary
+    directory per call — concurrency-safe, but nothing survives a run to
+    inspect.  ``-keep_workdir`` instead writes them directly into
+    ``./config``, ``./data`` (a symlink), and ``./output`` in the current
+    directory and leaves them there — exactly where ``calcskymodel``
+    itself looks if you ``cd`` there and run it by hand (confirmed from
+    the binary itself, which hardcodes those three names and cannot be
+    told to use anything else).  **Not concurrency-safe** — only use it
+    for one call at a time.
 
 **Output FITS structure:**
 
@@ -246,15 +264,17 @@ atmospheric-physics constants are hardcoded to Cerro Paranal
 (``h=2.64 km``, ``p=744 hPa``, not overridable via any public PALACE
 parameter -- see PalaceObs.py below).  The two engines handle this
 differently: the local engine only changes the observatory height/
-pressure physics (``SITE_HEIGHT_KM``), keeping the real LCO observing
-geometry (alt/az, moon phase/separation) -- the same mixed real-geometry/
-Paranal-physics approach PALACE itself uses, so this is the more directly
-comparable of the two.  The remote engine's ``observatory`` parameter
-drives both the atmosphere physics *and* skycalc_cli's own internal moon/
-sun almanac geometry (``REMOTE_SITE_NAME``), so ``-site paranal`` there
-also shifts the modeled sky to Paranal's real geographic location, not
-just its altitude -- a real, different kind of approximation than the
-local engine's.
+pressure physics (``SITE_HEIGHT_KM``/``SITE_PRESSURE_HPA``), keeping the
+real LCO observing geometry (alt/az, moon phase/separation) -- the same
+mixed real-geometry/Paranal-physics approach PALACE itself uses, so this
+is the more directly comparable of the two.  ``-site lco``'s local-engine
+default pressure is 765 hPa (nominal LCO barometric pressure, not 744) --
+``-pres`` overrides either site's default directly.  The remote engine's
+``observatory`` parameter drives both the atmosphere physics *and*
+skycalc_cli's own internal moon/sun almanac geometry
+(``REMOTE_SITE_NAME``), so ``-site paranal`` there also shifts the
+modeled sky to Paranal's real geographic location, not just its altitude
+-- a real, different kind of approximation than the local engine's.
 
 **See Also:** :doc:`api/EsoSkyObs/index`
 
@@ -1209,9 +1229,15 @@ Only the sky lines are scaled by *r*; ``sky_CONT`` (whichever sky fiber's
 ESO-model fit produced it — near for ``nearest``/``farlines_nearcont``, far
 for ``farthest``) is used exactly as fitted.
 
-Each ESO-model fetch writes a small per-call FITS file (``SkyE_*.fits``)
-to the current working directory; this file is read and deleted
-immediately, so nothing accumulates on disk across a run.
+Each ESO-model fetch writes a small per-call FITS file
+(``EsoSkyModel_<pid>_<uuid>.fits``, a process-and-call-unique name rather
+than the content-derived ``SkyE_*.fits`` default, so two concurrent
+callers requesting the same or coincidentally same-rounded geometry can't
+race on each other's read-then-delete) to the current working directory;
+this file is read and deleted immediately, so nothing accumulates on disk
+across a run.  ``EsoSkyObs.run_local``/``run_remote``'s own internal
+scratch files (``config``/``output``/``data``) are independently isolated
+per call in a private temporary directory -- see ``EsoSkyObs.py`` above.
 
 **Output:**
 

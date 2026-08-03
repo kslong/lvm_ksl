@@ -1669,6 +1669,131 @@ these make it straightforward to identify which method best suppresses
 sky lines *and* which best separates continuum from lines for the
 observation.
 
+sky_residual_eval.py
+^^^^^^^^^^^^^^^^^^^^
+
+A method-agnostic sky-subtraction evaluator, complementary to
+SkySub_eval.py above.  Where SkySub_eval.py overlays several methods'
+own output files for a visual side-by-side comparison, sky_residual_eval.py
+takes any single (observed, model) pair — whatever produced it, a full
+ESO/PALACE/SkyDecomp decomposition or something as simple as a scaled
+sky-fiber spectrum — and reduces it to a fixed set of numeric quality
+metrics, separately for the continuum and for individual airglow lines,
+suitable for batch comparison across many exposures or fibers at once.
+
+**Usage**::
+
+    sky_residual_eval.py filename [-mask mask.fits] [-nproc N]
+                         [-out ROOT] [-plotdir DIR]
+
+**Arguments:**
+
+filename
+    FITS file with WAVE, FLUX, and SKY extensions (the convention used by
+    SkySubOrig/Drp/Dev1/Dev2.py and read by SkySub_eval.py above).  WAVE
+    is 1-D; FLUX/SKY are 1-D (single spectrum) or 2-D, ``n_rows x
+    n_wave``.  An IVAR extension is used if present.  In this file
+    convention FLUX is already sky-subtracted, so the observed spectrum
+    is reconstructed internally as FLUX+SKY, with SKY as the model.
+
+**Options:**
+
+-mask mask.fits
+    A palace_make_mask.py output (WAVE/MASK extensions).  Defaults to
+    ``data/sky_mask.fits``, the same default GetSkyCont.py and
+    SkyObsESOCompare.py use.
+
+-nproc N
+    Worker processes for batch rows (default 1).
+
+-out ROOT
+    Output filename root; writes ``<ROOT>_summary.fits`` and
+    ``<ROOT>_lines.fits`` (default: the input file's stem).
+
+-plotdir DIR
+    Directory for the three summary plots described below (default
+    ``plots_sky_resid``).
+
+**Description:**
+
+For every row, residual = Observations − Sky is decomposed two ways:
+
+*Continuum bands* (B/R/Z, arm-overlap zones excluded) — over clean
+pixels identified from the mask: an offset, a dimensionless power-law
+index mismatch (``CONT_ALPHA``, treating the residual as a small
+``(wavelength/reference)**alpha`` shape correction to the model rather
+than a flux-per-Angstrom slope, so it is comparable across bands and
+exposures of very different brightness), a fit-quality ratio
+(``CONT_FIT_QUALITY`` = NMAD/NOISE_PROXY — not a formal ivar
+chi-square, which saturates uselessly large for real sky-subtraction
+residual since it routinely exceeds the formal photon-noise floor), and
+the fraction of clean pixels with ``|residual|`` at or below two fixed
+absolute flux levels (1e-14 and 1e-15 erg/s/cm^2/Angstrom).
+
+*Individual lines* — a fixed default list of 16 airglow lines (the
+DRP's own ``REF_SKYLINES`` plus 9 lines from ``sky_gaussfit.py``'s
+``SKY_LINES``).  For each line, a local Gaussian is fit to the MODEL
+(not the data) to find its own amplitude, center, and width, and the
+residual in that window is fit against the analytic first-order
+derivative of that Gaussian in amplitude, center, and width.  The three
+resulting numbers are the physical corrections needed to make the model
+match the data: an amplitude ratio (``AMP_RATIO`` — predicted/measured,
+used instead of a flux-unit amplitude difference so it is comparable
+across lines of very different brightness), a wavelength-registration
+offset (``DELTA_LAM``, Angstroms), and an LSF-width offset
+(``DELTA_SIGMA``, Angstroms — the number that answers whether a small
+LSF mismatch is contributing to the residual).  The same fixed-threshold
+quality fractions as the continuum side are also computed, but over the
+mask's own line-affected pixels rather than the line list, since the
+line list is deliberately too short a set for a fraction to be more than
+a coarse step function.
+
+**Output files:**
+
+``<ROOT>_summary.fits``
+    One row per input spectrum with all of the per-band continuum and
+    line-aggregate quantities above.
+
+``<ROOT>_lines.fits``
+    One row per (spectrum, line), with each line's individual fit
+    results.
+
+Three PNG summary plots are also written to ``-plotdir`` (default
+``plots_sky_resid/``):
+
+``<ROOT>_frac_summary.png``
+    Reverse-cumulative distributions of the quality fractions, one row
+    for continuum and one for lines, one column per arm.
+
+``<ROOT>_continuum_summary.png``
+    Histograms of the continuum diagnostics (offset, scatter, alpha,
+    fit quality), one row per metric, one column per arm; a metric with
+    no data in any arm (e.g. fit quality is always available, but a
+    metric that genuinely has none) is dropped rather than left blank.
+
+``<ROOT>_lines_summary.png``
+    Histograms of the per-band line diagnostics (amplitude ratio,
+    registration bias, LSF-width bias), same layout.
+
+In all three plots, a metric's row shares one x-axis range across all
+three arms (from the metric's pooled 1st–99th percentile, not the
+min/max), so the relative width of the distribution in each arm is
+directly comparable, and a dashed reference line marks the "model
+matches data exactly" value (0 for offsets/biases, 1 for ratios).
+
+**Example**::
+
+    sky_residual_eval.py XCframe_file_drp_farlines_nearcont.fits -nproc 8
+
+This writes ``XCframe_file_drp_farlines_nearcont_summary.fits``,
+``XCframe_file_drp_farlines_nearcont_lines.fits``, and the three PNGs
+under ``plots_sky_resid/``, evaluating every row of the input file
+against ``data/sky_mask.fits`` in parallel across 8 worker processes.
+
+``analyze_sky_residual``/``analyze_sky_residuals`` are also directly
+importable for use outside the command line -- see the API reference
+for their full parameter and return-value documentation.
+
 
 Science-Fiber-Based Sky Estimation
 ------------------------------------

@@ -428,9 +428,12 @@ def make_spec_specs(xtab, data_dir, outfile='', percentile=50, file_type='CFrame
         return
 
     wav = np.array(wav)
-    xflux1 = np.array(xflux1)
-    xflux2 = np.array(xflux2)
-    xflux3 = np.array(xflux3)
+    # dtype=np.float32 guards against np.nanpercentile silently upcasting to
+    # float64 (numpy 1.26 does this for any percentile computation, even
+    # though the FITS extensions are float32)
+    xflux1 = np.array(xflux1, dtype=np.float32)
+    xflux2 = np.array(xflux2, dtype=np.float32)
+    xflux3 = np.array(xflux3, dtype=np.float32)
 
     good_tab = xtab[good_idx]
 

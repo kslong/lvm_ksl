@@ -336,10 +336,13 @@ def make_ring_specs(xtab, data_dir, outfile='', percentile=50,
         return
 
     wav = np.array(wav)
-    xflux_inner = np.array(xflux_inner)
-    xflux_middle = np.array(xflux_middle)
-    xflux_outer = np.array(xflux_outer)
-    xsky = np.array(xsky)
+    # dtype=np.float32 guards against np.nanpercentile silently upcasting to
+    # float64 (numpy 1.26 does this for any percentile computation, even
+    # though the FITS extensions are float32)
+    xflux_inner = np.array(xflux_inner, dtype=np.float32)
+    xflux_middle = np.array(xflux_middle, dtype=np.float32)
+    xflux_outer = np.array(xflux_outer, dtype=np.float32)
+    xsky = np.array(xsky, dtype=np.float32)
 
     print('Inner shape: %s, Middle shape: %s, Outer shape: %s' %
           (xflux_inner.shape, xflux_middle.shape, xflux_outer.shape))

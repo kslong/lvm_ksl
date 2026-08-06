@@ -468,11 +468,17 @@ def make_med_spec(xtab,data_dir,outfile='',percentile=50,exp_start=None,
         for col in meta_list[0]:
             xtab[col]=[m[col] for m in meta_list]
 
-    wav=np.array(wav)
-    xsci_flux=np.array(xsci_flux)
-    xsci_sky_e=np.array(xsci_sky_e)
-    xsci_sky_w=np.array(xsci_sky_w)
-    xsci_lsf=np.array(xsci_lsf)
+    # dtype=np.float32 here too: get_fiber_spec() upconverts wav to float64
+    # internally for mask-interpolation precision, but that shouldn't leak
+    # into the output -- pixel mode's wav is float32 already.
+    wav=np.array(wav,dtype=np.float32)
+    # dtype=np.float32 guards against np.nanpercentile/sigma_clipped_stats
+    # silently upcasting to float64 (numpy 1.26 does this for any
+    # percentile computation, even though the FITS extensions are float32)
+    xsci_flux=np.array(xsci_flux,dtype=np.float32)
+    xsci_sky_e=np.array(xsci_sky_e,dtype=np.float32)
+    xsci_sky_w=np.array(xsci_sky_w,dtype=np.float32)
+    xsci_lsf=np.array(xsci_lsf,dtype=np.float32)
     print(xsci_flux.shape,xsci_sky_e.shape,xsci_sky_w.shape)
     hdu1 = fits.PrimaryHDU(data=None)
     hdu1.header['Title'] = 'CFrame_Summmary'

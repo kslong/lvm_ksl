@@ -124,7 +124,6 @@ History::
 import sys
 import os
 import re
-import warnings
 
 # ensure py_progs siblings are importable when running directly
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -132,10 +131,8 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import numpy as np
 from astropy.io import fits
 from astropy.table import Table
-from astropy.stats import sigma_clipped_stats
-from astropy.utils.exceptions import AstropyWarning
 
-from SummarizeCframe import scifib
+from SummarizeCframe import scifib, _rank_window, _robust_mean
 from GetSkyCont import load_mask, _interp_mask_to_wave
 from SkySubOrig import obstime_to_mjd
 
@@ -169,41 +166,6 @@ def _expnum_from_filename(filename):
     stem = os.path.basename(filename)
     m = _EXPNUM_RE.findall(stem)
     return int(m[-1]) if m else -1
-
-
-def _rank_window(order, i_target, navg):
-    '''Return up to navg entries of order centred on rank i_target.
-
-    The window is shifted inward at the ends of the array so it still has
-    navg entries where possible, rather than being truncated.
-    '''
-    n = len(order)
-    navg = max(1, min(navg, n))
-    lo = i_target - navg // 2
-    lo = max(0, min(lo, n - navg))
-    hi = lo + navg
-    return order[lo:hi]
-
-
-def _robust_mean(flux_window, sigma=3.0, maxiters=5):
-    '''Per-pixel sigma-clipped mean across a window of fiber spectra.
-
-    flux_window : ndarray, shape (n_fib_in_window, n_pix)
-
-    Returns a 1-D array of length n_pix.  Pixels where every fiber in the
-    window is NaN (e.g. a detector column masked bad for all fibers) come
-    back as NaN; numpy's "empty slice"/"all-NaN slice" RuntimeWarnings for
-    those columns are expected and suppressed here, along with the
-    AstropyWarning sigma_clipped_stats raises for the same reason.
-    '''
-    if flux_window.shape[0] == 1:
-        return flux_window[0].copy()
-    with warnings.catch_warnings():
-        warnings.simplefilter('ignore', AstropyWarning)
-        warnings.simplefilter('ignore', RuntimeWarning)
-        mean, _, _ = sigma_clipped_stats(flux_window, sigma=sigma,
-                                         maxiters=maxiters, axis=0)
-    return np.asarray(mean)
 
 
 def pick_sky_sci(filename, low=10, high=90, navg=10, sigma=3.0, maxiters=5,

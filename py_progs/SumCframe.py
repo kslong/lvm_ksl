@@ -237,7 +237,8 @@ def files_select(filename='',exp_start=4000,exp_stop=8000,delta=5,exp_min=900.,d
     return xtab
 
 
-def process_files(xtab,out_name='',ave_med='ave'):
+def process_files(xtab,out_name='',ave_med='ave',exp_start=None,exp_stop=None,
+                  delta=None,exp_min=None,drp_ver=None):
     '''
     Having decided what needs processing do the work
     '''
@@ -271,6 +272,13 @@ def process_files(xtab,out_name='',ave_med='ave'):
 
     hdu1 = fits.PrimaryHDU(data=None)
     hdu1.header['Title'] = 'CFrame_Summmary'
+    hdu1.header['ROUTINE'] = ('SumCframe', 'Script that produced this file')
+    hdu1.header['STAT'] = (ave_med, 'ave (sum) or med (median) combination')
+    hdu1.header['DRPVER'] = (drp_ver, 'DRP version used for drpall lookup')
+    hdu1.header['EMIN'] = (exp_min, 'Minimum exposure time (s)')
+    hdu1.header['EXPSTART'] = (exp_start, 'First exposure number selected')
+    hdu1.header['EXPSTOP'] = (exp_stop, 'Last exposure number selected')
+    hdu1.header['DELTA'] = (delta, 'Exposure-number stride')
     hdu2=xdummy['FLUX']
     hdu2.data=results
     hdu3= fits.ImageHDU(data=xdummy['WAVE'].data,name='WAVE')
@@ -297,7 +305,8 @@ def doit(filename='',exp_start=4000,exp_stop=8000,delta=5,exp_min=900.,out_name=
 
 
     if len(xtab)>0:
-        process_files(xtab,out_name,ave_med)
+        process_files(xtab,out_name,ave_med,exp_start=exp_start,exp_stop=exp_stop,
+                     delta=delta,exp_min=exp_min,drp_ver=drp_ver)
 
     return
 

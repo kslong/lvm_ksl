@@ -380,6 +380,7 @@ def process_drpall(exp_start, exp_stop, delta=1, exp_min=900., drp_ver='1.2.1',
 
     hdr = fits.Header()
     hdr['Title']    = 'SummarizeSkyHdr'
+    hdr['ROUTINE']  = ('SummarizeSkyHdr', 'Script that produced this file')
     hdr['DRPVER']   = drp_ver
     hdr['EMIN']     = exp_min
     hdr['EXPSTART'] = exp_start

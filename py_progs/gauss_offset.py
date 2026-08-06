@@ -334,6 +334,9 @@ def do_all_files(files, ext='FLUX', outname='', drp_ver='1.2.1'):
     elif not outname.endswith('.fits'):
         outname = outname + '.fits'
 
+    results.meta['ROUTINE'] = 'gauss_offset'
+    results.meta['DRPVER']  = drp_ver
+    results.meta['EXT']     = ext
     results.write(outname, format='fits', overwrite=True)
     print('Wrote results to %s' % outname)
     return results
@@ -399,6 +402,9 @@ def do_all(filename, ext='FLUX', outname=''):
     elif not outname.endswith('.fits'):
         outname = outname + '.fits'
 
+    results.meta['ROUTINE'] = 'gauss_offset'
+    results.meta['EXT']     = ext
+    results.meta['SRCFILE'] = os.path.basename(filename)
     results.write(outname, format='fits', overwrite=True)
     print('Wrote results to %s' % outname)
     return results

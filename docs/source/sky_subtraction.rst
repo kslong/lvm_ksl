@@ -1946,8 +1946,12 @@ are re-implemented locally here (with an added ``-drp_all`` override)
 rather than imported from ``SumCframe.py``, so this script has no
 dependency on the optional ``dask`` package that ``SumCframe.py`` requires
 for an unrelated function.  The per-exposure algorithm is identical to
-``SkySubSci.py`` (also re-implemented locally rather than imported, so the
-script is standalone).  Rather than building a fresh metadata table, the
+``SkySubSci.py``; the rank-window/robust-mean helpers themselves are no
+longer duplicated per script -- both ``SkySubSci.py`` and
+``SummarizeSciSky.py`` import the canonical ``_rank_window``/``_robust_mean``
+from ``SummarizeCframe.py``, which also uses them for its own
+``-by fiber`` selection mode (see :doc:`summarize`).  Rather than building
+a fresh metadata table, the
 calculated values (continuum flux, fiber IDs used, positions, spectrograph
 IDs) are added as new columns directly onto the selected drpall rows, which
 become the DRP_ALL extension of the output.

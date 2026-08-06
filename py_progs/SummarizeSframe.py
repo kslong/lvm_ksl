@@ -12,14 +12,16 @@ evaluating sky subtraction quality and comparing residuals across many exposures
 
 Command line usage (if any):
 
-    usage: SummarizeSFrame.py [-h] [-ver drp_ver] [-percent 50] [-emin 900] [-out whatever] exp_start exp_stop delta
+    usage: SummarizeSFrame.py [-h] [-ver drp_ver] [-percent 50] [-emin 900] [-out whatever]
+                              [-by pixel|fiber] [-navg 10] [-sigma 3.0] [-maxiters 5]
+                              [-mask FILE] exp_start exp_stop delta
 
 Description:
 
-    This script processes multiple SFrame files and computes the median (or other
-    percentile) spectrum across all science fibers for each exposure. The output
-    contains one row per exposure, with the sky-subtracted flux, the sky spectrum,
-    and the inverse variance.
+    This script processes multiple SFrame files and computes a summary spectrum
+    across all science fibers for each exposure. The output contains one row per
+    exposure, with the sky-subtracted flux, the sky spectrum, and the inverse
+    variance.
 
     This is the SFrame equivalent of SummarizeCframe.py. While SummarizeCframe
     works on CFrame files (before sky subtraction) and includes SKY_EAST/SKY_WEST,
@@ -27,9 +29,23 @@ Description:
     combined SKY and IVAR extensions.
 
     Options: -h prints this documentation; -ver drp_ver sets the DRP version to
-    use (default 1.2.1); -percent N sets the percentile to use instead of median
-    (default 50); -emin sets minimum exposure time to include (default 900); -out
-    whatever sets the name or root name of output fits file.
+    use (default 1.2.1); -percent N sets the percentile to use (default 50);
+    -emin sets minimum exposure time to include (default 900); -out whatever
+    sets the name or root name of output fits file.
+
+    -by pixel|fiber selects how the summary spectrum is formed (default pixel):
+    'pixel' computes the percentile independently at each wavelength pixel across
+    fibers, as before -- the result is a per-pixel statistical composite, not any
+    single fiber's real spectrum. 'fiber' instead ranks whole science fibers by
+    sky-line-masked continuum flux, then averages the -navg fibers nearest the
+    -percent rank via a sigma-clipped mean, applying that same fiber window to
+    FLUX, SKY, IVAR, and LSF so the output reflects a real, consistent set of
+    fibers. In fiber mode: -navg N sets the number of nearest-rank fibers
+    combined (default 10); -sigma S and -maxiters K set the sigma-clipping
+    threshold and iteration limit for the robust mean (defaults 3.0, 5); -mask
+    FILE gives the sky-line mask (default: sky_mask.fits searched in cwd then
+    data/). Auto-generated output filenames get a '_fiber' suffix in fiber mode;
+    an explicit -out name is used as given in either mode.
 
     Positional arguments: exp_start is the starting exposure number to consider;
     exp_stop is the exposure number to stop on; delta skips every Nth exposure.
@@ -55,6 +71,8 @@ from astropy.table import join, Table
 import shutil
 from datetime import datetime
 from astropy.wcs import WCS
+from GetSkyCont import load_mask, _interp_mask_to_wave
+from SummarizeCframe import _rank_window, _robust_mean
 
 
 from astropy.coordinates import SkyCoord,  Galactocentric
@@ -272,35 +290,155 @@ def get_med_spec(filename= '/Users/long/Projects/lvm_data/sas/sdsswork/lvm/spect
     return wav, sci_flux_med, sci_sky_med, sci_var_med, sci_lsf_med
 
 
-def make_med_spec(xtab,data_dir,outfile='',percentile=50):
+def get_fiber_spec(filename, percent=50, navg=10, sigma=3.0, maxiters=5,
+                   mask_wave=None, mask_bool=None, stat='median'):
+    '''
+    Fiber-based (not per-pixel) analogue of get_med_spec(): rank science
+    fibers by sky-line-masked continuum flux, then combine the -navg
+    fibers nearest the target percentile rank via a sigma-clipped mean.
+
+    Same ranking metric and combination method as SummarizeCframe.py's
+    get_fiber_spec(), but pulls FLUX/SKY/IVAR/LSF (SFrame extensions)
+    instead of FLUX/SKY_EAST/SKY_WEST/LSF.  IVAR is combined with the
+    same sigma-clipped-mean window as the other arrays; the
+    "* n_fibers * 0.63694" inverse-variance-of-the-median correction
+    used in get_med_spec()'s percentile==50 branch does not apply here
+    and is not attempted.
+
+    Returns (wav, sci_flux, sci_sky, sci_var, sci_lsf, meta), or None if
+    the file could not be processed.
+    '''
+    try:
+        x = fits.open(filename)
+    except Exception:
+        print('get_fiber_spec: Could not open %s' % filename)
+        return None
+
+    try:
+        xtab = Table(x['SLITMAP'].data)
+        sci = scifib(xtab, select='science', telescope='Sci')
+        if len(sci) < 10:
+            print('get_fiber_spec: only %d science fibers found in %s, skipping.'
+                 % (len(sci), filename))
+            return None
+
+        wav      = x['WAVE'].data.astype(np.float64)
+        sci_flux = x['FLUX'].data[sci['fiberid'] - 1].astype(np.float64)
+        sci_sky  = x['SKY'].data[sci['fiberid'] - 1].astype(np.float64)
+        sci_var  = x['IVAR'].data[sci['fiberid'] - 1].astype(np.float64)
+        sci_lsf  = x['LSF'].data[sci['fiberid'] - 1].astype(np.float64)
+        bad = x['MASK'].data[sci['fiberid'] - 1] != 0
+        sci_flux[bad] = np.nan
+        sci_sky[bad]  = np.nan
+        sci_var[bad]  = np.nan
+        sci_lsf[bad]  = np.nan
+
+        clean = _interp_mask_to_wave(mask_wave, mask_bool, wav)
+        if stat == 'mean':
+            cont = np.nanmean(sci_flux[:, clean], axis=1)
+        else:
+            cont = np.nanmedian(sci_flux[:, clean], axis=1)
+
+        good = np.isfinite(cont)
+        if good.sum() < 10:
+            print('get_fiber_spec: too few fibers with valid continuum flux in %s, skipping.'
+                 % filename)
+            return None
+        sci_tab  = sci[good]
+        cont     = cont[good]
+        sci_flux = sci_flux[good]
+        sci_sky  = sci_sky[good]
+        sci_var  = sci_var[good]
+        sci_lsf  = sci_lsf[good]
+
+        order    = np.argsort(cont)
+        n        = len(order)
+        i_target = int(round(percent / 100.0 * (n - 1)))
+        win      = _rank_window(order, i_target, navg)
+
+        sci_flux_out = _robust_mean(sci_flux[win], sigma=sigma, maxiters=maxiters)
+        sci_sky_out  = _robust_mean(sci_sky[win],  sigma=sigma, maxiters=maxiters)
+        sci_var_out  = _robust_mean(sci_var[win],  sigma=sigma, maxiters=maxiters)
+        sci_lsf_out  = _robust_mean(sci_lsf[win],  sigma=sigma, maxiters=maxiters)
+
+        def _mode_int(arr):
+            arr = np.asarray(arr, int)
+            return int(np.bincount(arr).argmax())
+
+        meta = dict(
+            n_sci_fibers         = n,
+            n_avg                = len(win),
+            fiberid_list         = ','.join(str(v) for v in sci_tab['fiberid'][win]),
+            ra_fiber             = float(np.mean(sci_tab['ra'][win])),
+            dec_fiber            = float(np.mean(sci_tab['dec'][win])),
+            spectrographid_fiber = _mode_int(sci_tab['spectrographid'][win]),
+            contflux_fiber       = float(np.mean(cont[win])),
+        )
+
+        return wav, sci_flux_out, sci_sky_out, sci_var_out, sci_lsf_out, meta
+    finally:
+        x.close()
+
+
+def make_med_spec(xtab,data_dir,outfile='',percentile=50,exp_start=None,
+                  exp_stop=None,delta=None,exp_min=None,drp_ver=None,
+                  by='pixel',navg=10,sigma=3.0,maxiters=5,mask_file=''):
     i=0
-    select=[]
+    select_idx=[]
     xfiles=[]
     while i < len(xtab):
         xfile='%s/%s' % (data_dir,xtab['location'][i])
         if os.path.isfile(xfile):
-            select.append(i)
+            select_idx.append(i)
             xfiles.append(xfile)
         i+=1
-    print('There are %d files to process' % (len(select)))
+    print('There are %d files to process' % (len(select_idx)))
 
-    xtab=xtab[select]
+    xtab=xtab[select_idx]
     # print(xfiles)
+
+    mask_wave = mask_bool = None
+    if by=='fiber':
+        mask_wave, mask_bool = load_mask(mask_file)
+
     i=0
     xsci_flux=[]
     xsci_sky=[]
     xsci_var=[]
     xsci_lsf=[]
+    meta_list=[]
+    good_rows=[]
     while i<len(xfiles):
-        wav,sci_flux,sci_sky,sci_var,sci_lsf=get_med_spec(xfiles[i],percentile)
+        if by=='fiber':
+            result=get_fiber_spec(xfiles[i],percent=percentile,navg=navg,
+                                  sigma=sigma,maxiters=maxiters,
+                                  mask_wave=mask_wave,mask_bool=mask_bool)
+            if result is None:
+                i+=1
+                continue
+            wav,sci_flux,sci_sky,sci_var,sci_lsf,meta=result
+            meta_list.append(meta)
+        else:
+            wav,sci_flux,sci_sky,sci_var,sci_lsf=get_med_spec(xfiles[i],percentile)
         xsci_flux.append(sci_flux)
         xsci_sky.append(sci_sky)
         xsci_var.append(sci_var)
         xsci_lsf.append(sci_lsf)
+        good_rows.append(i)
         if i%10==0:
             print('Finished %d of %d' % (i,len(xfiles)))
-                                          
+
         i+=1
+
+    if len(xsci_flux)==0:
+        print('Warning: No valid data extracted from any files.')
+        return
+
+    if by=='fiber':
+        xtab=xtab[good_rows]
+        for col in meta_list[0]:
+            xtab[col]=[m[col] for m in meta_list]
+
     wav=np.array(wav)
     xsci_flux=np.array(xsci_flux)
     xsci_sky=np.array(xsci_sky)
@@ -308,6 +446,19 @@ def make_med_spec(xtab,data_dir,outfile='',percentile=50):
     print(xsci_flux.shape,xsci_sky.shape)
     hdu1 = fits.PrimaryHDU(data=None)
     hdu1.header['Title'] = 'SFrame_Suummary'
+    hdu1.header['ROUTINE'] = ('SummarizeSframe', 'Script that produced this file')
+    hdu1.header['PERCENT'] = (percentile, 'Percentile used for flux')
+    hdu1.header['DRPVER'] = (drp_ver, 'DRP version used for drpall lookup')
+    hdu1.header['EMIN'] = (exp_min, 'Minimum exposure time (s)')
+    hdu1.header['EXPSTART'] = (exp_start, 'First exposure number selected')
+    hdu1.header['EXPSTOP'] = (exp_stop, 'Last exposure number selected')
+    hdu1.header['DELTA'] = (delta, 'Exposure-number stride')
+    hdu1.header['SELECT'] = (by, 'pixel or fiber selection mode')
+    if by=='fiber':
+        hdu1.header['NAVG'] = (navg, 'Nearest-rank fibers combined per exposure')
+        hdu1.header['SIGCLIP'] = (sigma, 'Sigma-clipping threshold for robust mean')
+        hdu1.header['MAXITER'] = (maxiters, 'Sigma-clipping iteration limit')
+        hdu1.header['MASKFILE'] = (os.path.basename(mask_file), 'Sky-line mask used for fiber ranking')
     hdu2= fits.ImageHDU(data=wav,name='WAVE')
     hdu3=fits.ImageHDU(data=xsci_flux,name='FLUX')
     hdu4=fits.ImageHDU(data=xsci_sky,name='SKY')
@@ -342,14 +493,33 @@ def make_med_spec(xtab,data_dir,outfile='',percentile=50):
 
 
 
-def doit(exp_start=4000,exp_stop=8000,delta=5,exp_min=900.,out_name='',drp_ver='1.2.1',percentile=50):
+def doit(exp_start=4000,exp_stop=8000,delta=5,exp_min=900.,out_name='',drp_ver='1.2.1',
+        percentile=50,by='pixel',navg=10,sigma=3.0,maxiters=5,mask_file=''):
     xtop=find_top()
     xtab=read_drpall(drp_ver)
     ztab=select(xtab,exp_start,exp_stop,delta)
-    
+
+    if by=='fiber' and not mask_file:
+        _data_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'data')
+        for _candidate in [os.path.join(os.getcwd(), 'sky_mask.fits'),
+                           os.path.join(_data_dir,   'sky_mask.fits')]:
+            if os.path.exists(_candidate):
+                mask_file = _candidate
+                print('Using default mask: %s' % mask_file)
+                break
+        if not mask_file:
+            print('Error: -by fiber requires a mask file and sky_mask.fits was not '
+                 'found in the current directory or data/')
+            return
+
     if out_name=='':
         out_name='XSFrame_%s_%d_%d_%d_%d.fits' % (drp_ver,exp_start,exp_stop,delta,percentile)
-    make_med_spec(xtab=ztab,data_dir=xtop,outfile=out_name,percentile=percentile)
+        if by=='fiber':
+            out_name=out_name.replace('.fits','_fiber.fits')
+    make_med_spec(xtab=ztab,data_dir=xtop,outfile=out_name,percentile=percentile,
+                 exp_start=exp_start,exp_stop=exp_stop,delta=delta,
+                 exp_min=exp_min,drp_ver=drp_ver,by=by,navg=navg,sigma=sigma,
+                 maxiters=maxiters,mask_file=mask_file)
 
 def steer(argv):
     '''
@@ -364,6 +534,11 @@ def steer(argv):
     out_name=''
 
     ver='1.2.1'
+    by='pixel'
+    navg=10
+    sigma=3.0
+    maxiters=5
+    mask_file=''
 
     i=1
     while i<len(argv):
@@ -382,6 +557,21 @@ def steer(argv):
         elif argv[i][:5]=='-perc':
             i+=1
             percent=eval(argv[i])
+        elif argv[i]=='-by':
+            i+=1
+            by=argv[i]
+        elif argv[i]=='-navg':
+            i+=1
+            navg=int(argv[i])
+        elif argv[i]=='-sigma':
+            i+=1
+            sigma=float(argv[i])
+        elif argv[i]=='-maxiters':
+            i+=1
+            maxiters=int(argv[i])
+        elif argv[i]=='-mask':
+            i+=1
+            mask_file=argv[i]
         elif argv[i][0]=='-':
             print('Unknown option : ',argv)
         elif exp_start<0:
@@ -394,9 +584,13 @@ def steer(argv):
 
     if delta<0:
         delta=1
-                
 
-    doit(exp_start,exp_stop,delta,exp_min,out_name,drp_ver=ver,percentile=percent)
+    if by not in ('pixel','fiber'):
+        print('Error: -by must be pixel or fiber')
+        return
+
+    doit(exp_start,exp_stop,delta,exp_min,out_name,drp_ver=ver,percentile=percent,
+        by=by,navg=navg,sigma=sigma,maxiters=maxiters,mask_file=mask_file)
 
 
 

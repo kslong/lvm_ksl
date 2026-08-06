@@ -24,6 +24,17 @@ science-fiber-based sky estimate rather than a plain median spectrum; see
 :doc:`sky_subtraction` for its documentation, alongside its file-list-driven
 counterpart ``SkySubSci.py``.
 
+.. note::
+
+   Only ``SummarizeCframe.py`` and ``SummarizeSframe.py`` currently offer a
+   choice between per-pixel and per-fiber combination (``-by pixel|fiber``,
+   see below). ``SummarizeRings.py`` and ``SummarizeSpec.py`` still combine
+   fibers only per-pixel -- the percentile at each wavelength is computed
+   independently across fibers, so the result is a statistical composite
+   rather than any single fiber's real spectrum. Adding a ``-by fiber``
+   option to these two would be a straightforward extension of the same
+   ranked-fiber logic, but has not been judged necessary yet.
+
 
 SummarizeData.py - Cataloging Raw Data
 --------------------------------------
@@ -68,13 +79,15 @@ SummarizeCframe.py - CFrame Spectral Summary
 --------------------------------------------
 
 This script processes CFrame files (wavelength-calibrated, flux-calibrated,
-but before sky subtraction) and computes the median spectrum across all
+but before sky subtraction) and computes a summary spectrum across all
 science fibers for each exposure. This creates a compact representation
 of how the raw spectra (including sky) vary over time.
 
 **Command line usage**::
 
-    SummarizeCframe.py [-h] [-out file_out] [-emin 900] [-ver drp_ver] exp_start exp_stop delta
+    SummarizeCframe.py [-h] [-out file_out] [-emin 900] [-ver drp_ver] [-percent 50]
+                       [-by pixel|fiber] [-navg 10] [-sigma 3.0] [-maxiters 5]
+                       [-mask FILE] exp_start exp_stop delta
 
 **Options:**
 
@@ -89,6 +102,44 @@ of how the raw spectra (including sky) vary over time.
 
 -ver drp_ver
     DRP version to use (default: 1.2.0).
+
+-percent N
+    Percentile to use (default: 50). Its meaning depends on ``-by`` (see below).
+
+-by pixel|fiber
+    Selects how the summary spectrum is formed for each exposure (default
+    ``pixel``).
+
+    ``pixel`` (the original behaviour) computes the percentile independently
+    at each wavelength pixel across science fibers. The result is a
+    per-pixel statistical composite, not any single fiber's real spectrum
+    — the value at one wavelength may effectively come from a different
+    fiber than the value at another.
+
+    ``fiber`` instead ranks whole science fibers by sky-line-masked
+    continuum flux, then combines the ``-navg`` fibers nearest the
+    ``-percent`` rank with a sigma-clipped mean, applying that same fiber
+    window to FLUX, SKY_EAST, SKY_WEST, and LSF alike. This preserves a
+    real, internally-consistent set of fibers instead of mixing fibers
+    pixel-by-pixel. It reuses the same ranking/combination approach as
+    ``SkySubSci.py`` / ``SummarizeSciSky.py`` (see :doc:`sky_subtraction`).
+
+-navg N
+    In ``-by fiber`` mode, the number of nearest-rank fibers combined per
+    exposure via a sigma-clipped mean (default 10).
+
+-sigma S
+    In ``-by fiber`` mode, the sigma-clipping threshold for the robust mean
+    (default 3.0).
+
+-maxiters K
+    In ``-by fiber`` mode, the sigma-clipping iteration limit (default 5).
+
+-mask FILE
+    In ``-by fiber`` mode, the sky-line mask (WAVE/MASK extensions) used to
+    identify continuum pixels for fiber ranking. If omitted, ``sky_mask.fits``
+    is searched for in the current directory, then in the ``lvm_ksl data/``
+    directory.
 
 **Arguments:**
 
@@ -119,25 +170,35 @@ drp_all    BinTableHDU    drpall metadata for the included exposures
 
 The default output filename follows the pattern
 ``XCframe_<ver>_<exp_start>_<exp_stop>_<delta>_<percent>.fits``,
-e.g. ``XCframe_1.2.0_10000_20000_10_50.fits``.
+e.g. ``XCframe_1.2.0_10000_20000_10_50.fits``. In ``-by fiber`` mode a
+``_fiber`` suffix is appended, e.g.
+``XCframe_1.2.0_10000_20000_10_50_fiber.fits``, so pixel- and fiber-mode
+runs over the same exposure range don't overwrite each other. An explicit
+``-out`` filename is used as given in either mode. In ``-by fiber`` mode,
+``drp_all`` also gains per-exposure columns recording which fibers were
+selected (fiber IDs, mean position, continuum flux, etc.).
 
 **Use cases:**
 
 - Monitoring sky brightness variations over a night or survey
 - Identifying exposures with unusual sky conditions
 - Comparing sky telescope spectra with science fiber sky
+- Comparing pixel- and fiber-based summaries of the same exposures to check
+  whether per-pixel compositing is smearing out real fiber-to-fiber structure
 
 
 SummarizeSframe.py - SFrame Spectral Summary
 --------------------------------------------
 
 This script processes SFrame files (after sky subtraction) and computes
-the median (or other percentile) spectrum across all science fibers for
-each exposure. This is useful for evaluating sky subtraction quality.
+a summary spectrum across all science fibers for each exposure. This is
+useful for evaluating sky subtraction quality.
 
 **Command line usage**::
 
-    SummarizeSframe.py [-h] [-ver drp_ver] [-percent 50] [-emin 900] [-out whatever] exp_start exp_stop delta
+    SummarizeSframe.py [-h] [-ver drp_ver] [-percent 50] [-emin 900] [-out whatever]
+                       [-by pixel|fiber] [-navg 10] [-sigma 3.0] [-maxiters 5]
+                       [-mask FILE] exp_start exp_stop delta
 
 **Options:**
 
@@ -148,13 +209,38 @@ each exposure. This is useful for evaluating sky subtraction quality.
     DRP version to use (default: 1.2.0).
 
 -percent N
-    Percentile to compute (default: 50 = median).
+    Percentile to use (default: 50). Its meaning depends on ``-by`` (see below).
 
 -emin N
     Minimum exposure time in seconds to include (default: 900).
 
 -out name
     Output filename root.
+
+-by pixel|fiber
+    Selects how the summary spectrum is formed for each exposure (default
+    ``pixel``). Same meaning as in ``SummarizeCframe.py``: ``pixel``
+    computes the percentile independently at each wavelength pixel across
+    fibers (a per-pixel composite); ``fiber`` ranks whole science fibers by
+    sky-line-masked continuum flux and combines the ``-navg`` fibers
+    nearest the ``-percent`` rank with a sigma-clipped mean, applying that
+    same fiber window to FLUX, SKY, IVAR, and LSF alike.
+
+-navg N
+    In ``-by fiber`` mode, the number of nearest-rank fibers combined per
+    exposure via a sigma-clipped mean (default 10).
+
+-sigma S
+    In ``-by fiber`` mode, the sigma-clipping threshold for the robust mean
+    (default 3.0).
+
+-maxiters K
+    In ``-by fiber`` mode, the sigma-clipping iteration limit (default 5).
+
+-mask FILE
+    In ``-by fiber`` mode, the sky-line mask used to identify continuum
+    pixels for fiber ranking. If omitted, ``sky_mask.fits`` is searched for
+    in the current directory, then in the ``lvm_ksl data/`` directory.
 
 **Arguments:**
 
@@ -185,13 +271,20 @@ drp_all    BinTableHDU    drpall metadata for the included exposures
 
 The default output filename follows the pattern
 ``XSFrame_<ver>_<exp_start>_<exp_stop>_<delta>_<percent>.fits``,
-e.g. ``XSFrame_1.2.0_10000_20000_10_50.fits``.
+e.g. ``XSFrame_1.2.0_10000_20000_10_50.fits``. In ``-by fiber`` mode a
+``_fiber`` suffix is appended, e.g.
+``XSFrame_1.2.0_10000_20000_10_50_fiber.fits``. An explicit ``-out``
+filename is used as given in either mode. In ``-by fiber`` mode,
+``drp_all`` also gains per-exposure columns recording which fibers were
+selected (fiber IDs, mean position, continuum flux, etc.).
 
 **Use cases:**
 
 - Evaluating sky subtraction residuals across many exposures
 - Identifying systematic patterns in sky subtraction
 - Comparing different DRP versions
+- Comparing pixel- and fiber-based summaries of the same exposures to check
+  whether per-pixel compositing is smearing out real fiber-to-fiber structure
 
 
 SummarizeRings.py - Ring-Based Spectral Summary
@@ -201,6 +294,12 @@ This script is similar to SummarizeSframe.py but computes separate
 summaries for three radial ring sets (inner, middle, outer) based on
 the fiber ring number in the IFU. This is useful for detecting radial
 variations in sky subtraction quality.
+
+.. note::
+
+   Unlike ``SummarizeSframe.py``, this script only combines fibers
+   per-pixel -- there is no ``-by fiber`` option (see the note at the top
+   of this page).
 
 **Command line usage**::
 
@@ -286,6 +385,12 @@ SLITMAP extension.
 An exposure is included in the output only if all three spectrographs
 have valid science fibers.  Exposures missing one or more spectrographs
 are skipped and recorded in a companion ASCII table.
+
+.. note::
+
+   Like ``SummarizeRings.py``, this script only combines fibers per-pixel
+   -- there is no ``-by fiber`` option (see the note at the top of this
+   page).
 
 **Command line usage**::
 
@@ -383,6 +488,11 @@ A typical workflow for evaluating data quality might be:
        SummarizeCframe.py -out cframe_summary 10000 20000 10
 
    This samples every 10th exposure from 10000 to 20000.
+
+   Add ``-by fiber`` to combine real, ranked fibers instead of a per-pixel
+   composite::
+
+       SummarizeCframe.py -by fiber -out cframe_summary_fiber 10000 20000 10
 
 3. **Summarize SFrame spectra** (to evaluate sky subtraction)::
 

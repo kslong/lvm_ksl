@@ -282,7 +282,9 @@ def get_all_ring_specs(filename, ring_sets, percentile=50):
 
 
 def make_ring_specs(xtab, data_dir, outfile='', percentile=50,
-                    ring_sets=[(1, 9), (10, 19), (20, 25)]):
+                    ring_sets=[(1, 9), (10, 19), (20, 25)],
+                    exp_start=None, exp_stop=None, delta=None,
+                    exp_min=None, drp_ver=None):
     '''
     Process multiple SFrame files and create output FITS with ring percentile spectra
     '''
@@ -345,10 +347,16 @@ def make_ring_specs(xtab, data_dir, outfile='', percentile=50,
     # Create FITS file
     hdu1 = fits.PrimaryHDU(data=None)
     hdu1.header['Title'] = 'SFrame_Ring_Summary'
+    hdu1.header['ROUTINE'] = ('SummarizeRings', 'Script that produced this file')
     hdu1.header['PERCENT'] = (percentile, 'Percentile used for flux')
     hdu1.header['INNER'] = ('%d-%d' % ring_sets[0], 'Inner ring range')
     hdu1.header['MIDDLE'] = ('%d-%d' % ring_sets[1], 'Middle ring range')
     hdu1.header['OUTER'] = ('%d-%d' % ring_sets[2], 'Outer ring range')
+    hdu1.header['DRPVER'] = (drp_ver, 'DRP version used for drpall lookup')
+    hdu1.header['EMIN'] = (exp_min, 'Minimum exposure time (s)')
+    hdu1.header['EXPSTART'] = (exp_start, 'First exposure number selected')
+    hdu1.header['EXPSTOP'] = (exp_stop, 'Last exposure number selected')
+    hdu1.header['DELTA'] = (delta, 'Exposure-number stride')
 
     hdu2 = fits.ImageHDU(data=wav, name='WAVE')
     hdu3 = fits.ImageHDU(data=xflux_inner, name='FLUX_INNER')
@@ -392,7 +400,8 @@ def doit(exp_start=4000, exp_stop=8000, delta=5, exp_min=900., out_name='',
     if out_name == '':
         out_name = 'XRings_%s_%d_%d_%d_%d.fits' % (drp_ver, exp_start, exp_stop, delta, percentile)
     make_ring_specs(xtab=ztab, data_dir=xtop, outfile=out_name, percentile=percentile,
-                    ring_sets=ring_sets)
+                    ring_sets=ring_sets, exp_start=exp_start, exp_stop=exp_stop,
+                    delta=delta, exp_min=exp_min, drp_ver=drp_ver)
 
 
 def steer(argv):

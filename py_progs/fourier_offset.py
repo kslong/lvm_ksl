@@ -627,6 +627,10 @@ def do_all(files, wmin=3900, wmax=4000, do_plot=False, drp_ver='1.2.1'):
         existing = existing[~np.isin(existing['Exposure'], summary['Exposure'])]
         summary = vstack([existing, summary])
         summary.sort('Exposure')
+    summary.meta['ROUTINE'] = 'fourier_offset'
+    summary.meta['DRPVER']  = drp_ver
+    summary.meta['WMIN']    = wmin
+    summary.meta['WMAX']    = wmax
     summary.write(outname, overwrite=True)
     print('Wrote %s' % outname)
 

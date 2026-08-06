@@ -314,7 +314,9 @@ def get_all_spec_specs(filename, percentile=50):
     return wav, flux_out[0], flux_out[1], flux_out[2], status
 
 
-def make_spec_specs(xtab, data_dir, outfile='', percentile=50, file_type='CFrame'):
+def make_spec_specs(xtab, data_dir, outfile='', percentile=50, file_type='CFrame',
+                    exp_start=None, exp_stop=None, delta=None, exp_min=None,
+                    drp_ver=None):
     '''
     Process multiple CFrame or SFrame files and write a FITS summary by spectrograph.
 
@@ -444,10 +446,17 @@ def make_spec_specs(xtab, data_dir, outfile='', percentile=50, file_type='CFrame
 
     hdu1 = fits.PrimaryHDU(data=None)
     hdu1.header['Title'] = '%s_Spec_Summary' % file_type
+    hdu1.header['ROUTINE'] = ('SummarizeSpec', 'Script that produced this file')
     hdu1.header['PERCENT'] = (percentile, 'Percentile used for flux')
     hdu1.header['SP1'] = ('spectrographid=1', 'Spectrograph 1 science fibers')
     hdu1.header['SP2'] = ('spectrographid=2', 'Spectrograph 2 science fibers')
     hdu1.header['SP3'] = ('spectrographid=3', 'Spectrograph 3 science fibers')
+    hdu1.header['FILETYPE'] = (file_type, 'Input file type (CFrame or SFrame)')
+    hdu1.header['DRPVER'] = (drp_ver, 'DRP version used for drpall lookup')
+    hdu1.header['EMIN'] = (exp_min, 'Minimum exposure time (s)')
+    hdu1.header['EXPSTART'] = (exp_start, 'First exposure number selected')
+    hdu1.header['EXPSTOP'] = (exp_stop, 'Last exposure number selected')
+    hdu1.header['DELTA'] = (delta, 'Exposure-number stride')
 
     hdu2 = fits.ImageHDU(data=wav, name='WAVE')
     hdu3 = fits.ImageHDU(data=xflux1, name='FLUX1')
@@ -498,7 +507,9 @@ def doit(exp_start=4000, exp_stop=8000, delta=5, exp_min=900., out_name='',
     if out_name == '':
         out_name = 'XSpec_%s_%s_%d_%d_%d_%d.fits' % (file_type, drp_ver, exp_start, exp_stop, delta, percentile)
 
-    make_spec_specs(ztab, xtop, outfile=out_name, percentile=percentile, file_type=file_type)
+    make_spec_specs(ztab, xtop, outfile=out_name, percentile=percentile, file_type=file_type,
+                    exp_start=exp_start, exp_stop=exp_stop, delta=delta,
+                    exp_min=exp_min, drp_ver=drp_ver)
 
 
 def steer(argv):

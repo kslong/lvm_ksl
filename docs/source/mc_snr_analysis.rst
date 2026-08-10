@@ -340,6 +340,28 @@ the ``-mode sep_back`` option, and the emission-line labels are identical to
 
 - ``Overview_Plot/<spectrum_name>.overview.png`` — one file per input spectrum
 
+**Sky-line masking (both scripts)**
+
+Both ``PlotSpec.py`` and ``PlotSpec3.py`` accept ``-mask`` to recolor pixels
+flagged as sky-line-contaminated by a ``palace_make_mask.py`` mask (see
+:doc:`sky_subtraction`): the full spectrum is drawn as one unbroken black
+line, then contaminated pixels are redrawn in light grey on top — so there
+are no gaps at clean/masked transitions and no continuity is lost, just a
+color change. Off by default (the plot is otherwise identical with or
+without the flag); enabling it uses ``data/sky_mask.fits`` unless
+``-mask_file file.fits`` points at a different mask (which also implies
+``-mask``)::
+
+    PlotSpec3.py -mask Snap_spec/*back*txt
+    PlotSpec3.py -mask_file my_mask.fits Snap_spec/*back*txt
+
+Since ``palace_make_mask.py``'s default threshold is tuned for safe
+continuum fitting rather than visual line-flagging, the Z (NIR) arm will
+appear mostly grey at that default — this reflects genuine OH airglow
+density in that arm, not a plotting artifact (see the threshold discussion
+in :doc:`sky_subtraction`'s ``palace_make_mask.py`` section). Regenerate the
+mask at a looser ``--threshold`` and pass it via ``-mask_file`` to compare.
+
 **SNRPlot.py** — zoomed line panels
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 

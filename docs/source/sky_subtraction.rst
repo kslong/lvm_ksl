@@ -582,7 +582,7 @@ flagged as unusable for continuum fitting.
 
 **Usage**::
 
-    palace_make_mask.py fits_file palace_dir [--threshold T] [--plot] ...
+    palace_make_mask.py fits_file [palace_dir] [--threshold T] [--plot] ...
 
 **Arguments:**
 
@@ -591,6 +591,10 @@ fits_file
 
 palace_dir
     Path to the ``palace/PMD`` directory containing the PALACE data files.
+    Optional; defaults to the vendored copy at
+    ``data/palace_ref/palace/PMD`` (computed relative to
+    ``palace_make_mask.py``'s own location), so it only needs to be given
+    to point at a different PMD installation.
 
 **Key options:**
 
@@ -599,10 +603,26 @@ palace_dir
     stricter mask.  Default is 0.01 (= 1×10⁻¹⁶ erg s⁻¹ cm⁻² Å⁻¹ with the
     default FACTOR of 10¹⁴).  The tradeoff between mask strictness and the
     number of clean pixels available for continuum fitting is the primary
-    tuning parameter.
+    tuning parameter.  This threshold constrains only the modelled PALACE
+    sky *line* flux (OH + OI + atomic + O2, summed and scaled to the
+    observed sky) — it says nothing about the real observed continuum
+    level, S/N, or local brightness, and applies as one fixed absolute
+    flux value across the whole 3600–9800 Å range regardless of arm.
 
 --plot
     Display the diagnostic plot interactively (it is always saved as a PNG).
+
+**Console report:**
+
+For each of the B, R, and Z arms (and an ``ALL`` row for the full range),
+prints total pixel count, clean pixel count and percentage, number of
+distinct clean windows, and the threshold expressed as a physical flux
+value (``threshold / factor``, erg s⁻¹ cm⁻² Å⁻¹) — the same value in every
+row since one global threshold applies everywhere, shown per arm so it's
+visible alongside each arm's clean fraction. As a reference point, the Z
+(NIR) arm is dominated by the OH airglow forest densely enough that even a
+threshold 20× looser than the 0.01 default (0.2, i.e. 2×10⁻¹⁵ erg s⁻¹
+cm⁻² Å⁻¹) still leaves under half the Z arm flagged clean.
 
 **Output:**
 
@@ -1643,7 +1663,7 @@ A typical workflow for running all five methods on a single XCframe file
 and comparing the results::
 
     # 1. Build the sky-line mask (if not already present)
-    palace_make_mask.py XCframe_file.fits /path/to/palace/PMD
+    palace_make_mask.py XCframe_file.fits
 
     # 2. Run the five subtraction methods
     SkySubOrig.py  XCframe_file.fits
@@ -2007,7 +2027,7 @@ Fitting and Evaluating the Sky Continuum
 
 1. Build a palace line mask for the field::
 
-       palace_make_mask.py XCframe_file.fits /path/to/palace/PMD
+       palace_make_mask.py XCframe_file.fits
 
 2. Collect sky spectra from repeated observations of the field::
 

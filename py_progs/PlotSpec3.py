@@ -15,7 +15,7 @@ data, laid out as three wide horizontal panels covering 3600-5600,
 Command line usage (if any):
 
     usage: PlotSpec3.py [-h] [-frac 0.1] [-min ymin] [-max ymax] [-med] [-delta 1e-15]
-                        [-mode sep_back] file [files ...]
+                        [-mask] [-mask_file file.fits] [-mode sep_back] file [files ...]
 
     Plots are written to Overview_Plot/<basename>.overview.png.
 
@@ -30,6 +30,17 @@ Command line usage (if any):
         Exactly two files are expected: a source spectrum and a separate
         background spectrum.  The background FLUX is subtracted from the
         source FLUX before plotting.
+
+    -mask
+        Plot the spectrum in black, with pixels flagged as sky-line-
+        contaminated in data/sky_mask.fits (see palace_make_mask.py)
+        redrawn in light grey on top.  Off by default; the plot is
+        otherwise identical with or without this flag.
+
+    -mask_file file.fits
+        Use this mask FITS file (WAVE/MASK extensions, as produced by
+        palace_make_mask.py) instead of the data/sky_mask.fits default.
+        Implies -mask.
 
     Scaling options (mutually exclusive; last one wins if combined):
     -frac   autoscale upper limit to frac * max(FLUX) per panel (default 0.1)
@@ -54,25 +65,76 @@ Notes:
     maximum values plotted are controlled by the
     frac parameter.
 
-History:
+History::
 
-240607 ksl Coding begun (PlotSpec.py)
-260302 ksl PlotSpec3.py: 3 vertical panels in a 16:9 landscape figure
-260302 ksl Add axis labels; reduce -med lower offset to 0.25*delta
+    240607 ksl Coding begun (PlotSpec.py)
+    260302 ksl PlotSpec3.py: 3 vertical panels in a 16:9 landscape figure
+    260302 ksl Add axis labels; reduce -med lower offset to 0.25*delta
+    260810 ksl Add -mask/-mask_file: recolor pixels flagged sky-line-contaminated
+                by a palace_make_mask.py mask (data/sky_mask.fits by default) in
+                light grey; the full spectrum is drawn as one unbroken black line
+                first, then masked pixels are redrawn on top, so there are no gaps
+                at clean/masked transitions. Off by default, no effect on existing
+                plots. Also thicken axis spines/ticks (linewidth 1.3) and fix
+                supylabel crowding the y-tick labels (tight_layout rect reserves
+                left margin for it).
 
 '''
 
 
 
 import os
+from pathlib import Path
 from astropy.io import ascii
 import matplotlib.pyplot as plt
+plt.rcParams['axes.linewidth'] = 1.3
+plt.rcParams['xtick.major.width'] = 1.3
+plt.rcParams['ytick.major.width'] = 1.3
 from astropy.table import Table,vstack, hstack
 from astropy.io import fits
 import numpy as np
 
+from GetSkyCont import load_mask, _interp_mask_to_wave
 
 import re
+
+
+DEFAULT_MASK_FILE = Path(__file__).resolve().parent.parent / 'data' / 'sky_mask.fits'
+_mask_cache = {}
+
+
+def get_sky_mask(mask_file=None):
+    '''
+    Load and cache a palace_make_mask.py mask FITS file (WAVE, MASK;
+    MASK==1 is clean).  Defaults to data/sky_mask.fits if mask_file is
+    not given.  Returns (mask_wave, mask_bool) or None if the file is
+    not present.
+    '''
+    path = Path(mask_file) if mask_file else DEFAULT_MASK_FILE
+    key = str(path)
+    if key not in _mask_cache:
+        _mask_cache[key] = load_mask(path) if path.exists() else False
+    cached = _mask_cache[key]
+    return cached if cached is not False else None
+
+
+def plot_flux(wave, flux, mask=False, mask_file=None, clean_color='black', masked_color='lightgrey'):
+    '''
+    Plot flux vs wave.  If mask is set and the sky mask (data/sky_mask.fits,
+    or mask_file if given) is available, the full spectrum is first drawn in
+    clean_color as one unbroken line (so there are no gaps at clean/masked
+    transitions), then the pixels it flags as sky-line-contaminated are
+    redrawn on top in masked_color, hiding the base line under them.
+    '''
+    sky_mask = get_sky_mask(mask_file) if mask else None
+    if sky_mask is None:
+        plt.plot(wave, flux)
+        return
+    mask_wave, mask_bool = sky_mask
+    clean = _interp_mask_to_wave(mask_wave, mask_bool, np.asarray(wave))
+    flux = np.asarray(flux)
+    plt.plot(wave, flux, color=clean_color)
+    plt.plot(wave, np.where(~clean, flux, np.nan), color=masked_color)
 
 
 def _usage_from_doc(doc):
@@ -89,15 +151,15 @@ def _usage_from_doc(doc):
     return doc[:m.start()].rstrip() + '\n' if m else doc
 
 
-def do_one_region(spectab,wmin=3600,wmax=4100,frac=0.1):
+def do_one_region(spectab,wmin=3600,wmax=4100,frac=0.1,mask=False,mask_file=None):
     extra=10
     xx=spectab[spectab['WAVE']>wmin-extra]
     xx=xx[xx['WAVE']<wmax+extra]
-    mask=np.isfinite(xx['FLUX'])
-    xx=xx[mask]
+    finite=np.isfinite(xx['FLUX'])
+    xx=xx[finite]
     if 'BACK_FLUX' in xx.colnames:
         plt.plot(xx['WAVE'],xx['BACK_FLUX'],'k',alpha=0.4)
-    plt.plot(xx['WAVE'],xx['FLUX'])
+    plot_flux(xx['WAVE'],xx['FLUX'],mask=mask,mask_file=mask_file)
     plt.xlim(wmin-extra,wmax+extra)
     if frac<1.0 and len(xx)>0:
         ymax=np.max(xx['FLUX'])
@@ -106,34 +168,34 @@ def do_one_region(spectab,wmin=3600,wmax=4100,frac=0.1):
     return
 
 
-def do_one_region_fixed(spectab,wmin=3600,wmax=4100,ymin=0, ymax=1e-13):
+def do_one_region_fixed(spectab,wmin=3600,wmax=4100,ymin=0, ymax=1e-13,mask=False,mask_file=None):
     extra=10
     xx=spectab[spectab['WAVE']>wmin-extra]
     xx=xx[xx['WAVE']<wmax+extra]
-    mask=np.isfinite(xx['FLUX'])
-    xx=xx[mask]
+    finite=np.isfinite(xx['FLUX'])
+    xx=xx[finite]
     if 'SOURCE_FLUX' in xx.colnames:
         plt.plot(xx['WAVE'],xx['SOURCE_FLUX'],'k',alpha=0.2)
     if 'BACK_FLUX' in xx.colnames:
         plt.plot(xx['WAVE'],xx['BACK_FLUX'],'k',alpha=0.4)
-    plt.plot(xx['WAVE'],xx['FLUX'])
+    plot_flux(xx['WAVE'],xx['FLUX'],mask=mask,mask_file=mask_file)
     plt.xlim(wmin-extra,wmax+extra)
     plt.ylim(ymin,ymax)
     return
 
 
-def do_one_region_med(spectab,wmin=3600,wmax=4100,med_delta=1e-15):
+def do_one_region_med(spectab,wmin=3600,wmax=4100,med_delta=1e-15,mask=False,mask_file=None):
     extra=10
     xx=spectab[spectab['WAVE']>wmin-extra]
     xx=xx[xx['WAVE']<wmax+extra]
-    mask=np.isfinite(xx['FLUX'])
-    xx=xx[mask]
+    finite=np.isfinite(xx['FLUX'])
+    xx=xx[finite]
     if len(xx)==0:
         return
     ymed=np.median(xx['FLUX'])
     if 'BACK_FLUX' in xx.colnames:
         plt.plot(xx['WAVE'],xx['BACK_FLUX'],'k',alpha=0.4)
-    plt.plot(xx['WAVE'],xx['FLUX'])
+    plot_flux(xx['WAVE'],xx['FLUX'],mask=mask,mask_file=mask_file)
     plt.xlim(wmin-extra,wmax+extra)
     plt.ylim(ymed-0.25*med_delta,ymed+med_delta)
     return
@@ -190,7 +252,7 @@ def do_lines():
 
 
 
-def do_all(xtab,ptype='scale',ymin=0.0,ymax=1e-14,frac=0.1,med_delta=3e-15,title=''):
+def do_all(xtab,ptype='scale',ymin=0.0,ymax=1e-14,frac=0.1,med_delta=3e-15,title='',mask=False,mask_file=None):
     '''
     Create the figure: 3 vertical panels in a landscape figure sized for
     full-screen presentation (16:9 aspect ratio).
@@ -203,20 +265,20 @@ def do_all(xtab,ptype='scale',ymin=0.0,ymax=1e-14,frac=0.1,med_delta=3e-15,title
     for i,(wwmin,wwmax) in enumerate(panels):
         plt.subplot(nmax,1,i+1)
         if ptype=='scale':
-            do_one_region(xtab,wwmin,wwmax,frac)
+            do_one_region(xtab,wwmin,wwmax,frac,mask=mask,mask_file=mask_file)
         elif ptype=='fixed':
-            do_one_region_fixed(xtab,wwmin,wwmax,ymin,ymax)
+            do_one_region_fixed(xtab,wwmin,wwmax,ymin,ymax,mask=mask,mask_file=mask_file)
         elif ptype=='med':
-            do_one_region_med(xtab,wwmin,wwmax,med_delta)
+            do_one_region_med(xtab,wwmin,wwmax,med_delta,mask=mask,mask_file=mask_file)
         else:
             print('Error: Indecipherable plot type: ',ptype)
             return
         do_lines()
     fig.supxlabel('Wavelength (Å)',fontsize=13)
-    fig.supylabel(r'Flux (erg s$^{-1}$ cm$^{-2}$ Å$^{-1}$)',fontsize=13)
+    fig.supylabel(r'Flux (erg s$^{-1}$ cm$^{-2}$ Å$^{-1}$)',fontsize=13,x=0.02)
     if title:
         plt.suptitle(title,fontsize=12)
-    plt.tight_layout()
+    plt.tight_layout(rect=[0.04,0,1,1])
 
 
 def steer(argv):
@@ -230,6 +292,8 @@ def steer(argv):
     med_delta=3e-15
     itype='scale'
     mode=''
+    mask=False
+    mask_file=None
     filenames=[]
 
     i=1
@@ -251,6 +315,12 @@ def steer(argv):
         elif argv[i]=='-delta':
             i+=1
             med_delta=eval(argv[i])
+        elif argv[i]=='-mask':
+            mask=True
+        elif argv[i]=='-mask_file':
+            i+=1
+            mask_file=argv[i]
+            mask=True
         elif argv[i]=='-mode':
             i+=1
             mode=argv[i]
@@ -288,7 +358,7 @@ def steer(argv):
             return
         xtab['FLUX']-=btab['FLUX']
         outname=os.path.basename(filename).replace('.txt','').replace('.tab','')
-        do_all(xtab,ptype=itype,ymin=ymin,ymax=ymax,frac=frac,med_delta=med_delta,title=os.path.basename(filename))
+        do_all(xtab,ptype=itype,ymin=ymin,ymax=ymax,frac=frac,med_delta=med_delta,title=os.path.basename(filename),mask=mask,mask_file=mask_file)
         plt.savefig('Overview_Plot/%s.overview.png' % outname)
     else:
         # Default: each file is plotted independently
@@ -299,7 +369,7 @@ def steer(argv):
                 print('Error: Could not read %s, skipping' % filename)
                 continue
             outname=os.path.basename(filename).replace('.txt','').replace('.tab','')
-            do_all(xtab,ptype=itype,ymin=ymin,ymax=ymax,frac=frac,med_delta=med_delta,title=os.path.basename(filename))
+            do_all(xtab,ptype=itype,ymin=ymin,ymax=ymax,frac=frac,med_delta=med_delta,title=os.path.basename(filename),mask=mask,mask_file=mask_file)
             plt.savefig('Overview_Plot/%s.overview.png' % outname)
 
 

@@ -15,7 +15,7 @@ Command line usage (if any):
     usage: palace_make_mask.py [-h] [--sky-ext NAME] [--threshold T]
                                [--factor F] [--no-lsf] [--lsf-sigma S]
                                [--output PATH] [--min-window W] [--plot]
-                               fits_file palace_dir
+                               fits_file [palace_dir]
 
     where
 
@@ -23,7 +23,11 @@ Command line usage (if any):
                   extension (default SKY_EAST), and optionally LSF.
 
     palace_dir    is the path to the palace/PMD directory containing the
-                  PALACE data files (pmd_popmodel_OH.dat, etc.).
+                  PALACE data files (pmd_popmodel_OH.dat, etc.).  Optional;
+                  defaults to the vendored copy at
+                  data/palace_ref/palace/PMD (relative to this script's own
+                  location), so it only needs to be given to point at a
+                  different PMD installation.
 
     --sky-ext NAME    sky spectrum extension name (default: SKY_EAST).
 
@@ -106,10 +110,18 @@ Notes:
     mask is still useful in the B and R arms but atomic line heights may be
     approximate relative to OH.
 
-History:
+History::
 
     260627  ksl  Coding begun
     260628  ksl  Renamed to palace_make_mask.py; added PNG output; threshold default 0.01
+    260810  ksl  palace_dir made optional (nargs='?'), defaulting to the vendored
+                  copy at data/palace_ref/palace/PMD (DEFAULT_PALACE_DIR, computed
+                  relative to this file's own location, same pattern as
+                  XSkySepIvan.py's DEFAULT_BASE_DIR); still overridable by passing
+                  an explicit path. report_coverage() gained optional threshold/
+                  factor args to print a per-arm "Flux (cgs)" column (the
+                  threshold expressed as threshold/factor, erg/s/cm2/A) alongside
+                  the existing per-arm % clean.
 '''
 
 import argparse
@@ -124,6 +136,12 @@ FACTOR_DEFAULT   = 1.0e14
 LSF_SIGMA_DEFAULT = 0.65       # Å  (≈ FWHM 1.5 Å / 2.355)
 THRESHOLD_DEFAULT = 0.01
 CAP = 5.0                      # Å padding when loading line catalogues
+
+# Vendored PMD location (see py_progs/XSkySepIvan.py's DEFAULT_BASE_DIR,
+# which points at data/palace_ref -- this is that same directory's palace/PMD
+# subdirectory, computed the same way, relative to this file's location).
+DEFAULT_PALACE_DIR = (Path(__file__).resolve().parent.parent
+                       / 'data' / 'palace_ref' / 'palace' / 'PMD')
 
 ARM_RANGES = {
     "B": (3600.0, 5900.0),
@@ -498,24 +516,37 @@ def find_clean_windows(wave, mask):
 # Console reporting
 # ---------------------------------------------------------------------------
 
-def report_coverage(wave, mask, arm_ranges=ARM_RANGES):
-    """Print a per-arm summary of clean pixel counts and window counts."""
+def report_coverage(wave, mask, arm_ranges=ARM_RANGES, threshold=None, factor=None):
+    """Print a per-arm summary of clean pixel counts and window counts.
+
+    If threshold and factor are given, also prints the threshold expressed
+    as a physical flux value (threshold / factor, erg s⁻¹ cm⁻² Å⁻¹) in its
+    own column -- the same absolute value in every row, since one global
+    threshold applies across the whole spectrum, but shown per arm so the
+    cutoff is visible alongside each arm's clean fraction without having to
+    look back at the threshold line printed above the table.
+    """
+    show_flux = threshold is not None and factor is not None
+    thresh_flux = (threshold / factor) if show_flux else None
+    flux_hdr = f"  {'Flux (cgs)':>11}" if show_flux else ""
     print(f"\n{'Arm':<5}  {'Range (Å)':<16}  {'N total':>8}  "
-          f"{'N clean':>8}  {'% clean':>8}  {'N windows':>10}")
-    print("-" * 65)
+          f"{'N clean':>8}  {'% clean':>8}  {'N windows':>10}{flux_hdr}")
+    print("-" * (65 + (13 if show_flux else 0)))
     for arm, (wmin, wmax) in arm_ranges.items():
         sel     = (wave >= wmin) & (wave < wmax)
         n_tot   = int(sel.sum())
         n_clean = int((mask & sel).sum())
         pct     = 100.0 * n_clean / n_tot if n_tot else 0.0
         wins    = find_clean_windows(wave[sel], mask[sel])
+        flux_col = f"  {thresh_flux:>11.2e}" if show_flux else ""
         print(f"{arm:<5}  {wmin:.0f}–{wmax:.0f} Å       "
-              f"{n_tot:>8d}  {n_clean:>8d}  {pct:>7.1f}%  {len(wins):>10d}")
+              f"{n_tot:>8d}  {n_clean:>8d}  {pct:>7.1f}%  {len(wins):>10d}{flux_col}")
     n_tot   = len(wave)
     n_clean = int(mask.sum())
     wins    = find_clean_windows(wave, mask)
+    flux_col = f"  {thresh_flux:>11.2e}" if show_flux else ""
     print(f"{'ALL':<5}  {wave.min():.0f}–{wave.max():.0f} Å  "
-          f"{n_tot:>8d}  {n_clean:>8d}  {100*n_clean/n_tot:>7.1f}%  {len(wins):>10d}")
+          f"{n_tot:>8d}  {n_clean:>8d}  {100*n_clean/n_tot:>7.1f}%  {len(wins):>10d}{flux_col}")
 
 
 def report_windows(wave, mask, arm_ranges=ARM_RANGES, min_width=5.0, n_top=25):
@@ -693,7 +724,8 @@ def main():
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
     p.add_argument("fits_file",    help="LVM XCframe FITS file")
-    p.add_argument("palace_dir",   help="Path to palace/PMD directory")
+    p.add_argument("palace_dir",   nargs="?", default=str(DEFAULT_PALACE_DIR),
+                   help="Path to palace/PMD directory")
     p.add_argument("--sky-ext",    default="SKY_EAST",
                    help="FITS extension name for the sky spectrum")
     p.add_argument("--threshold",  type=float, default=THRESHOLD_DEFAULT,
@@ -759,7 +791,7 @@ def main():
     # ------------------------------------------------------------------
     # Report and save
     # ------------------------------------------------------------------
-    report_coverage(wave, mask)
+    report_coverage(wave, mask, threshold=args.threshold, factor=args.factor)
     report_windows(wave, mask, min_width=args.min_window)
 
     save_output(outpath, wave, sky_median, mask, palace_model_scaled,

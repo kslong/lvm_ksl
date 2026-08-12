@@ -36,5 +36,6 @@ are experimwenatls.  Those that have detailed documantion are the most reliable.
    rss_combining
    snapshots
    region_files
+   region_spectra
    mc_snr_analysis
 

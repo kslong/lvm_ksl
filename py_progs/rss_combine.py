@@ -17,7 +17,7 @@ exposures for a single tile into one RSS image with
 
 Command line usage::
 
-    rss_combine.py [-orig] [-sum] [-med] [-keep] [-no_helio] [-outroot xxxx] filenames
+    rss_combine.py [-orig] [-sum] [-med] [-keep] [-helio] [-outroot xxxx] filenames
 
 The ``-outroot xxxx`` option sets the name for the output file.
 
@@ -38,9 +38,9 @@ The ``-keep`` option keeps the temporary xtmp/ directory containing
 intermediate remapped files. By default, this directory is deleted
 after processing.
 
-The ``-no_helio`` option disables the heliocentric whole-pixel wavelength
-shift (see compute_helio_shifts) that is otherwise applied by default to
-each input file, based on its WAVE HELIORV_SCI header value.
+The ``-helio`` option (experimental) enables the heliocentric whole-pixel
+wavelength shift (see compute_helio_shifts), applied to each input file
+based on its WAVE HELIORV_SCI header value. This is off by default.
 
 
 Description:
@@ -156,6 +156,12 @@ History::
         the new heliocentric-shift feature above, which reads
         xtab['HeleoV']. CheckData.py has a similarly-named xcheck() but
         was checked and does not have this bug.
+    260812 ksl Flipped the heliocentric whole-pixel wavelength shift
+        (added 260721 above) from on-by-default to off-by-default.
+        do_combine()'s helio_shift parameter now defaults to False, and
+        the command-line switch is now the opt-in ``-helio`` (replacing
+        ``-no_helio``). Labeled experimental in the docstring, -h usage,
+        and docs/source/rss_combining.rst.
 
 '''
 
@@ -1287,7 +1293,7 @@ def process_remapped_images(file_list, extension='FLUX', xproc='med', memory_lim
     return xximage
 
 
-def do_combine(filenames, outroot='', fib_type='xy', c_type='ave', keep_tmp=False, helio_shift=True):
+def do_combine(filenames, outroot='', fib_type='xy', c_type='ave', keep_tmp=False, helio_shift=False):
     '''
     Main routine that carries out the entire RSS combining process.
 
@@ -1321,10 +1327,11 @@ def do_combine(filenames, outroot='', fib_type='xy', c_type='ave', keep_tmp=Fals
         If True, keep the temporary xtmp/ directory containing intermediate
         remapped files. Default is False (deletes temp files).
     helio_shift : bool
-        If True (default), apply the heliocentric whole-pixel wavelength
-        shift computed from each file's WAVE HELIORV_SCI header value (see
-        compute_helio_shifts). If False, no shift is applied and the
-        HELIO* header keywords are omitted except HELIOCOR=False.
+        Experimental. If True, apply the heliocentric whole-pixel
+        wavelength shift computed from each file's WAVE HELIORV_SCI
+        header value (see compute_helio_shifts). If False (default), no
+        shift is applied and the HELIO* header keywords are omitted
+        except HELIOCOR=False.
 
     Returns
     -------
@@ -1362,7 +1369,7 @@ def do_combine(filenames, outroot='', fib_type='xy', c_type='ave', keep_tmp=Fals
             print('  %-40s HELIORV_SCI=%8.3f  shift=%+d pixels  residual=%+.3f pixels' %
                   (fname.split('/')[-1], hv, sh, raw-o_best-sh))
     else:
-        print('\nHeliocentric pixel shift disabled (-no_helio)')
+        print('\nHeliocentric pixel shift disabled (default; use -helio to enable)')
         shift_map={}
         helio_map=dict(zip(xgood['Filename'], xgood['HeleoV']))
 
@@ -1595,7 +1602,7 @@ def steer(argv):
     fib_type='xy'
     c_type='ave'
     keep_tmp=False
-    helio_shift=True
+    helio_shift=False
     i=1
     while i<len(argv):
         if argv[i][0:2]=='-h':
@@ -1612,8 +1619,8 @@ def steer(argv):
             c_type='med'
         elif argv[i]=='-keep':
             keep_tmp=True
-        elif argv[i]=='-no_helio':
-            helio_shift=False
+        elif argv[i]=='-helio':
+            helio_shift=True
         elif argv[i][0]=='-':
             print('Could not parse command line:',argv)
             return

@@ -13,7 +13,7 @@ sources such as supernova remnants.
 
 Command line usage::
 
-    rss_combine_pos.py [-sum] [-med] [-size arcmin] [-out name] [-keep] [-no_helio] ra dec filenames
+    rss_combine_pos.py [-sum] [-med] [-size arcmin] [-out name] [-keep] [-helio] ra dec filenames
 
 Arguments: ra and dec are the center position in degrees (required).
 filenames are the input SFrame FITS files to combine.
@@ -39,10 +39,10 @@ Options:
 -keep
     Keep temporary files in xtmp/ directory.
 
--no_helio
-    Disable the heliocentric whole-pixel wavelength shift (see
-    rss_combine.compute_helio_shifts) that is otherwise applied by default
-    to each input file, based on its WAVE HELIORV_SCI header value.
+-helio
+    Experimental. Enable the heliocentric whole-pixel wavelength shift
+    (see rss_combine.compute_helio_shifts), applied to each input file
+    based on its WAVE HELIORV_SCI header value. This is off by default.
 
 Description:
 
@@ -115,6 +115,12 @@ History::
         rss_combine.py. This also picks up rss_combine.xcheck()'s fix
         for the RA/HeleoV column swap bug, since do_fixed reads
         HELIORV_SCI via that same shared function.
+    260812 ksl Flipped the heliocentric whole-pixel wavelength shift
+        (added 260721 above) from on-by-default to off-by-default, to
+        match rss_combine.py. do_fixed()'s helio_shift parameter now
+        defaults to False, and the command-line switch is now the
+        opt-in ``-helio`` (replacing ``-no_helio``). Labeled experimental
+        in the docstring, -h usage, and docs/source/rss_combining.rst.
 
 '''
 
@@ -164,7 +170,7 @@ def _usage_from_doc(doc):
     return doc[:m.start()].rstrip() + '\n' if m else doc
 
 
-def do_fixed(filenames, ra, dec, pa, size, fib_type='xy', c_type='ave', outroot='', keep_tmp=False, helio_shift=True):
+def do_fixed(filenames, ra, dec, pa, size, fib_type='xy', c_type='ave', outroot='', keep_tmp=False, helio_shift=False):
     '''
     Create a combined RSS file centered on a fixed position.
 
@@ -211,10 +217,11 @@ def do_fixed(filenames, ra, dec, pa, size, fib_type='xy', c_type='ave', outroot=
     keep_tmp : bool
         If True, keep the temporary xtmp/ directory. Default is False.
     helio_shift : bool
-        If True (default), apply the heliocentric whole-pixel wavelength
-        shift computed from each file's WAVE HELIORV_SCI header value (see
-        rss_combine.compute_helio_shifts). If False, no shift is applied
-        and the HELIO* header keywords are omitted except HELIOCOR=False.
+        Experimental. If True, apply the heliocentric whole-pixel
+        wavelength shift computed from each file's WAVE HELIORV_SCI
+        header value (see rss_combine.compute_helio_shifts). If False
+        (default), no shift is applied and the HELIO* header keywords
+        are omitted except HELIOCOR=False.
 
     Returns
     -------
@@ -258,7 +265,7 @@ def do_fixed(filenames, ra, dec, pa, size, fib_type='xy', c_type='ave', outroot=
             print('  %-40s HELIORV_SCI=%8.3f  shift=%+d pixels  residual=%+.3f pixels' %
                   (fname.split('/')[-1], hv, sh, raw-o_best-sh))
     else:
-        print('\nHeliocentric pixel shift disabled (-no_helio)')
+        print('\nHeliocentric pixel shift disabled (default; use -helio to enable)')
         shift_map={}
         helio_map=dict(zip(gtab['Filename'], gtab['HeleoV']))
 
@@ -469,7 +476,7 @@ def steer(argv):
 
     Usage:
         rss_combine_pos.py [-sum] [-med] [-size arcmin] [-out name]
-                           [-keep] [-no_helio] ra dec filenames
+                           [-keep] [-helio] ra dec filenames
 
     Parameters:
         argv (list): Command line arguments (sys.argv).
@@ -485,7 +492,7 @@ def steer(argv):
     c_type='ave'
     filenames=[]
     keep_tmp=False
-    helio_shift=True
+    helio_shift=False
 
     i=1
     while i < len(argv):
@@ -500,8 +507,8 @@ def steer(argv):
             size=eval(argv[i])
         elif argv[i]=='-keep':
             keep_tmp=True
-        elif argv[i]=='-no_helio':
-            helio_shift=False
+        elif argv[i]=='-helio':
+            helio_shift=True
         elif argv[i]=='-sum':
             fib_type='sum'
         elif argv[i][0:4]=='-med':

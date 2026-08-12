@@ -44,7 +44,7 @@ extent from the input files.
 
 **Command line usage**::
 
-    rss_combine.py [-orig] [-sum] [-med] [-keep] [-outroot name] filenames
+    rss_combine.py [-orig] [-sum] [-med] [-keep] [-helio] [-outroot name] filenames
 
 **Arguments:**
 
@@ -72,6 +72,12 @@ filenames
 -keep
     Retain temporary files in xtmp/ directory for debugging.
 
+-helio
+    **Experimental.** Apply a heliocentric whole-pixel wavelength shift
+    to each input file before combining, based on its ``WAVE HELIORV_SCI``
+    header value (see :doc:`api/rss_combine/index` for
+    ``compute_helio_shifts``). Off by default.
+
 **Examples**::
 
     # Combine all exposures of a tile using defaults (regular grid, mean)
@@ -93,7 +99,7 @@ or other discrete source).
 
 **Command line usage**::
 
-    rss_combine_pos.py [-sum] [-med] [-size arcmin] [-out name] [-keep] ra dec filenames
+    rss_combine_pos.py [-sum] [-med] [-size arcmin] [-out name] [-keep] [-helio] ra dec filenames
 
 **Arguments:**
 
@@ -119,6 +125,12 @@ filenames
 
 -keep
     Retain temporary files in xtmp/ directory.
+
+-helio
+    **Experimental.** Apply a heliocentric whole-pixel wavelength shift
+    to each input file before combining, based on its ``WAVE HELIORV_SCI``
+    header value (same mechanism as ``rss_combine.py``'s ``-helio``). Off
+    by default.
 
 **Examples**::
 

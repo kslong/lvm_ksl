@@ -69,12 +69,42 @@ The main reason for allowing multiple rss files from the command line is to
 deal with tiling, where different fibers may be returned because of small
 offsets.
 
-This routine uses reg2master.py (which is not currently part of lvm_ksl).
+This routine uses reg2master.py, vendored into py_progs/ (see
+docs/source/region_spectra.rst).
 
-History:
+History::
 
-241106 ksl Coding begun
-260301 ksl Added do_all for batch processing of source catalogs from snapshots
+    241106 ksl Coding begun
+    260301 ksl Added do_all for batch processing of source catalogs from
+        snapshots
+    260813 ksl Fixed do_complex(): write_reg()/return were indented
+        inside the loop over sources, so only the first Source_name in
+        a multi-source masterfile ever got a region file written (the
+        rest were silently dropped, no error). Moved the return after
+        the loop; also reset ftab['color'] to yellow at the start of
+        every iteration (previously only done in the SourceBack branch)
+        so a source's fiber-color assignment can no longer leak into
+        the next source's region file now that the loop actually runs
+        to completion. do_all() callers (both in this module and in
+        GetRegSpec.py) always pass a single-source qtab already, so
+        their single-string return value is unaffected. Verified
+        against a synthetic two-source masterfile: previously wrote
+        only one region file; now writes one correctly-isolated file
+        per source.
+    260813 ksl Fixed steer(): the regionfile-vs-masterfile argument
+        check used argv[i].count('.reg') (substring match anywhere),
+        which misclassified a masterfile as a region file whenever its
+        name merely contained '.reg' -- notably reg2master.py's own
+        default output naming, '<regionfile>.txt', e.g. a masterfile
+        built from 'vela.reg' defaults to 'vela.reg.txt'. That
+        misclassification sent the masterfile back through
+        reg2master.py as if it were raw DS9 syntax, which parsed zero
+        records and crashed, leaving MakeLVMReg.py unable to find the
+        never-written temporary masterfile. Switched to
+        argv[i].endswith('.reg'), matching the .reg-extension
+        convention documented in GetRegSpec.py. Verified against the
+        real failing case (a 4-source masterfile literally named
+        '<root>.reg.txt') end to end.
 
 '''
 
@@ -390,14 +420,18 @@ def do_complex(filename,qtab,outroot='',buffer=17.5,reg_dir=''):
 
     sources=np.unique(qtab['Source_name'])
     #  print('XXX sources:',sources)
+    outfile=None
     for one_source in sources:
         basename='%s.%s.reg' % (root,one_source)
         outfile=os.path.join(reg_dir,basename) if reg_dir else basename
         one_object_tab=qtab[qtab['Source_name']==one_source]
+        # Reset to a clean slate for every source, otherwise fiber colors
+        # from a previous source in this loop would leak into the next
+        # source's region file (ftab is shared/mutated across iterations).
+        ftab['color']='yellow'
         if 'SourceBack' in one_object_tab.colnames:
             source_tab=one_object_tab[one_object_tab['SourceBack']=='Source']
             back_tab=one_object_tab[one_object_tab['SourceBack']=='Back']
-            ftab['color']='yellow'
             if len(back_tab)>0:
                 xback_tab=get_fibers_in_region(xtab,back_tab,buffer=buffer)
                 ftab['color'][xback_tab['in_area']==True]='green'
@@ -412,7 +446,8 @@ def do_complex(filename,qtab,outroot='',buffer=17.5,reg_dir=''):
 
         write_reg(outfile,ftab,color='yellow')
         # print('XXX Knox ',outfile)
-        return outfile
+
+    return outfile
 
 
 
@@ -572,7 +607,7 @@ def steer(argv):
             return
         elif argv[i].count('fits'):
             filename.append(argv[i])
-        elif regfile=='' and argv[i].count('.reg'):
+        elif regfile=='' and argv[i].endswith('.reg'):
             regfile=argv[i]
         elif regfile=='' and masterfile=='':
             masterfile=argv[i]

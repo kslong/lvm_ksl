@@ -56,6 +56,7 @@ Other docstring RST gotchas:
 | Spectral fitting | `lvm_gaussfit.py`, `lvm_flux.py`, `lvm_double.py`, `lvm_triple.py` |
 | Astrometry | `fib2radec.py` (fiber → RA/Dec conversion) |
 | Imaging | `kslmap.py`, `quick_map.py`, `line_map.py` |
+| Spectrum overview plots | `PlotSpec.py`, `PlotSpec3.py`, `PlotSpecI.py` (interactive/Plotly) |
 | Data quality | `CheckReduced.py`, `CheckData.py` |
 
 ### Key Dependencies

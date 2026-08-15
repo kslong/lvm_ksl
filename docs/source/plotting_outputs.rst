@@ -1,5 +1,5 @@
-Plotting Outputs
-=================
+RA/Dec Table Plotting (radec_plot.py)
+=======================================
 
 The lvm_ksl package is moving toward a common, reusable layer for
 plotting analysis results, rather than each script carrying its own
@@ -312,4 +312,7 @@ See Also
 - :doc:`snapshots` - ``rss_snap.py``, whose diagnostic plots now use ``radec_plot.py``
 - :doc:`data_quality` - ``plot_sky_gaussfit.py``, whose residual maps now use ``radec_plot.py``
 - :doc:`spectral_fitting` - ``lvm_gaussfit.py``/``sky_gaussfit.py`` produce the tables typically plotted here
+- :doc:`spectrum_plots` - Wavelength-panel overview plots of a single
+  extracted spectrum, a different kind of plot from the RA/Dec plots on
+  this page
 - :doc:`api/radec_plot/index` - API documentation

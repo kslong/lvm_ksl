@@ -374,6 +374,9 @@ See Also
   fluxes) against RA/Dec, as distinct from the WCS images built here
   directly from RSS/CFrame files; a planned future step is bringing
   both under one consistent plotting layer
+- :doc:`spectrum_plots` - Wavelength-panel overview plots of a single
+  extracted spectrum, a different kind of plot from the spatial maps
+  built here
 - :doc:`api/kslmap/index` - API documentation
 - :doc:`api/quick_map/index` - API documentation
 - :doc:`api/GetSpec/index` - API documentation

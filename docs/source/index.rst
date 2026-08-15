@@ -31,6 +31,7 @@ are experimwenatls.  Those that have detailed documantion are the most reliable.
    sky_subtraction
    spectral_fitting
    dap
+   spectrum_plots
    visualization
    plotting_outputs
    rss_combining

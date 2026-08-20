@@ -46,6 +46,9 @@ Command line usage (if any):
 
     --output PATH     output FITS path (default: <stem>_mask.fits).
 
+    --line-output PATH  output strong-sky-line-list path
+                      (default: <stem>_lines.txt).
+
     --min-window W    minimum clean window width in Å for the printed table
                       (default: 5).
 
@@ -96,12 +99,26 @@ Description:
 
     A three-panel diagnostic PNG is always written alongside the FITS output.
 
+    In addition to the mask, a strong-sky-line list is written to an ascii
+    table (--line-output, default <stem>_lines.txt).  This is a *labeled
+    line position* view of the same contamination model, rather than a
+    per-pixel mask: for each PALACE line group (OH by (v_upper, N_upper,
+    F_upper), OI recombination by reffeat, atomic lines by feat, O2 as one
+    group) the brightest transition's wavelength is kept if the combined,
+    scaled contamination model exceeds --threshold there -- the same
+    threshold that builds the mask.  Columns: Wave_air, LineID, Component,
+    Ampl.  The column names match what PlotSpecI.py's -lines/load_lines()
+    mechanism expects, so this file can be used directly as a second,
+    sky-line overlay via PlotSpecI.py's -sky_lines flag, alongside the
+    usual scientific line list (data/dap_lines.txt).
+
 Primary routines:
 
     build_palace_line_model
     scale_model_to_sky
     make_sky_mask
     find_clean_windows
+    find_strong_sky_lines
 
 Notes:
 
@@ -122,6 +139,21 @@ History::
                   factor args to print a per-arm "Flux (cgs)" column (the
                   threshold expressed as threshold/factor, erg/s/cm2/A) alongside
                   the existing per-arm % clean.
+    260815  ksl  Added find_strong_sky_lines() and --line-output: alongside the
+                  pixel mask, write a named strong-sky-line list (one row per
+                  PALACE line group -- OH by (v_upper,N_upper,F_upper), OI
+                  recombination by reffeat, atomic lines by feat, O2 as one
+                  group -- at that group's brightest transition, kept if the
+                  combined scaled model exceeds --threshold there). Output
+                  columns Wave_air/LineID/Component/Ampl match what
+                  PlotSpecI.py's -sky_lines overlay expects. The four
+                  _build_* component loaders were refactored to share
+                  _load_oh_table/_load_orc_table/_load_atom_table/
+                  _load_o2_table so the new finder reuses the same catalogue
+                  parsing rather than duplicating it. Output written as
+                  ascii.fixed_width_two_line (round-trips cleanly through
+                  astropy.io.ascii.read()'s format guesser, unlike plain
+                  ascii.fixed_width).
 '''
 
 import argparse
@@ -258,13 +290,18 @@ def _grp2vector(line_wave, line_amp, wave, lsf_sigma):
 # Per-component PALACE model builders (internal)
 # ---------------------------------------------------------------------------
 
-def _build_oh(wave, palace_dir, lsf_sigma, cap):
-    """Render OH vibrational-rotational line groups from pmd_popmodel_OH.dat."""
+def _load_oh_table(wave, palace_dir, cap):
+    """Load, wavelength-window, and quantum-number-decode pmd_popmodel_OH.dat."""
     oh = Table.read(str(palace_dir / "pmd_popmodel_OH.dat"),
                     format="ascii.basic", guess=False, comment="#", fast_reader=False)
     oh["wave"] = vac_to_air(np.asarray(oh["lam"], float) * 1e4)
     oh = oh[(oh["wave"] >= wave.min() - cap) & (oh["wave"] <= wave.max() + cap)]
-    oh = _decode_hitran_id(oh)
+    return _decode_hitran_id(oh)
+
+
+def _build_oh(wave, palace_dir, lsf_sigma, cap):
+    """Render OH vibrational-rotational line groups from pmd_popmodel_OH.dat."""
+    oh = _load_oh_table(wave, palace_dir, cap)
     model = np.zeros(wave.size)
     for grp in oh.group_by(("v_upper", "N_upper", "F_upper")).groups:
         amp = np.asarray(grp["Aij"], float) * np.asarray(grp["gi"], float)
@@ -272,20 +309,25 @@ def _build_oh(wave, palace_dir, lsf_sigma, cap):
     return model
 
 
-def _build_orc(wave, palace_dir, lsf_sigma, cap):
-    """Render OI recombination line multiplets from pmd_intmodel_Orc.dat."""
+def _load_orc_table(wave, palace_dir, cap):
+    """Load and wavelength-window pmd_intmodel_Orc.dat."""
     orc = Table.read(str(palace_dir / "pmd_intmodel_Orc.dat"),
                      format="ascii.basic", guess=False, comment="#", fast_reader=False)
     orc["wave"] = vac_to_air(np.asarray(orc["lam"], float) * 1e4)
-    orc = orc[(orc["wave"] >= wave.min() - cap) & (orc["wave"] <= wave.max() + cap)]
+    return orc[(orc["wave"] >= wave.min() - cap) & (orc["wave"] <= wave.max() + cap)]
+
+
+def _build_orc(wave, palace_dir, lsf_sigma, cap):
+    """Render OI recombination line multiplets from pmd_intmodel_Orc.dat."""
+    orc = _load_orc_table(wave, palace_dir, cap)
     model = np.zeros(wave.size)
     for grp in orc.group_by("reffeat").groups:
         model += _grp2vector(grp["wave"], np.asarray(grp["I"], float), wave, lsf_sigma)
     return model
 
 
-def _build_atom(wave, palace_dir, lsf_sigma, cap):
-    """Render atomic sky lines (NaI, KI, [NI], OI) from pmd_intdata_atom.dat.
+def _load_atom_table(wave, palace_dir, cap):
+    """Load and wavelength-window pmd_intdata_atom.dat.
 
     Hydrogen recombination lines and OI recombination lines (class 'H' and
     'Orc') are excluded; they are either negligible or handled separately.
@@ -295,15 +337,20 @@ def _build_atom(wave, palace_dir, lsf_sigma, cap):
                       format="ascii.basic", guess=False, comment="#", fast_reader=False)
     atom["wave"] = vac_to_air(np.asarray(atom["lam"], float) * 1e4)
     atom = atom[(atom["wave"] >= wave.min() - cap) & (atom["wave"] <= wave.max() + cap)]
-    atom = atom[~np.isin(np.asarray(atom["class"], str), ["H", "Orc"])]
+    return atom[~np.isin(np.asarray(atom["class"], str), ["H", "Orc"])]
+
+
+def _build_atom(wave, palace_dir, lsf_sigma, cap):
+    """Render atomic sky lines (NaI, KI, [NI], OI) from pmd_intdata_atom.dat."""
+    atom = _load_atom_table(wave, palace_dir, cap)
     model = np.zeros(wave.size)
     for grp in atom.group_by("class").groups:
         model += _grp2vector(grp["wave"], np.asarray(grp["I"], float), wave, lsf_sigma)
     return model
 
 
-def _build_o2(wave, palace_dir, lsf_sigma, t_o2=191.5):
-    """Render the O2 A-band near 8650 Å from pmd_popmodel_O2.dat.
+def _load_o2_table(palace_dir, t_o2=191.5):
+    """Load pmd_popmodel_O2.dat and compute relative line weights.
 
     Only the v_i=0 vibrational level is used.  Line amplitudes follow a
     Boltzmann population distribution at temperature t_o2.
@@ -325,8 +372,15 @@ def _build_o2(wave, palace_dir, lsf_sigma, t_o2=191.5):
     Ei  = np.asarray(o2["Ei"], float)
     rel = (np.asarray(o2["Aij"], float) * np.asarray(o2["gi"], float) *
            np.exp(-hc_kB * (Ei - Ei.min()) / t_o2))
-    rel /= rel.sum()
-    return _grp2vector(np.asarray(o2["wave"], float), rel, wave, lsf_sigma)
+    o2["rel"] = rel / rel.sum()
+    return o2
+
+
+def _build_o2(wave, palace_dir, lsf_sigma, t_o2=191.5):
+    """Render the O2 A-band near 8650 Å from pmd_popmodel_O2.dat."""
+    o2 = _load_o2_table(palace_dir, t_o2=t_o2)
+    return _grp2vector(np.asarray(o2["wave"], float), np.asarray(o2["rel"], float),
+                       wave, lsf_sigma)
 
 
 # ---------------------------------------------------------------------------
@@ -510,6 +564,89 @@ def find_clean_windows(wave, mask):
         ws, we = wave[i_start], wave[-1]
         windows.append((ws, we, len(mask) - i_start, float(we - ws)))
     return sorted(windows, key=lambda x: -x[3])
+
+
+# ---------------------------------------------------------------------------
+# Strong sky-line list (for overlay on spectrum plots, not masking)
+# ---------------------------------------------------------------------------
+
+def find_strong_sky_lines(wave, palace_model_scaled, palace_dir, threshold, cap=CAP):
+    """Build a named list of strong sky lines for overlay on spectrum plots.
+
+    For each PALACE line group already used to build the contamination
+    model (OH grouped by (v_upper, N_upper, F_upper), OI recombination
+    grouped by reffeat, atomic lines grouped by feat -- the named
+    line/multiplet, e.g. NaI0589, OI0558, KI0770 -- and the O2 A-band
+    treated as one group), this takes that group's single brightest
+    transition wavelength and evaluates the combined, scaled contamination
+    model (palace_model_scaled -- the same array used to build the mask)
+    there.  A group is kept if that value exceeds `threshold`, the same
+    threshold used to build the mask, so the mask (pixel coverage) and this
+    list (named line positions) describe the same underlying contamination
+    level from two different angles.
+
+    Parameters
+    ----------
+    wave : ndarray
+        Wavelength array (Å) matching palace_model_scaled.
+    palace_model_scaled : ndarray
+        Combined PALACE model scaled to sky flux units (as used for the
+        mask).
+    palace_dir : str or Path
+        Path to the palace/PMD directory.
+    threshold : float
+        Contamination threshold in the same units as palace_model_scaled.
+    cap : float
+        Wavelength padding in Å beyond the wave grid edges when loading
+        line catalogues.
+
+    Returns
+    -------
+    astropy.table.Table
+        Columns Wave_air, LineID, Component, Ampl, sorted by Wave_air.
+        Empty (but correctly typed) if no group exceeds threshold.
+    """
+    palace_dir = Path(palace_dir)
+    rows = []
+
+    oh = _load_oh_table(wave, palace_dir, cap)
+    for grp in oh.group_by(("v_upper", "N_upper", "F_upper")).groups:
+        amp = np.asarray(grp["Aij"], float) * np.asarray(grp["gi"], float)
+        i = int(np.argmax(amp))
+        label = "OH_%d-%d" % (int(grp["v_upper"][i]), int(grp["v_lower"][i]))
+        rows.append((float(grp["wave"][i]), label, "OH"))
+
+    orc = _load_orc_table(wave, palace_dir, cap)
+    for grp in orc.group_by("reffeat").groups:
+        i = int(np.argmax(np.asarray(grp["I"], float)))
+        rows.append((float(grp["wave"][i]), str(grp["reffeat"][i]), "OI"))
+
+    atom = _load_atom_table(wave, palace_dir, cap)
+    for grp in atom.group_by("feat").groups:
+        i = int(np.argmax(np.asarray(grp["I"], float)))
+        rows.append((float(grp["wave"][i]), str(grp["feat"][i]), "atom"))
+
+    o2 = _load_o2_table(palace_dir)
+    o2 = o2[(o2["wave"] >= wave.min() - cap) & (o2["wave"] <= wave.max() + cap)]
+    if len(o2):
+        i = int(np.argmax(np.asarray(o2["rel"], float)))
+        rows.append((float(o2["wave"][i]), "O2", "O2"))
+
+    if not rows:
+        out = Table(names=("Wave_air", "LineID", "Component", "Ampl"),
+                    dtype=(float, "U16", "U8", float))
+        return out
+
+    line_wave = np.array([r[0] for r in rows])
+    amp = np.interp(line_wave, wave, palace_model_scaled)
+    keep = amp > threshold
+
+    out = Table(rows=[r for r, k in zip(rows, keep) if k],
+               names=("Wave_air", "LineID", "Component"))
+    out["Wave_air"] = np.round(out["Wave_air"], 2)
+    out["Ampl"] = np.round(amp[keep], 4)
+    out.sort("Wave_air")
+    return out
 
 
 # ---------------------------------------------------------------------------
@@ -738,6 +875,9 @@ def main():
                    help="Fixed Gaussian LSF sigma in Å (used with --no-lsf)")
     p.add_argument("--output",     default=None,
                    help="Output FITS path (default: <stem>_mask.fits)")
+    p.add_argument("--line-output", default=None,
+                   help="Output strong-sky-line-list path "
+                        "(default: <stem>_lines.txt)")
     p.add_argument("--min-window", type=float, default=5.0,
                    help="Minimum window width in Å for the printed window table")
     p.add_argument("--plot",       action="store_true",
@@ -796,6 +936,16 @@ def main():
 
     save_output(outpath, wave, sky_median, mask, palace_model_scaled,
                 args.threshold, scale, args.factor, args.sky_ext)
+
+    # ------------------------------------------------------------------
+    # Strong sky-line list (for overlay on spectrum plots, e.g. PlotSpecI.py)
+    # ------------------------------------------------------------------
+    line_table = find_strong_sky_lines(wave, palace_model_scaled, args.palace_dir,
+                                       args.threshold)
+    line_outpath = args.line_output or f"{Path(args.fits_file).stem}_lines.txt"
+    line_table.write(line_outpath, format="ascii.fixed_width_two_line", overwrite=True)
+    print(f"\nStrong sky lines: {len(line_table)} found "
+          f"(threshold {args.threshold:.4g})  ->  {line_outpath}")
 
     plot_path = Path(outpath).with_suffix(".png")
     title = (f"{Path(args.fits_file).name}  |  "

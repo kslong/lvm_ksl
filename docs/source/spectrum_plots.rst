@@ -113,6 +113,7 @@ overlay is read from a file rather than hardcoded.
                 [-frac 0.1] [-min ymin] [-max ymax] [-med] [-delta 1e-15]
                 [-mask] [-mask_file file.fits]
                 [-lines file.txt] [-no_lines]
+                [-sky_lines] [-sky_lines_file file.txt]
                 [-mode sep_back] file [files ...]
 
 **Output:** ``Overview_Plot/<basename>.overview.html`` -- a single
@@ -145,6 +146,22 @@ view it, just a browser.
 
 -no_lines
     Disable the line overlay entirely.
+
+-sky_lines
+    Overlay a second, independent line list of strong sky lines (default
+    ``data/sky_lines.txt``, as produced by ``palace_make_mask.py``'s
+    ``--line-output`` -- see :doc:`sky_subtraction`), drawn as blue tick
+    marks alongside the scientific ``-lines`` overlay (red). Unlike the
+    scientific list, sky lines get no static text label -- only a tick
+    mark and a hover tooltip (name + wavelength) -- since the point is to
+    see *where* a strong sky line falls (e.g. to judge whether a feature
+    in the spectrum might be a sky-subtraction residual), not to identify
+    it by name, and the list can run to several hundred entries (mostly
+    OH) in the Z arm. Off by default.
+
+-sky_lines_file file.txt
+    Use this sky line list instead of the ``data/sky_lines.txt`` default.
+    Same table format as ``-lines``. Implies ``-sky_lines``.
 
 Sky masking (``-mask``) is a legend-toggleable trace here rather than a
 baked-in recolor: clicking the "Sky-line masked" legend entry once
@@ -219,7 +236,8 @@ See Also
 - :doc:`spectral_fitting_local` - ``GetSpec.py``/emission-line fitting tools
   that produce the spectra plotted here
 - :doc:`sky_subtraction` - ``palace_make_mask.py``, which produces
-  ``data/sky_mask.fits`` (the ``-mask`` overlay)
+  ``data/sky_mask.fits`` (the ``-mask`` overlay) and
+  ``data/sky_lines.txt`` (the ``-sky_lines`` overlay)
 - :doc:`visualization` - Spatial (RA/Dec) image maps, a different kind
   of plot from the wavelength panels on this page
 - :doc:`plotting_outputs` - Spatial (RA/Dec) table-column plots, also

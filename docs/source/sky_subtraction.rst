@@ -612,6 +612,10 @@ palace_dir
 --plot
     Display the diagnostic plot interactively (it is always saved as a PNG).
 
+--line-output PATH
+    Output path for the strong-sky-line list (default ``<stem>_lines.txt``).
+    See Output below.
+
 **Console report:**
 
 For each of the B, R, and Z arms (and an ``ALL`` row for the full range),
@@ -636,6 +640,23 @@ A FITS file (``<stem>_mask.fits``) containing:
 A PNG diagnostic plot (``<stem>_mask.png``) showing all three
 spectrograph arms on a log flux scale with the PALACE model, threshold line,
 the full sky spectrum, and the clean continuum pixels highlighted.
+
+An ascii table (``<stem>_lines.txt``, ``--line-output`` to change the path)
+listing strong sky lines as *named positions* rather than a pixel mask.  For
+each PALACE line group already used to build the mask (OH grouped by
+(v_upper, N_upper, F_upper), OI recombination grouped by reffeat, atomic
+lines grouped by feat -- e.g. NaI0589, OI0558, KI0770 -- and the O2 A-band
+as one group), the group's single brightest transition is kept if the
+combined, scaled contamination model exceeds the same ``--threshold`` used
+for the mask.  Columns: ``Wave_air``, ``LineID``, ``Component``, ``Ampl``,
+written as ``ascii.fixed_width_two_line``.  Because it uses the same
+threshold as the mask, in the Z arm this list can run to several hundred
+entries (mostly OH); it is intended as a per-line reference for judging
+whether a spectral feature might be a sky-subtraction residual, not as a
+short curated list. See :doc:`spectrum_plots` (PlotSpecI.py's
+``-sky_lines``/``-sky_lines_file``) for how this file is meant to be used
+-- it overlays these positions as unlabeled tick marks, distinct from the
+labeled scientific line list.
 
 GetSky_from_CFrame_sum.py
 ^^^^^^^^^^^^^^^^^^^^^^^^^

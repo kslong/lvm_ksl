@@ -18,6 +18,7 @@ Command line usage (if any):
                         [-frac 0.1] [-min ymin] [-max ymax] [-med] [-delta 1e-15]
                         [-mask] [-mask_file file.fits]
                         [-lines file.txt] [-no_lines]
+                        [-sky_lines] [-sky_lines_file file.txt]
                         [-mode sep_back] file [files ...]
 
     Plots are written to Overview_Plot/<basename>.overview.html.
@@ -68,6 +69,20 @@ Command line usage (if any):
     -no_lines
         Disable the line overlay entirely.
 
+    -sky_lines
+        Overlay a second, independent line list of strong sky lines as blue
+        tick marks (position only, no text label -- unlike the scientific
+        -lines overlay in red), drawn alongside it, from data/sky_lines.txt
+        as produced by palace_make_mask.py's --line-output.  Hovering over a
+        tick still shows the line ID and wavelength.  Intended to flag
+        candidate sky-subtraction residuals rather than to identify features.
+        Off by default.
+
+    -sky_lines_file file.txt
+        Use this sky line list instead of the data/sky_lines.txt default.
+        Same table format as -lines (Wave_air/LineID or equivalent
+        columns).  Implies -sky_lines.
+
     Scaling options (mutually exclusive; last one wins if combined):
     -frac   autoscale upper limit to frac * max(FLUX) per panel (default 0.1)
     -max    fix the upper y-limit in all panels (also selects fixed-scale mode)
@@ -101,6 +116,19 @@ Notes:
 History::
 
     260814 ksl Coding begun
+    260815 ksl Added -sky_lines/-sky_lines_file: a second, independent line
+                list (default data/sky_lines.txt, as produced by
+                palace_make_mask.py's --line-output) overlaid alongside the
+                scientific -lines list. Drawn as blue tick marks with a hover
+                tooltip but, unlike the scientific list, no static text
+                label -- these mark candidate sky-subtraction-residual
+                positions rather than identified features, and the strong-
+                line list can run to several hundred entries (mostly OH), so
+                labeling would defeat the declutter logic. The tick+label
+                rendering block in add_panel was factored out into
+                _add_line_overlay(color, show_labels=...) so both lists
+                share one implementation instead of two near-duplicate
+                blocks.
 
 '''
 
@@ -121,6 +149,7 @@ from GetSkyCont import _interp_mask_to_wave
 
 
 DEFAULT_LINES_FILE = Path(__file__).resolve().parent.parent / 'data' / 'dap_lines.txt'
+DEFAULT_SKY_LINES_FILE = Path(__file__).resolve().parent.parent / 'data' / 'sky_lines.txt'
 
 WAVE_COLS = ('Wave', 'WAVE', 'Wave_air')
 NAME_COLS = ('LineID', 'Name', 'name', 'Ion', 'DAP_name')
@@ -186,15 +215,61 @@ def _axis_suffix(row):
     return '' if row == 1 else str(row)
 
 
+def _add_line_overlay(fig, row, wmin, wmax, extra, top_y, line_names, line_waves,
+                      color, meta, show_labels=True):
+    '''
+    Add tick marks and an always-hoverable marker trace for one line list to
+    panel `row`, in `color`.  If show_labels is True, also add placeholder
+    text labels (decluttered client-side, see _build_post_script), appending
+    one dict per label to `meta` in the same order fig.add_annotation is
+    called, so the JS can match gd.layout.annotations[i] to meta[i].  If
+    show_labels is False, only the tick marks and hover tooltip are drawn --
+    useful for a dense reference list (e.g. sky lines) where only the
+    position matters, not a readable label.  No-op if line_names is None or
+    no line in this list falls in [wmin-extra, wmax+extra].
+    '''
+    if line_names is None:
+        return
+
+    panel_idx = [i for i, w in enumerate(line_waves) if wmin - extra <= w <= wmax + extra]
+    if not panel_idx:
+        return
+
+    panel_waves = [line_waves[i] for i in panel_idx]
+    panel_names = [line_names[i] for i in panel_idx]
+
+    for w in panel_waves:
+        fig.add_shape(type='line', x0=w, x1=w, y0=0, y1=1,
+                      xref='x%s' % _axis_suffix(row), yref='y%s domain' % _axis_suffix(row),
+                      line=dict(color=color, width=1, dash='dot'), opacity=0.35,
+                      row=row, col=1)
+
+    fig.add_trace(go.Scatter(x=panel_waves, y=[top_y] * len(panel_waves), mode='markers',
+                              marker=dict(size=10, opacity=0), showlegend=False,
+                              hoverinfo='text',
+                              hovertext=['%s  %.2f Å' % (nm, w) for nm, w in zip(panel_names, panel_waves)]),
+                  row=row, col=1)
+
+    if not show_labels:
+        return
+
+    for nm, w in zip(panel_names, panel_waves):
+        fig.add_annotation(x=w, y=top_y, text=nm, showarrow=False, visible=True,
+                           textangle=-90, font=dict(size=9, color=color),
+                           xanchor='center', yanchor='bottom', row=row, col=1)
+        meta.append({'row': row, 'wave': float(w), 'name': str(nm)})
+
+
 def add_panel(fig, row, spectab, wmin, wmax, ptype, ymin, ymax, frac, med_delta,
-              mask, mask_file, line_names, line_waves, show_mask_legend, meta):
+              mask, mask_file, line_names, line_waves,
+              sky_line_names, sky_line_waves, show_mask_legend, meta):
     '''
     Add one panel (row) to fig: the flux trace (plus SOURCE_FLUX/BACK_FLUX
-    overlays and the sky-mask overlay if requested), and the line overlay
-    (tick shapes, an always-hoverable marker trace, and placeholder
-    annotations that the embedded JS declutters).  Appends one dict per
-    annotation to meta, in the same order fig.add_annotation is called, so
-    the JS can match gd.layout.annotations[i] to meta[i].
+    overlays and the sky-mask overlay if requested), the scientific line
+    overlay (red) from line_names/line_waves, and the sky line overlay
+    (blue) from sky_line_names/sky_line_waves.  Each overlay is tick
+    shapes, an always-hoverable marker trace, and placeholder annotations
+    that the embedded JS declutters; see _add_line_overlay.
     '''
     extra = 10
     xx = _slice_region(spectab, wmin, wmax, extra)
@@ -237,33 +312,10 @@ def add_panel(fig, row, spectab, wmin, wmax, ptype, ymin, ymax, frac, med_delta,
         finite_flux = flux[np.isfinite(flux)]
         top_y = float(np.max(finite_flux) * 0.92) if len(finite_flux) else 1.0
 
-    if line_names is None:
-        return
-
-    panel_idx = [i for i, w in enumerate(line_waves) if wmin - extra <= w <= wmax + extra]
-    if not panel_idx:
-        return
-
-    panel_waves = [line_waves[i] for i in panel_idx]
-    panel_names = [line_names[i] for i in panel_idx]
-
-    for w in panel_waves:
-        fig.add_shape(type='line', x0=w, x1=w, y0=0, y1=1,
-                      xref='x%s' % _axis_suffix(row), yref='y%s domain' % _axis_suffix(row),
-                      line=dict(color='red', width=1, dash='dot'), opacity=0.35,
-                      row=row, col=1)
-
-    fig.add_trace(go.Scatter(x=panel_waves, y=[top_y] * len(panel_waves), mode='markers',
-                              marker=dict(size=10, opacity=0), showlegend=False,
-                              hoverinfo='text',
-                              hovertext=['%s  %.2f Å' % (nm, w) for nm, w in zip(panel_names, panel_waves)]),
-                  row=row, col=1)
-
-    for nm, w in zip(panel_names, panel_waves):
-        fig.add_annotation(x=w, y=top_y, text=nm, showarrow=False, visible=True,
-                           textangle=-90, font=dict(size=9, color='firebrick'),
-                           xanchor='center', yanchor='bottom', row=row, col=1)
-        meta.append({'row': row, 'wave': float(w), 'name': str(nm)})
+    _add_line_overlay(fig, row, wmin, wmax, extra, top_y, line_names, line_waves,
+                      'firebrick', meta)
+    _add_line_overlay(fig, row, wmin, wmax, extra, top_y, sky_line_names, sky_line_waves,
+                      'steelblue', meta, show_labels=False)
 
 
 def _build_post_script(meta):
@@ -332,11 +384,13 @@ def _build_post_script(meta):
 
 def do_all(xtab, wmin=3600, wmax=9559, width=750, npanel=None,
           ptype='scale', ymin=0.0, ymax=1e-14, frac=0.1, med_delta=3e-15,
-          title='', mask=False, mask_file=None, lines_file=None, no_lines=False):
+          title='', mask=False, mask_file=None, lines_file=None, no_lines=False,
+          sky_lines=False, sky_lines_file=None):
     '''
     Build the interactive figure: stacked wavelength panels (default
-    geometry matches PlotSpec.py) with optional sky-mask overlay and
-    line-list overlay.  Returns (fig, post_script).
+    geometry matches PlotSpec.py) with optional sky-mask overlay, a
+    scientific line-list overlay (red), and a sky line-list overlay (blue).
+    Returns (fig, post_script).
     '''
     if npanel:
         width = (wmax - wmin) / float(npanel)
@@ -348,6 +402,10 @@ def do_all(xtab, wmin=3600, wmax=9559, width=750, npanel=None,
     if not no_lines:
         line_names, line_waves = load_lines(lines_file)
 
+    sky_line_names = sky_line_waves = None
+    if sky_lines:
+        sky_line_names, sky_line_waves = load_lines(sky_lines_file or DEFAULT_SKY_LINES_FILE)
+
     fig = make_subplots(rows=nmax, cols=1, vertical_spacing=0.4 / nmax)
 
     meta = []
@@ -357,7 +415,8 @@ def do_all(xtab, wmin=3600, wmax=9559, width=750, npanel=None,
         wwmin = wmin + i * width
         wwmax = wwmin + width
         add_panel(fig, row, xtab, wwmin, wwmax, ptype, ymin, ymax, frac, med_delta,
-                  mask, mask_file, line_names, line_waves, show_mask_legend, meta)
+                  mask, mask_file, line_names, line_waves,
+                  sky_line_names, sky_line_waves, show_mask_legend, meta)
         if mask:
             show_mask_legend = False
 
@@ -391,6 +450,8 @@ def steer(argv):
     mask_file = None
     lines_file = None
     no_lines = False
+    sky_lines = False
+    sky_lines_file = None
     filenames = []
 
     i = 1
@@ -435,6 +496,12 @@ def steer(argv):
             lines_file = argv[i]
         elif argv[i] == '-no_lines':
             no_lines = True
+        elif argv[i] == '-sky_lines':
+            sky_lines = True
+        elif argv[i] == '-sky_lines_file':
+            i += 1
+            sky_lines_file = argv[i]
+            sky_lines = True
         elif argv[i] == '-mode':
             i += 1
             mode = argv[i]
@@ -458,7 +525,8 @@ def steer(argv):
         fig, post_script = do_all(xtab, wmin=wmin, wmax=wmax, width=width, npanel=npanel,
                                   ptype=itype, ymin=ymin, ymax=ymax, frac=frac, med_delta=med_delta,
                                   title=plot_title, mask=mask, mask_file=mask_file,
-                                  lines_file=lines_file, no_lines=no_lines)
+                                  lines_file=lines_file, no_lines=no_lines,
+                                  sky_lines=sky_lines, sky_lines_file=sky_lines_file)
         outfile = 'Overview_Plot/%s.overview.html' % outname
         fig.write_html(outfile, include_plotlyjs=True, post_script=post_script,
                        default_width=FIG_WIDTH, default_height=fig.layout.height)

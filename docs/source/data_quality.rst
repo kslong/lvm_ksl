@@ -667,5 +667,5 @@ See Also
 - :doc:`api/check_sky_positions/index` - API documentation
 - :doc:`api/QuickLook/index` - API documentation
 - :doc:`summarize` - Tools for cataloging and summarizing exposures
-- :doc:`spectral_fitting` - ``sky_gaussfit.py`` produces the input tables for ``plot_sky_gaussfit.py``
+- :doc:`spectral_fitting_local` - ``sky_gaussfit.py`` produces the input tables for ``plot_sky_gaussfit.py``
 - :doc:`plotting_outputs` - ``radec_plot.py``, which ``plot_sky_gaussfit.py`` now uses for its spatial rendering

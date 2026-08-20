@@ -369,7 +369,7 @@ See Also
 --------
 
 - :doc:`rss_combining` - Combining multiple exposures before mapping
-- :doc:`spectral_fitting` - Fitting emission lines in extracted spectra
+- :doc:`spectral_fitting_local` - Fitting emission lines in extracted spectra
 - :doc:`plotting_outputs` - Plotting table columns (e.g. fitted line
   fluxes) against RA/Dec, as distinct from the WCS images built here
   directly from RSS/CFrame files; a planned future step is bringing

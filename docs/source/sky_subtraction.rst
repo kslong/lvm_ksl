@@ -1117,7 +1117,7 @@ adjacent-bump residual pattern seen at bright lines like [OI] 5577; a
 flat multiplicative width correction (``-lsf_boost``) was tested and
 found to make that pattern worse, not better, so the residual's root
 cause is evidently not a pure LSF-width deficit and remains under
-investigation (see ``lvm_line_profile.py`` in :doc:`spectral_fitting`,
+investigation (see ``lvm_line_profile.py`` in :doc:`spectral_fitting_local`,
 built specifically to investigate this independently of PALACE — it
 finds a real but line-specific, non-smooth-in-wavelength gap between
 the LSF extension's stated FWHM and an independently-fit Gaussian FWHM

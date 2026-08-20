@@ -311,7 +311,7 @@ See Also
 - :doc:`visualization` - Image-based spatial maps built directly from RSS/CFrame files
 - :doc:`snapshots` - ``rss_snap.py``, whose diagnostic plots now use ``radec_plot.py``
 - :doc:`data_quality` - ``plot_sky_gaussfit.py``, whose residual maps now use ``radec_plot.py``
-- :doc:`spectral_fitting` - ``lvm_gaussfit.py``/``sky_gaussfit.py`` produce the tables typically plotted here
+- :doc:`spectral_fitting_local` - ``lvm_gaussfit.py``/``sky_gaussfit.py`` produce the tables typically plotted here
 - :doc:`spectrum_plots` - Wavelength-panel overview plots of a single
   extracted spectrum, a different kind of plot from the RA/Dec plots on
   this page

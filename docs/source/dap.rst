@@ -5,9 +5,9 @@ The LVM Data Analysis Pipeline (LVM-DAP) fits each fiber spectrum with a
 stellar population model (RSP) plus a set of parametric and
 non-parametric emission-line measurements. It is a separate tool
 (``lvmdap``/``lvm-dap-conf``) from the ``lmfit``-based line fitters
-described in :doc:`spectral_fitting` -- use LVM-DAP when you need the
+described in :doc:`spectral_fitting_local` -- use LVM-DAP when you need the
 stellar continuum decomposition or the DAP's own emission-line tables;
-use :doc:`spectral_fitting` when you only need fast Gaussian fits to a
+use :doc:`spectral_fitting_local` when you only need fast Gaussian fits to a
 handful of known lines.
 
 This page covers the ``lvm_ksl`` tools that wrap that workflow:
@@ -35,7 +35,7 @@ workflow is:
 2. **Flatten it into a table** with ``DAP2tab.py`` and/or
    ``DAPGauss2tab.py``, whose column-naming convention (``flux_<name>``,
    ``fwhm_<name>``, ``wave_<name>``, ...) matches the tables produced by
-   ``lvm_gaussfit.py``/``sky_gaussfit.py`` in :doc:`spectral_fitting`.
+   ``lvm_gaussfit.py``/``sky_gaussfit.py`` in :doc:`spectral_fitting_local`.
 
 
 Retrieving the Official DAP Output -- GetDAP.py
@@ -200,7 +200,7 @@ work with directly. ``DAP2tab.py`` and ``DAPGauss2tab.py`` each flatten
 one or more DAP files into a single ascii table, one row per fiber,
 using the same column-naming convention (``flux_<name>``,
 ``eflux_<name>``, ``wave_<name>``, ``fwhm_<name>``, ...) as
-``lvm_gaussfit.py``/``sky_gaussfit.py`` (see :doc:`spectral_fitting`).
+``lvm_gaussfit.py``/``sky_gaussfit.py`` (see :doc:`spectral_fitting_local`).
 They differ in which DAP extension they read:
 
 DAP2tab.py
@@ -250,7 +250,7 @@ minus HeII/Hgamma/HeI.
 Both scripts convert DAP flux values to **physical** units
 (erg/s/cm\ :sup:`2`) by multiplying by ``1e-16`` before writing the
 output table. This is different from ``lvm_gaussfit.py`` and
-``sky_gaussfit.py`` (:doc:`spectral_fitting`), whose ``flux_*`` output
+``sky_gaussfit.py`` (:doc:`spectral_fitting_local`), whose ``flux_*`` output
 columns retain the ``x1e16``-scaled convention and must be divided by
 ``1e16`` to get physical values. Do not apply that same division to
 tables produced by ``DAP2tab.py``/``DAPGauss2tab.py`` -- they are
@@ -341,14 +341,14 @@ Notes
 - ``RunDap.py`` leaves an existing yaml config untouched on rerun, so
   hand-tuned parameters for a specific run directory survive; use
   ``-force`` to regenerate from the shared template.
-- See :doc:`spectral_fitting` for the ``lmfit``-based alternative when
+- See :doc:`spectral_fitting_local` for the ``lmfit``-based alternative when
   you don't need the DAP's stellar continuum fit.
 
 
 See Also
 --------
 
-- :doc:`spectral_fitting` - ``lmfit``-based Gaussian emission-line
+- :doc:`spectral_fitting_local` - ``lmfit``-based Gaussian emission-line
   fitting, an alternative to the DAP's own line measurements
 - :doc:`data_retrieval` - ``GetFromUtah.py``/``sdss_access``
   authentication, shared by ``GetDAP.py``

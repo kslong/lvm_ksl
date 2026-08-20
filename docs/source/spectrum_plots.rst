@@ -216,7 +216,7 @@ See Also
 
 - :doc:`dap` - ``data/dap_lines.txt``, the default line-overlay
   reference table for ``PlotSpecI.py``
-- :doc:`spectral_fitting` - ``GetSpec.py``/emission-line fitting tools
+- :doc:`spectral_fitting_local` - ``GetSpec.py``/emission-line fitting tools
   that produce the spectra plotted here
 - :doc:`sky_subtraction` - ``palace_make_mask.py``, which produces
   ``data/sky_mask.fits`` (the ``-mask`` overlay)

@@ -212,9 +212,11 @@ DAP2tab.py
 Reads the DAP's **non-parametric** emission-line extensions
 (``NP_ELINES_B``/``NP_ELINES_R``/``NP_ELINES_I`` -- direct-integration
 flux measurements split by wavelength channel), joined onto the
-per-fiber ``PT`` summary table, for a fixed set of the strongest lines
-([OII], Hgamma, HeII, Hbeta, [OIII], HeI, [OI], [NII], H-alpha, [SII],
-[CaII], [SIII]).
+per-fiber ``PT`` summary table, for a fixed set of 37 lines useful for
+SNR spectroscopy (H I Balmer series H\ :math:`\alpha`--H\ :math:`\epsilon`,
+He I, He II, and the forbidden lines [NeIII], [OI]--[OIII], [NI], [NII],
+[SII], [SIII], Ca II, [CaII], [FeII], [FeIII], [FeV], [FeX], [NiII]) --
+see the line-name table below.
 
 **Usage**::
 
@@ -232,12 +234,142 @@ filename(s)
 where ``<root>`` is the exposure number extracted from the input
 filename.
 
+**Line names:**
+
+Output columns are named ``flux_<name>``/``eflux_<name>``/``wave_<name>``/
+``fwhm_<name>``/... where ``<name>`` is the ``gauss_name`` below.
+Doublets/multiplets from the same ion use ``_a``/``_b`` (shorter
+wavelength first); a line with no close partner in this set instead gets
+a truncated-wavelength suffix, or no suffix at all when the DAP name
+(e.g. ``Hgamma``, ``Hdelta``) is already unambiguous.
+
+.. list-table::
+   :header-rows: 1
+   :widths: 12 20 15
+
+   * - Wavelength
+     - DAP_name
+     - gauss_name
+   * - 3726.03
+     - ``[OII]_3726.03``
+     - ``oii_a``
+   * - 3728.82
+     - ``[OII]_3728.82``
+     - ``oii_b``
+   * - 3868.75
+     - ``[NeIII]_3868.75``
+     - ``neiii_a``
+   * - 3888.65
+     - ``HeI_3888.65``
+     - ``hei_a``
+   * - 3889.05
+     - ``HI_3889.05``
+     - ``hi_3889``
+   * - 3933.66
+     - ``CaII_3933.66``
+     - ``caii_3933``
+   * - 3967.46
+     - ``[NeIII]_3967.46``
+     - ``neiii_b``
+   * - 3970.07
+     - ``Hepsilon_3970.07``
+     - ``hepsilon``
+   * - 4101.77
+     - ``Hdelta_4101.77``
+     - ``hdelta``
+   * - 4227.2
+     - ``[FeV]_4227.2``
+     - ``fev_4227``
+   * - 4340.49
+     - ``Hgamma_4340.49``
+     - ``hgamma``
+   * - 4363.21
+     - ``[OIII]_4363.21``
+     - ``oiii_4363``
+   * - 4658.1
+     - ``[FeIII]_4658.1``
+     - ``feiii_a``
+   * - 4685.68
+     - ``HeII_4685.68``
+     - ``heii``
+   * - 4861.36
+     - ``Hbeta_4861.36``
+     - ``hb``
+   * - 4958.91
+     - ``[OIII]_4958.91``
+     - ``oiii_a``
+   * - 4985.9
+     - ``[FeIII]_4985.9``
+     - ``feiii_b``
+   * - 5006.84
+     - ``[OIII]_5006.84``
+     - ``oiii_b``
+   * - 5197.9
+     - ``[NI]_5197.9``
+     - ``ni_a``
+   * - 5200.26
+     - ``[NI]_5200.26``
+     - ``ni_b``
+   * - 5876.0
+     - ``HeI_5876.0``
+     - ``hei_b``
+   * - 6300.3
+     - ``[OI]_6300.3``
+     - ``oi_a``
+   * - 6363.78
+     - ``[OI]_6363.78``
+     - ``oi_b``
+   * - 6374.51
+     - ``[FeX]_6374.51``
+     - ``fex_6374``
+   * - 6548.05
+     - ``[NII]_6548.05``
+     - ``nii_a``
+   * - 6562.85
+     - ``Halpha_6562.85``
+     - ``ha``
+   * - 6583.45
+     - ``[NII]_6583.45``
+     - ``nii_b``
+   * - 6716.44
+     - ``[SII]_6716.44``
+     - ``sii_a``
+   * - 6730.82
+     - ``[SII]_6730.82``
+     - ``sii_b``
+   * - 7291.46
+     - ``[CaII]_7291.46``
+     - ``caii_a``
+   * - 7318.92
+     - ``[OII]_7318.92``
+     - ``oii_7320``
+   * - 7323.88
+     - ``[CaII]_7323.88``
+     - ``caii_b``
+   * - 7377.83
+     - ``[NiII]_7377.83``
+     - ``ni_ii_7377``
+   * - 8616.96
+     - ``[FeII]_8616.96``
+     - ``feii_a``
+   * - 8891.88
+     - ``[FeII]_8891.88``
+     - ``feii_b``
+   * - 9069.0
+     - ``[SIII]_9069.0``
+     - ``siii_a``
+   * - 9531.1
+     - ``[SIII]_9531.1``
+     - ``siii_b``
+
 DAPGauss2tab.py
 ^^^^^^^^^^^^^^^^
 
 Reads the DAP's **parametric** (single-Gaussian) emission-line
-extension (``PM_ELINES``), for the same line set as ``DAP2tab.py``
-minus HeII/Hgamma/HeI.
+extension (``PM_ELINES``), for its own fixed set of 13 of the strongest
+lines ([OII] doublet, H\ :math:`\beta`, [OIII] doublet, [OI], [NII]
+doublet, H\ :math:`\alpha`, [SII] doublet, [SIII] doublet) -- a smaller,
+independent list, not automatically kept in sync with ``DAP2tab.py``'s.
 
 **Usage**::
 
@@ -268,8 +400,8 @@ already physical.
 Reference: All Lines the DAP Can Fit -- data/dap_lines.txt
 -------------------------------------------------------------
 
-``DAP2tab.py`` only extracts a fixed set of ~12 of the strongest lines by
-name. The DAP itself fits far more: every ``NP_ELINES_B``/``_R``/``_I``
+``DAP2tab.py`` only extracts a fixed set of 37 named lines (``DAPGauss2tab.py``
+fewer still). The DAP itself fits far more: every ``NP_ELINES_B``/``_R``/``_I``
 extension column named ``flux_<name>``/``e_flux_<name>``/... corresponds
 to one fittable line, and there are 215 of them across the three arms.
 

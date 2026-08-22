@@ -21,10 +21,21 @@ Primary routines:
     doit
 
 Notes:
-                                       
-History:
 
-241224 ksl Coding begun
+History::
+
+    241224 ksl Coding begun
+    260822 ksl get_radec_fluxes(): replaced 18 near-duplicate try/except
+        blocks with a single (arm_table, DAP_name, gauss_name) list and a
+        loop over it, and expanded the line set to 37 (SNR-relevant lines
+        identified by comparing against Mapping_v_DAP.txt).  Fixed a
+        naming bug
+        (HeII_4685.68 was 'hii', now 'heii') and renamed two existing
+        lines for a consistent doublet convention (hei->hei_b,
+        caii_7291->caii_a) alongside their new partners (hei_a, caii_b).
+        See docs/source/dap.rst for the full name table and the naming
+        rules (species+ion lowercased; _a/_b for doublets, shorter
+        wavelength first; a wavelength suffix otherwise).
 
 '''
 
@@ -102,190 +113,60 @@ def get_radec_fluxes(filename='DAP/dap-rsp108-sn20-00009083.dap.fits.gz'):
     x=fits.open(filename)
     pt=Table(x['PT'].data)
     B=Table(x['NP_ELINES_B'].data)
-
-    dap_name='[OII]_3726.03'
-    gauss_name='oii_a'
-    # xline=get_one_line(B,dap_name,gauss_name)
-    try:
-        xline=get_one_line(B,dap_name,gauss_name)
-        pt=join(pt,xline)
-    except:
-        print('Could not get %s -> %s' % (dap_name,gauss_name))
-
-    dap_name='[OII]_3728.82'
-    gauss_name='oii_b'
-    
-    try:
-        xline=get_one_line(B,dap_name,gauss_name)
-        pt=join(pt,xline)
-    except:
-        print('Could not get %s -> %s' % (dap_name,gauss_name))
-
-    dap_name='Hgamma_4340.49'
-    gauss_name='hgamma'
-    
-    try:
-        xline=get_one_line(B,dap_name,gauss_name)
-        pt=join(pt,xline)
-    except:
-        print('Could not get %s -> %s' % (dap_name,gauss_name))
-
-
-    dap_name='HeII_4685.68'
-    gauss_name='hii'
-    
-    try:
-        xline=get_one_line(B,dap_name,gauss_name)
-        pt=join(pt,xline)
-    except:
-        print('Could not get %s -> %s' % (dap_name,gauss_name))
-
-    dap_name='Hbeta_4861.36'
-    gauss_name='hb'
-    
-    try:
-        xline=get_one_line(B,dap_name,gauss_name)
-        pt=join(pt,xline)
-    except:
-        print('Could not get %s -> %s' % (dap_name,gauss_name))
-
-    dap_name='[OIII]_4958.91'
-    gauss_name='oiii_a'
-    
-    try:
-        xline=get_one_line(B,dap_name,gauss_name)
-        pt=join(pt,xline)
-    except:
-        print('Could not get %s -> %s' % (dap_name,gauss_name))
-
-
-    dap_name='[OIII]_5006.84'
-    gauss_name='oiii_b'
-    
-    try:
-        xline=get_one_line(B,dap_name,gauss_name)
-        pt=join(pt,xline)
-    except:
-        print('Could not get %s -> %s' % (dap_name,gauss_name))
-
-    # Switch to R
-
     R=Table(x['NP_ELINES_R'].data)
-
-    dap_name='HeI_5876.0'
-    gauss_name='hei'
-    
-    try:
-        xline=get_one_line(R,dap_name,gauss_name)
-        pt=join(pt,xline)
-    except:
-        print('Could not get %s -> %s' % (dap_name,gauss_name))
-
-
-    dap_name='[OI]_6300.3'
-    gauss_name='oi_a'
-    
-    try:
-        xline=get_one_line(R,dap_name,gauss_name)
-        pt=join(pt,xline)
-    except:
-        print('Could not get %s -> %s' % (dap_name,gauss_name))
-
-    dap_name='[NII]_6548.05'
-    gauss_name='nii_a'
-        
-    
-    try:
-        xline=get_one_line(R,dap_name,gauss_name)
-        pt=join(pt,xline)
-    except:
-        print('Could not get %s -> %s' % (dap_name,gauss_name))
-
-    dap_name='Halpha_6562.85'
-    gauss_name='ha'
-        
-    
-    try:
-        xline=get_one_line(R,dap_name,gauss_name)
-        pt=join(pt,xline)
-    except:
-        print('Could not get %s -> %s' % (dap_name,gauss_name))
-
-    dap_name='[NII]_6583.45' 
-    gauss_name='nii_b'
-
-    
-    try:
-        xline=get_one_line(R,dap_name,gauss_name)
-        pt=join(pt,xline)
-    except:
-        print('Could not get %s -> %s' % (dap_name,gauss_name))
-
-    dap_name='[SII]_6716.44'
-    gauss_name='sii_a'
-    
-    
-    try:
-        xline=get_one_line(R,dap_name,gauss_name)
-        pt=join(pt,xline)
-    except:
-        print('Could not get %s -> %s' % (dap_name,gauss_name))
-
-    dap_name='[SII]_6730.82'
-    gauss_name='sii_b'
-    
-    try:
-        xline=get_one_line(R,dap_name,gauss_name)
-        pt=join(pt,xline)
-    except:
-        print('Could not get %s -> %s' % (dap_name,gauss_name))
-
-    dap_name='[CaII]_7291.46'
-    gauss_name='caii_7291'
-    
-    try:
-        xline=get_one_line(R,dap_name,gauss_name)
-        pt=join(pt,xline)
-    except:
-        print('Could not get %s -> %s' % (dap_name,gauss_name))
-
-
-
-    dap_name='[OII]_7318.92'
-    gauss_name='oii_7320'
-
-    
-    try:
-        xline=get_one_line(R,dap_name,gauss_name)
-        pt=join(pt,xline)
-    except:
-        print('Could not get %s -> %s' % (dap_name,gauss_name))
-
-
-
-    # Switch to I 
-
     I=Table(x['NP_ELINES_I'].data)
 
-    dap_name='[SIII]_9069.0' 
-    gauss_name='siii_a'
-    
-    try:
-        xline=get_one_line(I,dap_name,gauss_name)
-        pt=join(pt,xline)
-    except:
-        print('Could not get %s -> %s' % (dap_name,gauss_name))
+    # (arm table, DAP_name from data/dap_lines.txt, output gauss_name),
+    # sorted by wavelength within each arm.  See docs/source/dap.rst for
+    # the naming convention (species+ion lowercased; _a/_b for doublets,
+    # shorter wavelength first; a wavelength suffix instead when a line
+    # isn't part of a fixed-ratio pair).
+    lines=[
+        (B,'[OII]_3726.03','oii_a'),
+        (B,'[OII]_3728.82','oii_b'),
+        (B,'[NeIII]_3868.75','neiii_a'),
+        (B,'HeI_3888.65','hei_a'),
+        (B,'HI_3889.05','hi_3889'),
+        (B,'CaII_3933.66','caii_3933'),
+        (B,'[NeIII]_3967.46','neiii_b'),
+        (B,'Hepsilon_3970.07','hepsilon'),
+        (B,'Hdelta_4101.77','hdelta'),
+        (B,'[FeV]_4227.2','fev_4227'),
+        (B,'Hgamma_4340.49','hgamma'),
+        (B,'[OIII]_4363.21','oiii_4363'),
+        (B,'[FeIII]_4658.1','feiii_a'),
+        (B,'HeII_4685.68','heii'),
+        (B,'Hbeta_4861.36','hb'),
+        (B,'[OIII]_4958.91','oiii_a'),
+        (B,'[FeIII]_4985.9','feiii_b'),
+        (B,'[OIII]_5006.84','oiii_b'),
+        (B,'[NI]_5197.9','ni_a'),
+        (B,'[NI]_5200.26','ni_b'),
+        (R,'HeI_5876.0','hei_b'),
+        (R,'[OI]_6300.3','oi_a'),
+        (R,'[OI]_6363.78','oi_b'),
+        (R,'[FeX]_6374.51','fex_6374'),
+        (R,'[NII]_6548.05','nii_a'),
+        (R,'Halpha_6562.85','ha'),
+        (R,'[NII]_6583.45','nii_b'),
+        (R,'[SII]_6716.44','sii_a'),
+        (R,'[SII]_6730.82','sii_b'),
+        (R,'[CaII]_7291.46','caii_a'),
+        (R,'[OII]_7318.92','oii_7320'),
+        (R,'[CaII]_7323.88','caii_b'),
+        (R,'[NiII]_7377.83','ni_ii_7377'),
+        (I,'[FeII]_8616.96','feii_a'),
+        (I,'[FeII]_8891.88','feii_b'),
+        (I,'[SIII]_9069.0','siii_a'),
+        (I,'[SIII]_9531.1','siii_b'),
+    ]
 
-    
-    dap_name='[SIII]_9531.1'
-    gauss_name='siii_b'
-
-    
-    try:
-        xline=get_one_line(I,dap_name,gauss_name)
-        pt=join(pt,xline)
-    except:
-        print('Could not get %s -> %s' % (dap_name,gauss_name))
+    for arm_tab,dap_name,gauss_name in lines:
+        try:
+            xline=get_one_line(arm_tab,dap_name,gauss_name)
+            pt=join(pt,xline)
+        except:
+            print('Could not get %s -> %s' % (dap_name,gauss_name))
 
 
     # OK that this end now wrap up
@@ -306,8 +187,7 @@ def get_radec_fluxes(filename='DAP/dap-rsp108-sn20-00009083.dap.fits.gz'):
     root=root.replace('dap-rsp108-sn20-','')
     outname='DAPsum_%s.txt' % root
     pt.write(outname,format='ascii.fixed_width_two_line',overwrite=True)
-    
-    # Now do the lines that are in the R changell
+
     return pt
 
 

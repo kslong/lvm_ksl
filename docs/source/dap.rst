@@ -18,6 +18,9 @@ This page covers the ``lvm_ksl`` tools that wrap that workflow:
   hand-wiring a new run directory each time
 - ``DAP2tab.py`` / ``DAPGauss2tab.py`` -- turn a DAP output FITS file
   (from either source above) into a simple, analysis-ready table
+- ``ListDapLines.py`` -- list every emission line a DAP output file was
+  configured to fit, for comparing against or regenerating
+  ``data/dap_lines.txt``
 
 
 Overview
@@ -309,6 +312,46 @@ DAP_name
 This table is also the default line-overlay source for
 ``PlotSpecI.py`` (see :doc:`spectrum_plots`).
 
+Regenerating/checking the table -- ListDapLines.py
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+``data/dap_lines.txt`` is a transcription of one DAP run's column names,
+not atomic physics -- the DAP's input yaml configuration controls which
+lines it fits, so a different config can add, drop, or shift lines.
+``ListDapLines.py`` rebuilds the same table from any DAP output file, so
+it can be diffed against ``data/dap_lines.txt`` after a yaml change
+rather than assuming the checked-in table is still current.
+
+**Usage**::
+
+    ListDapLines.py [-h] [-out dap_lines.txt] dapfile
+
+**Options:**
+
+-h
+    Print help and exit.
+
+-out file.txt
+    Output path (default: ``./dap_lines.txt`` in the current directory).
+    Deliberately never defaults to ``data/dap_lines.txt``, so a run can't
+    silently overwrite the checked-in table -- compare the two and copy
+    over by hand if the new one should replace it.
+
+**Arguments:**
+
+dapfile
+    A DAP output FITS file (``.fits`` or ``.fits.gz``).
+
+**What it does:**
+
+For each of ``NP_ELINES_B``/``NP_ELINES_R``/``NP_ELINES_I`` present in
+``dapfile``, every ``e_flux_<Ion>_<Wave_air>`` column names one fitted
+line (the same convention ``DAP2tab.py``'s ``get_lines()`` reads).
+``Wave_vac`` is computed with the same Morton 2000 air-to-vacuum formula
+used to build the original table, and the ``[SIII]``-legacy-value note
+above is regenerated dynamically from whatever ``[SIII]`` wavelengths
+that run actually has, rather than hardcoded.
+
 
 Typical Workflow
 -----------------
@@ -358,3 +401,4 @@ See Also
 - :doc:`api/GetDAP/index` - API documentation
 - :doc:`api/DAP2tab/index` - API documentation
 - :doc:`api/DAPGauss2tab/index` - API documentation
+- :doc:`api/ListDapLines/index` - API documentation

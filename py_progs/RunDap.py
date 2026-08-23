@@ -13,21 +13,27 @@ symlink for every new run directory.
 
 Command line usage (if any):
 
-    usage: RunDap.py [-h] [-force] [-template file] [-config name] [-out label] fits_file
+    usage: RunDap.py [-h] [-force] [-template file] [-config name] [-out prefix] fits_file [fits_file ...]
 
-    where fits_file is the input FITS spectrum, with or without a .fits
-    suffix, and may be a relative path (e.g. xdata/foo/whatever.fits).
-    -out label sets the label that becomes the root of the filenames
-    lvm-dap-conf creates (the same label DoDap/lvm-dap-conf normally
-    takes); if omitted, label defaults to fits_file's basename with any
-    directory and .fits/.fits.gz suffix stripped, e.g.
-    xdata/foo/whatever.fits becomes whatever. -force regenerates the
-    yaml config from the template even if one already exists in the
-    current directory (by default an existing config is left untouched,
-    so hand-tuned parameters survive a second run). -template lets you
-    point at a different yaml template than the bundled one; -config
-    lets you name the generated config file something other than the
-    default.
+    where fits_file is one or more input FITS spectra, each with or
+    without a .fits suffix, and may be a relative path (e.g.
+    xdata/foo/whatever.fits). Each is fit in turn against the same
+    run-directory setup (output_dap/, _legacy, yaml config).
+
+    -out prefix is prepended to the per-file label that becomes the
+    root of the filenames lvm-dap-conf creates for that file (the same
+    label DoDap/lvm-dap-conf normally takes); the per-file label
+    itself is always fits_file's basename with any directory and
+    .fits/.fits.gz suffix stripped, e.g. xdata/foo/whatever.fits ->
+    whatever. So with ``-out ksl_``, whatever.fits is labeled
+    ksl_whatever; without -out, whatever.fits is labeled whatever.
+    This applies the same way whether one or several fits_file
+    arguments are given. -force regenerates the yaml config from the
+    template even if one already exists in the current directory (by
+    default an existing config is left untouched, so hand-tuned
+    parameters survive a second run). -template lets you point at a
+    different yaml template than the bundled one; -config lets you
+    name the generated config file something other than the default.
 
 Description:
 
@@ -43,7 +49,9 @@ Description:
     This routine does both of those automatically in the current
     directory -- creates _legacy if missing, creates output_dap/, writes
     ksl-dap_v110.yaml from the template in ../data/dap_ref with
-    output_path/lvmdap_dir filled in -- and then runs lvm-dap-conf.
+    output_path/lvmdap_dir filled in -- and then runs lvm-dap-conf once
+    per fits_file, continuing past a failed file rather than aborting
+    the batch, and printing a pass/fail summary at the end.
 
 Primary routines:
 
@@ -64,6 +72,12 @@ History::
     260723 ksl label is now optional, via -out, instead of a required
     positional argument; when omitted it defaults to fits_file's
     basename with any directory and .fits/.fits.gz suffix stripped.
+    260823 ksl Accept multiple fits_file arguments, fit each in turn
+    against one shared run-directory setup, and continue past a failed
+    file rather than aborting the batch, printing a pass/fail summary
+    at the end. -out is now a prefix prepended to each file's own
+    default label (not the whole label), so it means the same thing
+    whether one or several files are given.
 
 '''
 
@@ -203,7 +217,7 @@ def steer(argv):
     force = False
     template = TEMPLATE_DEFAULT
     config_name = CONFIG_DEFAULT
-    label = None
+    prefix = ''
     words = []
 
     i = 1
@@ -215,7 +229,7 @@ def steer(argv):
             force = True
         elif argv[i] == '-out':
             i += 1
-            label = argv[i]
+            prefix = argv[i]
         elif argv[i] == '-template':
             i += 1
             template = argv[i]
@@ -229,24 +243,35 @@ def steer(argv):
             words.append(argv[i])
         i += 1
 
-    if len(words) != 1:
-        print('Error: expected a single fits_file, got:', words)
+    if len(words) == 0:
+        print('Error: expected at least one fits_file, got none')
         print(_usage_from_doc(__doc__))
-        return
-
-    fits_file = words[0]
-    if label is None:
-        label = default_label(fits_file)
-        print('No -out given, using label: %s' % label)
-
-    fits_path = resolve_fits(fits_file)
-    if fits_path is None:
         return
 
     if not wire_run_dir(template, config_name, force):
         return
 
-    return run_dap(fits_path, label, config_name)
+    results = []
+    for fits_file in words:
+        fits_path = resolve_fits(fits_file)
+        if fits_path is None:
+            results.append((fits_file, None))
+            continue
+        label = prefix + default_label(fits_file)
+        retcode = run_dap(fits_path, label, config_name)
+        results.append((fits_file, retcode))
+
+    print('\nSummary:')
+    failed = 0
+    for fits_file, retcode in results:
+        if retcode == 0:
+            status = 'OK'
+        else:
+            status = 'FAILED (retcode=%s)' % retcode
+            failed += 1
+        print('  %-40s %s' % (fits_file, status))
+
+    return 1 if failed else 0
 
 
 if __name__ == "__main__":

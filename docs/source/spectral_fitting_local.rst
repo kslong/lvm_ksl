@@ -13,6 +13,8 @@ Overview
 The spectral fitting tools include:
 
 - ``lvm_gaussfit.py`` - Fit standard emission lines across an RSS file
+- ``lvm_snrfit.py`` - Fit the Mappings-model line set expected in SNRs,
+  jointly for lines too close together to fit independently
 - ``sky_gaussfit.py`` - Fit nebular and airglow lines fiber-by-fiber in SFrame files
 - ``lvm_line_profile.py`` - Compare Gaussian vs Moffat airglow line profiles on raw sky spectra
 - ``lvm_double.py`` - Fit single or double Gaussian profiles to a line
@@ -107,6 +109,185 @@ The standard line list includes:
 - [OIII] 5007 A
 - H-beta (4861 A)
 - And others depending on wavelength coverage
+
+
+lvm_snrfit.py — SNR Emission Line Fitting with Joint Blend Handling
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+Fits the fuller, SNR-relevant emission-line set in
+``data/mappings_snr_lines.txt`` (36 lines, wavelengths from a Mappings
+shock model rather than the DAP's own approximate values) to a single
+spectrum or RSS file, the way ``lvm_gaussfit.py`` does for its smaller,
+hardcoded line list. Reuses ``lvm_gaussfit.py``'s file I/O, fiber
+selection, batch output, and plotting machinery by import
+(``do_all``/``do_individual`` now accept a ``do_one_func`` argument for
+exactly this) rather than duplicating it -- only the per-spectrum fitting
+routine (``do_one``) and the model itself are new.
+
+**Why a separate tool:** four of the added lines are close enough in
+wavelength that, once physically plausible line broadening is allowed
+for, an independent per-line local-background fit (``lvm_gaussfit.py``'s
+approach) would let each line's neighbour bias its background estimate.
+``lvm_snrfit.py`` fits those pairs jointly instead, with one shared local
+background.
+
+**Usage**::
+
+    lvm_snrfit.py [-h] [-lmc] [-smc] [-v vel] [-stype SOURCE] [-out root]
+                  [-plot] [-lines file.txt] [-min_sig N] filename ...
+
+**Options:**
+
+-h
+    Print help and exit.
+
+-lmc, -smc, -v vel
+    Same velocity-offset options as ``lvm_gaussfit.py``.
+
+-stype SOURCE|BACK
+    Same as ``lvm_gaussfit.py``, for extracted text spectra.
+
+-out root
+    Root name for the output file.
+
+-plot
+    Save a per-line fit-quality plot for each spectrum.
+
+-lines file.txt
+    Reference line list (default ``data/mappings_snr_lines.txt``).
+    Passing a file with a subset of rows restricts which lines are fit --
+    there is no separate on/off flag per line.
+
+-min_sig N
+    Significance threshold (flux/eflux) for keeping a blend component
+    before it's dropped as a non-detection (default 2.0).
+
+**Arguments:**
+
+filename
+    An SFrame-compatible FITS file, or one or more ascii tables with
+    WAVE/FLUX[/ERROR] columns.
+
+**The line-list reference table, data/mappings_snr_lines.txt:**
+
+Vendored from a Mappings v100 shock model run
+(``~/Projects/Mappings26/test/Mapping_v_DAP.txt``), matched against the
+DAP's own line set where possible (``DAP2tab.py``'s ``get_radec_fluxes()``
+line/name table follows the same naming convention -- see :doc:`dap`).
+Columns: ``Wave`` (Mappings rest wavelength, authoritative), ``Ion``,
+``Kind``/``Accuracy`` (carried through from Mappings, informational only),
+``gauss_name`` (the output column-name suffix), and ``group`` (blend-group
+tag, ``-`` for an independent singlet).
+
+Five groups need a joint fit (four new, plus the pre-existing ``oii``
+doublet, still fit via ``lvm_gaussfit.fit_double_gaussian_to_spectrum``
+unchanged):
+
+.. list-table::
+   :header-rows: 1
+   :widths: 16 34 8 20
+
+   * - Group
+     - Members
+     - Gap
+     - FWHM handling
+   * - ``oii``
+     - [OII] 3726.03 / 3728.82
+     - 2.79 A
+     - shared (existing)
+   * - ``hei_hI``
+     - HeI 3888.64 / HI (H8) 3889.06
+     - 0.40 A
+     - shared, centers tied
+   * - ``neiii_hepsilon``
+     - [NeIII] 3967.47 / Hepsilon 3970.08
+     - 2.61 A
+     - shared
+   * - ``ni``
+     - [NI] 5197.90 / [NI] 5200.26
+     - 2.36 A
+     - shared
+   * - ``oii7320_caii``
+     - [OII] 7319.99 / [CaII] 7323.89
+     - 4.96 A
+     - independent
+
+Gap sizes look small in isolation, but the relevant comparison is to the
+line's own FWHM once broadening is allowed for -- see the next section.
+
+**Line-width bounds and the shared-vs-independent-FWHM choice:**
+
+FWHM bounds come from velocity, not an arbitrary Angstrom scaling:
+``V_INSTR`` (80 km/s, typical instrumental width) sets the minimum,
+``V_MAX`` (200 km/s, the broadest line judged plausible for a shocked SNR
+knot) sets the maximum. Comparing each blend pair's wavelength gap to its
+FWHM at ``V_MAX`` (using the already-working ``oii`` doublet, gap/FWHM ~
+1.0-1.1, as the "this is known to work" benchmark) is what decided which
+groups share a single FWHM parameter versus fit two independent ones:
+``hei_hI``, ``neiii_hepsilon``, and ``ni`` all come out at or beyond that
+benchmark's blend severity at 200 km/s, so a shared FWHM is doing real
+stabilizing work, not just convenience; ``oii7320_caii`` sits at a
+comparable margin to ``oii`` itself, different species, so independent
+widths were judged numerically tractable.
+
+**HeI/HI (H8) is a special case:** at 0.4 A separation, two independent
+centers plus two independent fluxes are degenerate -- the fit can trade
+flux between the components while barely changing chi-square, producing
+unphysical (even negative) individual fluxes. ``fit_blend_to_spectrum``'s
+``tie_centers`` option locks the second line's center to the first's plus
+their fixed Mappings wavelength offset, so only one systemic shift is fit
+and the only freedom left is how flux splits between the two -- and even
+that split is checked (see below) and reported as one combined feature
+under the dominant line's name if it's still not reliably separable.
+
+**Weak-line / degenerate-fit safeguard:** a blend component is dropped,
+and the group refit as an ordinary singlet with the other line, if either:
+
+- its fitted flux is not significant relative to its uncertainty
+  (``-min_sig``), or
+- flux1 and flux2 are found to be nearly perfectly anti-correlated
+  (\|correlation\| >= 0.95) -- this catches high-S/N cases where each
+  flux individually looks "significant" by its own marginal stderr, but
+  the fit still can't actually tell the two components apart (their
+  covariance reveals what the marginal error doesn't).
+
+The dropped line's columns are reported as NaN rather than a spurious
+joint-fit value, so a non-detection (or an irresolvable blend) can't
+corrupt the shared background/width used for the line that *is*
+measurable.
+
+**Fitting-window sizing:** each line's window is ``n_vmax`` times its
+``V_MAX``-broadened FWHM (with a floor), but capped at half the distance
+to the nearest *other* line in the table (excluding its own blend-group
+partner) -- found necessary during validation: without the cap, some
+"safe" (non-blended) singlets still had large enough windows to overlap
+a neighbour's and bias each other's local background (e.g. ``[FeX]``
+6374.51 sitting only 10.7 A from ``[OI]`` 6363.78). ``[OI]`` 6300.3/6363.78
+additionally exclude a small, fixed (un-redshifted) window matching
+``lvm_gaussfit.do_one`` -- both sit on sky-subtraction-residual-prone
+airglow lines "seldom subtracted correctly" -- and are exempted from the
+neighbour cap, since giving up part of the window to that exclusion
+already needs the room back.
+
+**Validated (260823):** synthetic spectra with known injected fluxes
+recover all lines except the genuinely-irresolvable HeI/HI pair (reports
+correctly as one combined feature); a real Vela SNR shock spectrum
+(``~/Projects/lvm_science/Vela/Shock_vela.ave_sum.txt``) fits all 36
+lines with plausible flux/significance for every line except one --
+``[OI]`` 6363.78, whose fit is numerically unstable on this particular
+spectrum because of an unusually strong sky-subtraction residual there.
+That instability was confirmed to be a **pre-existing** property of
+``lvm_gaussfit.fit_gaussian_to_spectrum`` itself (reproduced with
+``lvm_gaussfit.py``'s own original window/exclusion on the same file),
+not something introduced by this tool.
+
+**Example**::
+
+    # Fit the full SNR line set to a Vela shock spectrum
+    lvm_snrfit.py Shock_vela.ave_sum.txt
+
+    # Restrict to a subset of lines
+    lvm_snrfit.py -lines my_lines.txt Shock_vela.ave_sum.txt
 
 
 sky_gaussfit.py — Fiber-by-Fiber Nebular and Airglow Fitting
@@ -602,6 +783,7 @@ See Also
 - :doc:`summarize` - Summarizing exposures; ``gauss_offset.py`` for airglow monitoring
 - :doc:`data_quality` - ``plot_sky_gaussfit.py`` for spatial maps of sky Gaussian fit residuals
 - :doc:`api/lvm_gaussfit/index` - API documentation
+- :doc:`api/lvm_snrfit/index` - API documentation
 - :doc:`api/sky_gaussfit/index` - API documentation
 - :doc:`api/lvm_line_profile/index` - API documentation
 - :doc:`api/lvm_double/index` - API documentation

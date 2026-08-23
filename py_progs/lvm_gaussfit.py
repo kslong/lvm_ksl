@@ -653,7 +653,7 @@ def do_one(spectrum_table,vel=0.,xplot=False,outroot=''):
 
     return ztab
     
-def do_individual(filenames,vel,stype,outname,xplot=True):
+def do_individual(filenames,vel,stype,outname,xplot=True,do_one_func=do_one):
     '''
     This is to process individual spectra from an astropy table
     containing a WAVE and FLUX column
@@ -666,6 +666,10 @@ def do_individual(filenames,vel,stype,outname,xplot=True):
     fitting.  Output flux columns are therefore in units of erg/s/cm**2 * 1e16
     regardless of whether the scaling was applied; to recover physical line
     fluxes divide by 1e16.
+
+    do_one_func overrides which per-spectrum fitting routine is called (the
+    module's own do_one by default); lvm_snrfit.py passes its own do_one to
+    reuse this file-handling wrapper without duplicating it.
     '''
     xresults=[]
     xbad=[]
@@ -701,7 +705,7 @@ def do_individual(filenames,vel,stype,outname,xplot=True):
                 xtab['FLUX']*=1e16
                 xtab['ERROR']*=1e16
 
-            results=do_one(xtab,vel,xplot)
+            results=do_one_func(xtab,vel,xplot)
         
             word=one_file.split('/')
             root=word[-1]
@@ -799,7 +803,7 @@ def check_for_nan(flux,max_frac=0.5):
         return False
 
 
-def do_all(filename='data/lvmSFrame-00009088.fits',vel=0.0,outname='',xplot=False):
+def do_all(filename='data/lvmSFrame-00009088.fits',vel=0.0,outname='',xplot=False,do_one_func=do_one):
     '''
     Do all of the spectra in a rss fits file.
 
@@ -808,6 +812,10 @@ def do_all(filename='data/lvmSFrame-00009088.fits',vel=0.0,outname='',xplot=Fals
     convenient.  Errors are derived from IVAR and scaled by the same factor.
     The output flux columns therefore have units of erg/s/cm**2 * 1e16; to
     recover physical line fluxes divide by 1e16.
+
+    do_one_func overrides which per-spectrum fitting routine is called (the
+    module's own do_one by default); lvm_snrfit.py passes its own do_one to
+    reuse this file-handling wrapper without duplicating it.
     '''
     try:
         x=fits.open(filename)
@@ -834,7 +842,7 @@ def do_all(filename='data/lvmSFrame-00009088.fits',vel=0.0,outname='',xplot=Fals
         j=good['fiberid'][i]-1
         one_spec=Table([wave,flux[j],error[j]],names=['WAVE','FLUX','ERROR'])
         if check_for_nan(flux[j])==False:
-            rtab=do_one(spectrum_table=one_spec,vel=vel,xplot=xplot,outroot='Fib%04d' % good['fiberid'][i])
+            rtab=do_one_func(spectrum_table=one_spec,vel=vel,xplot=xplot,outroot='Fib%04d' % good['fiberid'][i])
             if len(rtab)>0:
                 rtab['fiberid']=good['fiberid'][i]
                 rtab['ra']=good['ra'][i]

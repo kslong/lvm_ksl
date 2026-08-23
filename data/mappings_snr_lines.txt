@@ -1,0 +1,43 @@
+# Emission lines expected in SNRs, from a Mappings v100 shock model
+# (~/Projects/Mappings26/test/Mapping_v_DAP.txt), matched against the DAP
+# where possible.  Wave is the Mappings rest wavelength (air, Angstroms) --
+# authoritative, NOT taken from the DAP.  group tags lines that must be fit
+# jointly (shared local background) by lvm_snrfit.py; '-' = independent
+# singlet.  See docs/source for the full design.
+Wave      Ion      Kind  Accuracy  gauss_name      group           
+3726.032  [OII]    CM    2         oii_a           oii             
+3728.815  [OII]    CM    2         oii_b           oii             
+3868.764  [NeIII]  CM    2         neiii_a         -               
+3888.643  HeI      RCBT  3         hei_a           hei_hI          
+3889.056  HI       RCAB  1         hi_3889         hei_hI          
+3933.663  CaII     CM    2         caii_3933       -               
+3967.471  [NeIII]  CM    2         neiii_b         neiii_hepsilon  
+3970.079  HI       RCAB  1         hepsilon        neiii_hepsilon  
+4101.742  HI       RCAB  1         hdelta          -               
+4227.193  [FeV]    CM    2         fev_4227        -               
+4340.471  HI       RCAB  1         hgamma          -               
+4363.209  [OIII]   CM    2         oiii_4363       -               
+4658.051  [FeIII]  CM    2         feiii_a         -               
+4861.333  HI       RCAB  1         hb              -               
+4958.911  [OIII]   CM    2         oiii_a          -               
+4985.867  [FeIII]  CM    2         feiii_b         -               
+5006.843  [OIII]   CM    2         oiii_b          -               
+5197.901  [NI]     CM    2         ni_a            ni              
+5200.257  [NI]     CM    2         ni_b            ni              
+5875.664  HeI      RCBT  3         hei_b           -               
+6300.304  [OI]     CM    2         oi_a            -               
+6363.776  [OI]     CM    2         oi_b            -               
+6374.528  [FeX]    CM    3         fex_6374        -               
+6548.052  [NII]    CM    2         nii_a           -               
+6562.819  HI       RCAB  1         ha              -               
+6583.454  [NII]    CM    2         nii_b           -               
+6716.44   [SII]    CM    2         sii_a           -               
+6730.816  [SII]    CM    2         sii_b           -               
+7291.469  [CaII]   CM    2         caii_a          -               
+7319.989  [OII]    CM    2         oii_7320        oii7320_caii    
+7323.888  [CaII]   CM    2         caii_b          oii7320_caii    
+7377.829  [NiII]   CM    2         ni_ii_7377      -               
+8616.95   [FeII]   CM    2         feii_a          -               
+8891.929  [FeII]   CM    2         feii_b          -               
+9068.62   [SIII]   CM    2         siii_a          -               
+9530.619  [SIII]   CM    2         siii_b          -               

@@ -53,7 +53,7 @@ Other docstring RST gotchas:
 | Data retrieval | `GetFromUtah.py`, `Reduce.py`, `GetDAP.py` |
 | File location | `LocateData.py`, `SummarizeData.py` |
 | Sky subtraction | `SkySub.py`, `RunSkyCorr.py`, `Prep4SkyCorr.py` |
-| Spectral fitting | `lvm_gaussfit.py`, `lvm_flux.py`, `lvm_double.py`, `lvm_triple.py` |
+| Spectral fitting | `lvm_gaussfit.py`, `lvm_snrfit.py`, `lvm_flux.py`, `lvm_double.py`, `lvm_triple.py` |
 | Astrometry | `fib2radec.py` (fiber → RA/Dec conversion) |
 | Imaging | `kslmap.py`, `quick_map.py`, `line_map.py` |
 | Spectrum overview plots | `PlotSpec.py`, `PlotSpec3.py`, `PlotSpecI.py` (interactive/Plotly) |

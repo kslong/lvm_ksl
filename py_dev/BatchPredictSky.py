@@ -15,29 +15,29 @@ Synopsis:
 
 Command line usage (if any):
 
-    usage: BatchPredictSky.py [-h] --model PATH [--n N] [--rows R [R ...]]
-                              [--n-workers N] [--outfile PATH]
-                              [--lvmsky-skysub PATH]
+    usage: BatchPredictSky.py [-h] -model PATH [-n N] [-rows R [R ...]]
+                              [-n_workers N] [-outfile PATH]
+                              [-lvmsky_skysub PATH]
                               fits_file
 
     where
 
     fits_file       LVM XCframe summary FITS file.
 
-    --model PATH    trained ensemble .pt archive. Required, no default --
+    -model PATH     trained ensemble .pt archive. Required, no default --
                     this script is meant to work against different
                     trained models for different purposes, so the
                     checkpoint is always named explicitly.
 
-    --n N           use the first N rows of fits_file (default: 20).
-                    Ignored if --rows is given.
+    -n N            use the first N rows of fits_file (default: 20).
+                    Ignored if -rows is given.
 
-    --rows R [R ...]
-                    explicit row indices to use instead of --n.
+    -rows R [R ...]
+                    explicit row indices to use instead of -n.
 
-    --n-workers N   parallel worker processes (default: 8).
+    -n_workers N    parallel worker processes (default: 8).
 
-    --outfile PATH  output FITS path for the batch WAVE/FLUX_OBS/
+    -outfile PATH   output FITS path for the batch WAVE/FLUX_OBS/
                     FLUX_PRED/EXPNUM arrays (default:
                     <stem>_batch_predictsky.fits).
 
@@ -82,7 +82,7 @@ from astropy.io import fits
 
 DEFAULT_LVMSKY_SKYSUB = Path('~/SDSS/lvmsky/skysub').expanduser()
 _pre = argparse.ArgumentParser(add_help=False)
-_pre.add_argument('--lvmsky-skysub', default=str(DEFAULT_LVMSKY_SKYSUB))
+_pre.add_argument('-lvmsky_skysub', default=str(DEFAULT_LVMSKY_SKYSUB))
 _pre_args, _ = _pre.parse_known_args()
 
 THIS_DIR = str(Path(__file__).resolve().parent)
@@ -121,7 +121,7 @@ def init_worker(fits_file, model_path, lvmsky_skysub):
     _clamp_native_threads(1)
 
     sys.path.insert(0, THIS_DIR)
-    sys.argv = [sys.argv[0], '--lvmsky-skysub', lvmsky_skysub]  # PredictSky's module-level _pre parses this
+    sys.argv = [sys.argv[0], '-lvmsky_skysub', lvmsky_skysub]  # PredictSky's module-level _pre parses this
     import PredictSky as ps  # noqa: E402 -- deferred so the clamp above lands first
     _WORKER_PS = ps
     _WORKER_FITS_FILE = fits_file
@@ -157,13 +157,13 @@ def main():
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
     p.add_argument('fits_file', help='LVM XCframe summary FITS file')
-    p.add_argument('--model', required=True,
+    p.add_argument('-model', required=True,
                    help='trained ensemble .pt archive (required, no default)')
-    p.add_argument('--n', type=int, default=20, help='use the first N rows')
-    p.add_argument('--rows', type=int, nargs='+', default=None,
-                   help='explicit row indices (overrides --n)')
-    p.add_argument('--n-workers', type=int, default=8, help='parallel worker processes')
-    p.add_argument('--outfile', default=None, help='output FITS path')
+    p.add_argument('-n', type=int, default=20, help='use the first N rows')
+    p.add_argument('-rows', type=int, nargs='+', default=None,
+                   help='explicit row indices (overrides -n)')
+    p.add_argument('-n_workers', type=int, default=8, help='parallel worker processes')
+    p.add_argument('-outfile', default=None, help='output FITS path')
     args = p.parse_args()
 
     rows = args.rows if args.rows is not None else list(range(args.n))

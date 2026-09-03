@@ -12,9 +12,9 @@ Synopsis:
 
 Command line usage (if any):
 
-    usage: PredictSky.py [-h] [--row N | --expnum N] --model PATH
-                         [--output PATH] [--lvmsky-skysub PATH]
-                         [--lvmcore-dir PATH]
+    usage: PredictSky.py [-h] [-row N | -expnum N] -model PATH
+                         [-output PATH] [-lvmsky_skysub PATH]
+                         [-lvmcore_dir PATH]
                          fits_file
 
     where
@@ -24,27 +24,27 @@ Command line usage (if any):
                     extensions and a DRP_ALL table (as produced by
                     SummarizeCframe.py in -by fiber mode).
 
-    --row N         selects the exposure by row index into the file
+    -row N          selects the exposure by row index into the file
                     (default: 0).
 
-    --expnum N      selects the exposure by its DRP_ALL 'expnum' value
-                    instead of a row index (overrides --row).
+    -expnum N       selects the exposure by its DRP_ALL 'expnum' value
+                    instead of a row index (overrides -row).
 
-    --model PATH    path to the trained ensemble .pt archive. Required,
+    -model PATH     path to the trained ensemble .pt archive. Required,
                     no default -- this script is meant to work against
                     different trained models for different purposes, so
                     the checkpoint is always named explicitly rather than
                     silently falling back to whichever one was current
                     when the script was last edited.
 
-    --output PATH   output FITS path (default: PredictedSky_<expnum>.fits).
+    -output PATH    output FITS path (default: PredictedSky_<expnum>.fits).
 
-    --lvmsky-skysub PATH
+    -lvmsky_skysub PATH
                     path to the lvmsky repo's skysub/ directory, which
                     supplies the mlp_predictor and sky_decomp packages this
                     script imports (default: ~/SDSS/lvmsky/skysub).
 
-    --lvmcore-dir PATH
+    -lvmcore_dir PATH
                     sets LVMCORE_DIR, needed by mlp_predictor.data for the
                     LCO extinction curve (default: ~/SDSS/lvmcore).
 
@@ -91,7 +91,7 @@ Notes:
       reconstruction step -- an approximation that assumes the three LVM
       telescopes have near-identical internal optical performance.
     - This script imports mlp_predictor/sky_decomp from an external lvmsky
-      checkout (--lvmsky-skysub, default ~/SDSS/lvmsky/skysub) via
+      checkout (-lvmsky_skysub, default ~/SDSS/lvmsky/skysub) via
       sys.path; it only works when that checkout's tree contains those
       packages (confirmed merged into lvmsky's main branch as of this
       writing) and the palace/PMD tables matching PALACE_OH_SUFFIX /
@@ -107,6 +107,12 @@ Notes:
 History::
 
     260901  ksl  Coding begun.
+    260903  ksl  Switched every option from double-dash (--lvmsky-skysub)
+        to single-dash (-lvmsky_skysub), matching py_progs/'s convention
+        -- see BatchPredictSkyESO.py's History for the fuller note; this
+        also required fixing BatchPredictSky.py's worker-init sys.argv
+        injection, which fakes a command line for this module's own
+        module-level _pre parser and had hardcoded the old spelling.
 
 '''
 
@@ -122,16 +128,16 @@ from astropy.time import Time
 
 # ---------------------------------------------------------------------------
 # External package setup -- mlp_predictor / sky_decomp live in the lvmsky
-# repo, not in this project.  Inserted before argparse runs so --lvmsky-skysub
-# / --lvmcore-dir can override the defaults before the imports below fire.
+# repo, not in this project.  Inserted before argparse runs so -lvmsky_skysub
+# / -lvmcore_dir can override the defaults before the imports below fire.
 # ---------------------------------------------------------------------------
 
 DEFAULT_LVMSKY_SKYSUB = Path("~/SDSS/lvmsky/skysub").expanduser()
 DEFAULT_LVMCORE_DIR = Path("~/SDSS/lvmcore").expanduser()
 
 _pre = argparse.ArgumentParser(add_help=False)
-_pre.add_argument("--lvmsky-skysub", default=str(DEFAULT_LVMSKY_SKYSUB))
-_pre.add_argument("--lvmcore-dir", default=str(DEFAULT_LVMCORE_DIR))
+_pre.add_argument("-lvmsky_skysub", default=str(DEFAULT_LVMSKY_SKYSUB))
+_pre.add_argument("-lvmcore_dir", default=str(DEFAULT_LVMCORE_DIR))
 _pre_args, _ = _pre.parse_known_args()
 
 sys.path.insert(0, _pre_args.lvmsky_skysub)
@@ -448,13 +454,13 @@ def main():
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
     p.add_argument("fits_file", help="LVM XCframe summary FITS file")
-    p.add_argument("--row", type=int, default=None,
+    p.add_argument("-row", type=int, default=None,
                    help="Row index to select (default: 0)")
-    p.add_argument("--expnum", type=int, default=None,
+    p.add_argument("-expnum", type=int, default=None,
                    help="Select by DRP_ALL expnum instead of row index")
-    p.add_argument("--model", required=True,
+    p.add_argument("-model", required=True,
                    help="Trained ensemble .pt archive (required, no default)")
-    p.add_argument("--output", default=None,
+    p.add_argument("-output", default=None,
                    help="Output FITS path (default: PredictedSky_<expnum>.fits)")
     args = p.parse_args()
 

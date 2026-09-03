@@ -15,7 +15,7 @@ Synopsis:
 
 Command line usage (if any):
 
-    usage: BatchPredictSky.py [-h] [--model PATH] [--n N] [--rows R [R ...]]
+    usage: BatchPredictSky.py [-h] --model PATH [--n N] [--rows R [R ...]]
                               [--n-workers N] [--outfile PATH]
                               [--lvmsky-skysub PATH]
                               fits_file
@@ -24,8 +24,10 @@ Command line usage (if any):
 
     fits_file       LVM XCframe summary FITS file.
 
-    --model PATH    trained ensemble .pt archive (default: this
-                    session's Stage 2 production checkpoint).
+    --model PATH    trained ensemble .pt archive. Required, no default --
+                    this script is meant to work against different
+                    trained models for different purposes, so the
+                    checkpoint is always named explicitly.
 
     --n N           use the first N rows of fits_file (default: 20).
                     Ignored if --rows is given.
@@ -155,11 +157,8 @@ def main():
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
     p.add_argument('fits_file', help='LVM XCframe summary FITS file')
-    p.add_argument('--model',
-                   default=str(Path(
-                       '~/Projects/lvm_sky2609/niv/moon_zodi_stage2/'
-                       'mlp_ensemble_stage2_production.pt').expanduser()),
-                   help='trained ensemble .pt archive')
+    p.add_argument('--model', required=True,
+                   help='trained ensemble .pt archive (required, no default)')
     p.add_argument('--n', type=int, default=20, help='use the first N rows')
     p.add_argument('--rows', type=int, nargs='+', default=None,
                    help='explicit row indices (overrides --n)')

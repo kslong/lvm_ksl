@@ -18,6 +18,7 @@ Command line usage (if any)::
     usage: BatchPredictSkyESO.py [-h] [--n N] [--rows R [R ...]]
                                  [--n-workers N] [--outfile PATH]
                                  [--site {lco,paranal}] [--engine E]
+                                 [--lvm-ksl-progs PATH]
                                  meta_file batch_file
 
     where
@@ -40,6 +41,9 @@ Command line usage (if any)::
     --site S        'lco' (default) or 'paranal' -- passed to
                     EsoSkyObs.run_sky_obs.
     --engine E      'auto' (default), 'local', or 'remote'.
+    --lvm-ksl-progs PATH
+                    path to the lvm_ksl repo's py_progs/ directory, which
+                    supplies EsoSkyObs.py (default: ~/SDSS/lvm_ksl/py_progs).
 
 Description:
 
@@ -80,7 +84,7 @@ import numpy as np
 from astropy.io import fits
 
 THIS_DIR = str(Path(__file__).resolve().parent)
-LVM_KSL_PY_PROGS = str(Path('~/SDSS/lvm_ksl/py_progs').expanduser())
+DEFAULT_LVM_KSL_PY_PROGS = str(Path('~/SDSS/lvm_ksl/py_progs').expanduser())
 
 _WORKER_ESO = None
 _WORKER_OUTDIR = None
@@ -88,9 +92,9 @@ _WORKER_SITE = None
 _WORKER_ENGINE = None
 
 
-def init_worker(outdir, site, engine):
+def init_worker(outdir, site, engine, lvm_ksl_progs):
     global _WORKER_ESO, _WORKER_OUTDIR, _WORKER_SITE, _WORKER_ENGINE
-    sys.path.insert(0, LVM_KSL_PY_PROGS)
+    sys.path.insert(0, lvm_ksl_progs)
     import EsoSkyObs as eso  # noqa: E402
     _WORKER_ESO = eso
     _WORKER_OUTDIR = outdir
@@ -145,6 +149,8 @@ def main():
     p.add_argument('--outfile', default=None, help='output FITS path')
     p.add_argument('--site', default='lco', choices=['lco', 'paranal'])
     p.add_argument('--engine', default='auto', choices=['auto', 'local', 'remote'])
+    p.add_argument('--lvm-ksl-progs', default=DEFAULT_LVM_KSL_PY_PROGS,
+                   help='path to the lvm_ksl repo\'s py_progs/ directory, which supplies EsoSkyObs.py')
     args = p.parse_args()
 
     with fits.open(args.meta_file) as hdul:
@@ -178,7 +184,7 @@ def main():
     ctx = mp.get_context('spawn')
     with ctx.Pool(
         args.n_workers, initializer=init_worker,
-        initargs=(outdir, args.site, args.engine),
+        initargs=(outdir, args.site, args.engine, args.lvm_ksl_progs),
     ) as pool:
         results = pool.map(predict_one_row, tasks)
     total = time.perf_counter() - t0

@@ -37,6 +37,11 @@ Command line usage (if any):
                     tercile median residuals (default:
                     Overview_Plot/<stem>_master_resid.html).
 
+    --py-progs-dir PATH
+                    path to the lvm_ksl repo's py_progs/ directory, which
+                    supplies PlotSpec.get_sky_mask/GetSkyCont (default:
+                    ~/SDSS/lvm_ksl/py_progs).
+
 Description:
 
     1. Per exposure, the blue-continuum brightness proxy is
@@ -66,8 +71,13 @@ import numpy as np
 from astropy.io import fits
 import plotly.graph_objects as go
 
-PY_PROGS_DIR = Path('~/SDSS/lvm_ksl/py_progs').expanduser()
-sys.path.insert(0, str(PY_PROGS_DIR))
+DEFAULT_PY_PROGS_DIR = Path('~/SDSS/lvm_ksl/py_progs').expanduser()
+
+_pre = argparse.ArgumentParser(add_help=False)
+_pre.add_argument('--py-progs-dir', default=str(DEFAULT_PY_PROGS_DIR))
+_pre_args, _ = _pre.parse_known_args()
+
+sys.path.insert(0, _pre_args.py_progs_dir)
 from PlotSpec import get_sky_mask  # noqa: E402
 from GetSkyCont import _interp_mask_to_wave, ARM_EVAL_RANGES  # noqa: E402
 
@@ -318,6 +328,7 @@ def plot_master_residuals(wave, result, title=None):
 
 def main():
     p = argparse.ArgumentParser(
+        parents=[_pre],
         description='Master residual spectrum split into 3 moon-brightness '
                     '(blue-continuum) terciles.',
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,

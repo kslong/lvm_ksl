@@ -42,6 +42,11 @@ Command line usage (if any):
                     apart afterward. Purely informational (join key
                     only); sky_residual_eval.py itself never sees it.
 
+    -py_progs_dir PATH
+                    path to the lvm_ksl repo's py_progs/ directory, which
+                    supplies sky_residual_eval.py (default:
+                    ~/SDSS/lvm_ksl/py_progs).
+
 Description:
 
     Thin wrapper around sky_residual_eval.analyze_sky_residuals() +
@@ -63,8 +68,13 @@ import numpy as np
 from astropy.io import fits
 from astropy.table import Table, join
 
-PY_PROGS_DIR = Path('~/SDSS/lvm_ksl/py_progs').expanduser()
-sys.path.insert(0, str(PY_PROGS_DIR))
+DEFAULT_PY_PROGS_DIR = Path('~/SDSS/lvm_ksl/py_progs').expanduser()
+
+_pre = argparse.ArgumentParser(add_help=False)
+_pre.add_argument('-py_progs_dir', default=str(DEFAULT_PY_PROGS_DIR))
+_pre_args, _ = _pre.parse_known_args()
+
+sys.path.insert(0, _pre_args.py_progs_dir)
 from sky_residual_eval import (  # noqa: E402
     analyze_sky_residuals, plot_frac_summary, plot_continuum_summary,
     plot_lines_summary,
@@ -73,6 +83,7 @@ from sky_residual_eval import (  # noqa: E402
 
 def main():
     p = argparse.ArgumentParser(
+        parents=[_pre],
         description="Method-agnostic flux-space accuracy evaluation of a "
                     "BatchPredictSky.py output file.",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,

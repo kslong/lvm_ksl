@@ -12,7 +12,7 @@ Synopsis:
 
 Command line usage (if any):
 
-    usage: PredictSky.py [-h] [--row N | --expnum N] [--model PATH]
+    usage: PredictSky.py [-h] [--row N | --expnum N] --model PATH
                          [--output PATH] [--lvmsky-skysub PATH]
                          [--lvmcore-dir PATH]
                          fits_file
@@ -30,8 +30,12 @@ Command line usage (if any):
     --expnum N      selects the exposure by its DRP_ALL 'expnum' value
                     instead of a row index (overrides --row).
 
-    --model PATH    path to the trained ensemble .pt archive (default:
-                    mlp_ensemble_split_zodi_current.pt in ~/foo/goo).
+    --model PATH    path to the trained ensemble .pt archive. Required,
+                    no default -- this script is meant to work against
+                    different trained models for different purposes, so
+                    the checkpoint is always named explicitly rather than
+                    silently falling back to whichever one was current
+                    when the script was last edited.
 
     --output PATH   output FITS path (default: PredictedSky_<expnum>.fits).
 
@@ -144,9 +148,6 @@ from sky_decomp.lsf_surface_iterative import (  # noqa: E402
 # Defaults
 # ---------------------------------------------------------------------------
 
-DEFAULT_MODEL = Path(
-    "~/Projects/lvm_sky2609/niv/moon_zodi_stage2/mlp_ensemble_stage2_production.pt"
-).expanduser()
 FACTOR = 1e14  # XCframe flux is erg/s/cm^2/A; the QP fit works in O(1) counts.
 # None -> SkyDecomp resolves its own bundled PALACE OH/diffuse defaults
 # (as of lvmsky main 4c2a1e4, this is the "_h_family_default_ef_v1" OH
@@ -285,16 +286,17 @@ def build_decomp(wave, ensemble):
     )
 
 
-def predict_row(row_data, model_path=DEFAULT_MODEL, ensemble=None, decomp=None):
+def predict_row(row_data, model_path=None, ensemble=None, decomp=None):
     """Decompose SkyE/SkyW and predict the Sci-pointing sky for one exposure.
 
     Parameters
     ----------
     row_data : dict
         Output of `read_row`.
-    model_path : str or Path
+    model_path : str or Path, optional
         Path to the trained ensemble .pt archive. Ignored if `ensemble` is
-        given.
+        given; required otherwise (no default checkpoint -- see module
+        Synopsis).
     ensemble : dict, optional
         An already-loaded ensemble (`serialization.load_ensemble`'s
         return value) -- pass this in a batch loop over many exposures so
@@ -313,6 +315,8 @@ def predict_row(row_data, model_path=DEFAULT_MODEL, ensemble=None, decomp=None):
         confidence, coef_names, fit_east, fit_west, ensemble_config.
     """
     if ensemble is None:
+        if model_path is None:
+            raise ValueError("predict_row: either model_path or ensemble must be given")
         ensemble = serialization.load_ensemble(str(model_path))
     if decomp is None:
         decomp = build_decomp(row_data["wave"], ensemble)
@@ -448,8 +452,8 @@ def main():
                    help="Row index to select (default: 0)")
     p.add_argument("--expnum", type=int, default=None,
                    help="Select by DRP_ALL expnum instead of row index")
-    p.add_argument("--model", default=str(DEFAULT_MODEL),
-                   help="Trained ensemble .pt archive")
+    p.add_argument("--model", required=True,
+                   help="Trained ensemble .pt archive (required, no default)")
     p.add_argument("--output", default=None,
                    help="Output FITS path (default: PredictedSky_<expnum>.fits)")
     args = p.parse_args()

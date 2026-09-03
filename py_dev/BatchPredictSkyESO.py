@@ -10,7 +10,7 @@ Synopsis:
     layout corpus (e.g. SelectXCF.py's output -- the same file
     BatchPredictSky.py itself takes directly), producing a WAVE/
     FLUX_OBS/FLUX_PRED/LINE_PRED/META batch file for the same
-    evaluation tools (EvalFluxResiduals.py, MasterResidualByMoon.py) --
+    evaluation tools (EvalFluxResiduals.py, PlotSkyResiduals.py) --
     this is the ESO-sky-model candidate, not a replacement for the MLP
     one. Applies the same per-row instrumental LSF convolution
     PredictSky.py applies to the MLP candidate (via
@@ -20,11 +20,12 @@ Synopsis:
 
 Command line usage (if any)::
 
-    usage: BatchPredictSkyESO.py [-h] [--n N] [--rows R [R ...]]
-                                 [--n-workers N] [--outfile PATH]
-                                 [--site {lco,paranal}] [--engine E]
-                                 [--lvm-ksl-progs PATH]
-                                 [--lvmsky-skysub PATH]
+    usage: BatchPredictSkyESO.py [-h] [-n N] [-rows R [R ...]]
+                                 [-n_workers N] [-outfile PATH]
+                                 [-no_lsf_convolve]
+                                 [-site {lco,paranal}] [-engine E]
+                                 [-lvm_ksl_progs PATH]
+                                 [-lvmsky_skysub PATH]
                                  fits_file
 
     where
@@ -37,19 +38,27 @@ Command line usage (if any)::
                     exact same test set with no ordering dependency
                     between them.
 
-    --n N           use the first N rows of fits_file (default: 20).
-    --rows R [R ...]
-                    explicit row indices (overrides --n).
-    --n-workers N   parallel worker processes (default: 8).
-    --outfile PATH  output FITS path (default:
-                    <fits_file stem>_eso.fits).
-    --site S        'lco' (default) or 'paranal' -- passed to
+    -n N            use the first N rows of fits_file (default: 20).
+    -rows R [R ...]
+                    explicit row indices (overrides -n).
+    -n_workers N    parallel worker processes (default: 8).
+    -outfile PATH   output FITS path (default: <fits_file stem>_eso_lsf.fits
+                    with the LSF convolution, <fits_file stem>_eso_nolsf.fits
+                    with -no_lsf_convolve -- the suffix always records which
+                    was used, so the two are never confusable on disk).
+    -no_lsf_convolve
+                    skip the per-row LSF convolution described below,
+                    writing ESO's raw interpolated-onto-fits_file's-WAVE
+                    prediction instead -- for seeing the effect of that
+                    convolution directly against the default output for
+                    the same fits_file.
+    -site S         'lco' (default) or 'paranal' -- passed to
                     EsoSkyObs.run_sky_obs.
-    --engine E      'auto' (default), 'local', or 'remote'.
-    --lvm-ksl-progs PATH
+    -engine E       'auto' (default), 'local', or 'remote'.
+    -lvm_ksl_progs PATH
                     path to the lvm_ksl repo's py_progs/ directory, which
                     supplies EsoSkyObs.py (default: ~/SDSS/lvm_ksl/py_progs).
-    --lvmsky-skysub PATH
+    -lvmsky_skysub PATH
                     path to the lvmsky repo's skysub/ directory, which
                     supplies sky_decomp.lsf_surface_iterative's LSF
                     convolution operator (default: ~/SDSS/lvmsky/skysub).
@@ -105,6 +114,16 @@ History::
         by fits_file's own LSF extension being available now that
         meta_file (which never carried spectral extensions at all) is
         no longer in the loop.
+    260903  ksl  Added -no_lsf_convolve to see the convolution's effect
+        directly (skips it, writing ESO's raw interpolated prediction
+        instead), and changed the default -outfile suffix from _eso to
+        _eso_lsf/_eso_nolsf so a given fits_file's two possible outputs
+        never collide and the filename itself records which was used.
+    260903  ksl  Switched every option from double-dash (--n-workers) to
+        single-dash (-n_workers), matching py_progs/'s convention --
+        py_dev had drifted onto ordinary Python argparse habits instead
+        (double-dash, hyphens) without reference to it; only
+        EvalFluxResiduals.py had already followed py_progs's style.
 
 '''
 
@@ -121,6 +140,15 @@ from astropy.io import fits
 THIS_DIR = str(Path(__file__).resolve().parent)
 DEFAULT_LVM_KSL_PY_PROGS = str(Path('~/SDSS/lvm_ksl/py_progs').expanduser())
 DEFAULT_LVMSKY_SKYSUB = str(Path('~/SDSS/lvmsky/skysub').expanduser())
+
+# calcskymodel's own internal LSF convolution (EsoSkyObs.py's
+# lsf_gauss_fwhm_pix, local engine only) -- passed explicitly to
+# run_sky_obs() below AND used in main()'s quadrature correction, so the
+# two stay in sync even if EsoSkyObs.py's own default ever changes. Do
+# not lower this to try to reduce ESO's internal smoothing further --
+# see EsoSkyObs.create_local_inputs()'s docstring for the aliasing floor
+# that makes 0.8 pixels close to as narrow as it should safely go.
+ESO_LSF_GAUSS_FWHM_PIX = 0.8
 
 _WORKER_ESO = None
 _WORKER_OUTDIR = None
@@ -147,6 +175,7 @@ def predict_one_row(task):
         xroot = eso.run_sky_obs(
             float(sci_ra), float(sci_dec), obstime,
             outroot=outroot, engine=_WORKER_ENGINE, site=_WORKER_SITE,
+            lsf_gauss_fwhm_pix=ESO_LSF_GAUSS_FWHM_PIX,
         )
         if not xroot:
             return dict(row=row, ok=False, error='run_sky_obs returned empty root')
@@ -193,16 +222,23 @@ def main():
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
     p.add_argument('fits_file', help='XCframe-layout FITS file (WAVE/FLUX/LSF/DRP_ALL)')
-    p.add_argument('--n', type=int, default=20, help='use the first N rows of fits_file')
-    p.add_argument('--rows', type=int, nargs='+', default=None,
-                   help='explicit row indices into fits_file (overrides --n)')
-    p.add_argument('--n-workers', type=int, default=8, help='parallel worker processes')
-    p.add_argument('--outfile', default=None, help='output FITS path')
-    p.add_argument('--site', default='lco', choices=['lco', 'paranal'])
-    p.add_argument('--engine', default='auto', choices=['auto', 'local', 'remote'])
-    p.add_argument('--lvm-ksl-progs', default=DEFAULT_LVM_KSL_PY_PROGS,
+    p.add_argument('-n', type=int, default=20, help='use the first N rows of fits_file')
+    p.add_argument('-rows', type=int, nargs='+', default=None,
+                   help='explicit row indices into fits_file (overrides -n)')
+    p.add_argument('-n_workers', type=int, default=8, help='parallel worker processes')
+    p.add_argument('-outfile', default=None,
+                   help='output FITS path (default: <fits_file stem>_eso_lsf.fits with the '
+                        'LSF convolution, <fits_file stem>_eso_nolsf.fits with -no_lsf_convolve)')
+    p.add_argument('-no_lsf_convolve', action='store_true',
+                   help='skip the per-row LSF convolution (see module Description) and write '
+                        'ESO\'s raw interpolated-onto-wave_ref prediction instead -- for seeing '
+                        'the effect of that convolution directly, e.g. against the default output '
+                        'for the same fits_file')
+    p.add_argument('-site', default='lco', choices=['lco', 'paranal'])
+    p.add_argument('-engine', default='auto', choices=['auto', 'local', 'remote'])
+    p.add_argument('-lvm_ksl_progs', default=DEFAULT_LVM_KSL_PY_PROGS,
                    help='path to the lvm_ksl repo\'s py_progs/ directory, which supplies EsoSkyObs.py')
-    p.add_argument('--lvmsky-skysub', default=DEFAULT_LVMSKY_SKYSUB,
+    p.add_argument('-lvmsky_skysub', default=DEFAULT_LVMSKY_SKYSUB,
                    help='path to the lvmsky repo\'s skysub/ directory, which supplies '
                         'sky_decomp.lsf_surface_iterative')
     args = p.parse_args()
@@ -235,9 +271,23 @@ def main():
 
     dlam_pix = float(np.median(np.diff(wave_ref)))
     taps = np.asarray(LSF_TAP_OFFSETS, dtype=np.float64)
+    eso_internal_fwhm_ang = ESO_LSF_GAUSS_FWHM_PIX * dlam_pix
+    n_floored = [0]
+    n_floored_total = [0]
 
     def _convolve(spec, lsf_fwhm):
-        sigma_pix = _clean_lsf(lsf_fwhm) / 2.355 / dlam_pix
+        # calcskymodel already convolved this spectrum with a fixed
+        # ~eso_internal_fwhm_ang Gaussian (see ESO_LSF_GAUSS_FWHM_PIX
+        # above). Quadrature-subtract that from the target LSF so the
+        # *combined* effective FWHM matches lsf_fwhm, instead of naively
+        # stacking two convolutions and overshooting it.
+        target_fwhm = _clean_lsf(lsf_fwhm)
+        add_var = target_fwhm ** 2 - eso_internal_fwhm_ang ** 2
+        floored = add_var < 0.0
+        n_floored[0] += int(np.sum(floored))
+        n_floored_total[0] += floored.size
+        add_fwhm = np.sqrt(np.clip(add_var, 0.0, None))
+        sigma_pix = np.clip(add_fwhm / 2.355 / dlam_pix, 1.0e-6, None)
         kernel = norm.pdf(taps[None, :], loc=0.0, scale=sigma_pix[:, None])
         kernel /= kernel.sum(axis=1, keepdims=True)
         operator = build_lsf_operator(wave_ref, kernel)
@@ -267,13 +317,14 @@ def main():
         # grid changes on either side.
         flux_pred = np.interp(wave_ref, r['wave'], r['flux_pred'])
         line_pred = np.interp(wave_ref, r['wave'], r['line_pred'])
-        # Apply this row's own real instrumental LSF -- ESO's local engine
-        # only applies its own fixed, LVM-untuned ~0.4 A kernel internally
-        # (see module Description), so without this step the ESO candidate
-        # would be compared unconvolved while the MLP candidate already has
-        # its own per-row LSF reconstruction applied.
-        flux_pred = _convolve(flux_pred, lsf_all[idx])
-        line_pred = _convolve(line_pred, lsf_all[idx])
+        if not args.no_lsf_convolve:
+            # Apply this row's own real instrumental LSF -- ESO's local engine
+            # only applies its own fixed, LVM-untuned ~0.4 A kernel internally
+            # (see module Description), so without this step the ESO candidate
+            # would be compared unconvolved while the MLP candidate already has
+            # its own per-row LSF reconstruction applied.
+            flux_pred = _convolve(flux_pred, lsf_all[idx])
+            line_pred = _convolve(line_pred, lsf_all[idx])
         flux_pred_list.append(flux_pred)
         line_pred_list.append(line_pred)
         flux_obs_list.append(flux_obs_all[idx])
@@ -283,10 +334,16 @@ def main():
     n_ok = len(row_list)
     print(f'\n{n_ok}/{len(tasks)} rows succeeded ({n_fail} failed) in {total:.1f}s '
           f'({total / max(n_ok, 1):.2f}s/row wall-clock, {args.n_workers} workers)')
+    if n_floored[0]:
+        print(f'  Note: {n_floored[0]}/{n_floored_total[0]} wavelength pixels had a target LSF '
+              f'FWHM narrower than ESO\'s own internal {eso_internal_fwhm_ang:.3f} A kernel -- '
+              f'the quadrature correction floored at zero there (no additional narrowing possible; '
+              f'output at those pixels is ESO\'s own internal resolution, not the true target LSF).')
 
     outfile = args.outfile
     if outfile is None:
-        outfile = str(Path(args.fits_file).with_suffix('').as_posix()) + '_eso.fits'
+        suffix = '_eso_nolsf.fits' if args.no_lsf_convolve else '_eso_lsf.fits'
+        outfile = str(Path(args.fits_file).with_suffix('').as_posix()) + suffix
 
     hdul = fits.HDUList([
         fits.PrimaryHDU(),

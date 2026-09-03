@@ -204,7 +204,11 @@ plots" step).
 ``BatchPredictSkyESO.py my_test_set.fits --outfile my_test_set_batch_eso.fits``
 against the identical test set, then steps 3-4 unchanged on that file —
 this is exactly the multi-candidate harness confirmed working under
-`MLP Ensemble Prediction Workflow`_ above.
+`MLP Ensemble Prediction Workflow`_ above. As of 2026-09-03 this step
+also applies each row's real LSF (from ``my_test_set.fits``'s own
+``LSF`` extension) to the ESO prediction, matching the convolution the
+MLP candidate already gets — see `Current Open Problem: The
+Instrumental LSF`_ below.
 
 **Caveat repeated from above**: ``SelectXCF.py`` draws from whatever
 rows pass its hard cuts without checking against any particular training
@@ -278,24 +282,38 @@ This is the live thread motivating this page. Status as of 2026-09-03:
   fit residuals monotonically *worse* with more boost — consistent with
   the header LSF being close to right at the single-component level,
   reinforcing the blend-not-calibration-error read above.
-- The **ESO Sky Model path has no comparable per-row LSF handling at
-  all**: found this session that ``calcskymodel`` (the local engine)
-  convolves with a fixed, LVM-untuned 0.8-pixel (~0.4 A at the reference
-  wavelength) Gaussian, identical for every exposure — narrower than
-  LVM's real ~1.3 A instrumental FWHM and with none of the real
-  exposure-to-exposure variation the DRP's own per-row LSF carries. This
-  is a likely major contributor to visible ESO-vs-data line-shape
-  mismatches, and is a lower bar to fix than anything above: give the
-  ESO candidate the same real per-row LSF convolution
-  ``PredictSky.py``/``lsf_surface_iterative`` already applies to the MLP
-  candidate, so the two are compared on equal footing.
+- The **ESO Sky Model's own internal LSF is a fixed, LVM-untuned
+  constant** — found 2026-09-03 that ``calcskymodel`` (the local engine)
+  convolves with a fixed 0.8-pixel (~0.4 A at the reference wavelength)
+  Gaussian, identical for every exposure, with none of the real
+  exposure-to-exposure variation the DRP's own per-row LSF carries.
 
-Planned next step: fix the ESO candidate's LSF convolution first (uses
-the LSF already in the data, no new tool needed), then re-run
-``lvm_line_profile.py``-style fits across multiple *separate* exposures
-to determine whether the header-vs-fit gap is stable or exposure
-dependent, which decides whether a single global correction curve is
-enough or a per-exposure one is needed.
+**Fixed 2026-09-03**: ``BatchPredictSkyESO.py`` now applies each row's
+real per-row LSF (from the same file's ``LSF`` extension) on top of
+ESO's own internal ~0.4 A kernel, using the identical construction
+``PredictSky.py`` uses for the MLP candidate
+(``sky_decomp.lsf_surface_iterative.build_lsf_operator``) — so the two
+candidates are now compared on equal footing. This also required
+changing ``BatchPredictSkyESO.py``'s interface from a
+``(meta_file, batch_file)`` pair to a single ``fits_file`` argument
+(the same XCframe-layout file ``BatchPredictSky.py`` already takes
+directly): the old ``meta_file`` (a ``*_meta_only.fits`` artifact of the
+training pipeline) never carried spectral extensions at all, and
+``batch_file`` (``BatchPredictSky.py``'s own output) drops the ``LSF``
+extension that the source XCframe file has — so neither of the old
+inputs could have supplied it. Verified numerically on real data
+(row with LSF FWHM ~1.57 A): unconvolved ESO peak at 5577 A
+4.15e-12, convolved peak 1.85e-12 — broader and lower, as physically
+expected, with integrated flux over the line roughly conserved.
+
+Planned next step: re-run ``lvm_line_profile.py``-style fits across
+multiple *separate* exposures to determine whether the DRP's own
+header-vs-fit LSF gap (first bullet above) is stable or exposure
+dependent, which decides whether a single global correction curve on
+top of the header LSF is enough or a per-exposure one is needed. That
+question is now more directly testable than before, since the ESO
+candidate's comparison is no longer confounded by its own missing
+convolution.
 
 
 Known Gaps and Promotion Candidates

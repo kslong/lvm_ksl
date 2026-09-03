@@ -29,6 +29,7 @@ are experimwenatls.  Those that have detailed documantion are the most reliable.
    summarize
    data_quality
    sky_subtraction
+   sky_model_landscape
    spectral_fitting
    visualization
    plotting_outputs

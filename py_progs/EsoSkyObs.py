@@ -164,6 +164,19 @@ History::
     cwd (calcskymodel hardcodes 'config', 'data', and 'output' internally
     and offers no way to rename any of them).  NOT concurrency-safe --
     only use it for one call at a time.
+    260903 ksl Added lsf_gauss_fwhm_pix (create_local_inputs/run_local/
+    run_sky_obs, local engine only), exposing inst_base's previously
+    hardcoded wgauss=0.8 (calcskymodel's own internal LSF convolution,
+    ~0.4 A FWHM at the default 0.5 A/pixel grid) as an explicit
+    parameter.  Default unchanged, so every existing caller (including
+    this script's own CLI) is unaffected.  Motivated by
+    BatchPredictSkyESO.py applying its own additional per-row LSF
+    convolution downstream -- without this, that stacked with
+    calcskymodel's fixed internal kernel rather than replacing it,
+    biasing the effective output FWHM slightly too broad.  See
+    create_local_inputs()'s docstring for why this isn't just set to a
+    much smaller value instead (aliasing risk against the coarse output
+    grid, not merely a conservative default).
 
 '''
 
@@ -467,8 +480,15 @@ kernrad    = 3
 # FWHM of boxcar kernel [pixels]
 wbox       = 0.8
 
-# FWHM of Gaussian kernel [pixels]
-wgauss     = 0.8
+# FWHM of Gaussian kernel [pixels] -- substituted by create_local_inputs's
+# lsf_gauss_fwhm_pix (default 0.8, i.e. this literal value, so every
+# existing caller that doesn't pass it sees unchanged behavior). This is
+# calcskymodel's own internal LSF convolution, applied before the FITS
+# output is ever seen by anything in lvm_ksl -- unrelated to (and, for
+# callers doing their own additional LSF convolution downstream, stacks
+# with) any convolution applied later. See BatchPredictSkyESO.py for a
+# caller that both overrides this and corrects for it.
+wgauss     = %.3f
 
 # FWHM of Lorentzian kernel [pixels]
 wlorentz   = 0.8
@@ -600,7 +620,8 @@ SITE_PRESSURE_HPA = {
 
 
 def create_local_inputs(ra=296.242608, dec=-14.811007, obstime='2023-08-29T03:20:43.668', msol=0,
-                        site='lco', pressure=None, workdir='.', verbose=False):
+                        site='lco', pressure=None, workdir='.', verbose=False,
+                        lsf_gauss_fwhm_pix=0.8):
     '''
     Write <workdir>/config/skymodel_etc.par and
     <workdir>/config/instrument_etc.par for calcskymodel, given the
@@ -611,6 +632,18 @@ def create_local_inputs(ra=296.242608, dec=-14.811007, obstime='2023-08-29T03:20
     given and positive.
     workdir defaults to '.' but run_local() always passes an isolated
     per-call temporary directory instead -- see module Notes.
+
+    lsf_gauss_fwhm_pix: FWHM (pixels) of calcskymodel's own internal
+    Gaussian LSF convolution (inst_base's wgauss). Default 0.8 matches
+    the value hardcoded here before this became a parameter -- every
+    existing caller sees unchanged output. Do not set this much lower
+    to try to get an "unsmoothed" spectrum: at the default 0.5 A/pixel
+    output grid (dlam), this convolution is also calcskymodel's
+    anti-aliasing filter going from the model's native library
+    resolution (resol, ~R=60000) down to that grid, so an unphysically
+    narrow value risks aliasing artifacts rather than a genuinely finer
+    spectrum. See BatchPredictSkyESO.py for a caller that overrides
+    this to a known value and corrects for it analytically instead.
     '''
     info = get_info_las_campanas(obstime, ra=ra, dec=dec, verbose=verbose)
 
@@ -630,7 +663,7 @@ def create_local_inputs(ra=296.242608, dec=-14.811007, obstime='2023-08-29T03:20
                                 longitude, info['SourceEclipLat'], xmsol))
 
     with open(os.path.join(workdir, 'config', 'instrument_etc.par'), 'w') as xinst:
-        xinst.write(inst_base)
+        xinst.write(inst_base % lsf_gauss_fwhm_pix)
 
 
 def local_engine_available(eso_sky_dir=''):
@@ -649,7 +682,7 @@ def local_engine_available(eso_sky_dir=''):
 
 
 def run_local(ra, dec, xtime_iso, msol=0, outroot='', eso_sky_dir='', site='lco', pressure=None,
-             keep_workdir=False):
+             keep_workdir=False, lsf_gauss_fwhm_pix=0.8):
     '''
     Run the local ESO Sky Model (calcskymodel) for ra, dec, xtime_iso and
     write outroot.fits (in the CALLER's current directory -- unchanged
@@ -657,6 +690,8 @@ def run_local(ra, dec, xtime_iso, msol=0, outroot='', eso_sky_dir='', site='lco'
     site: 'lco' (default) or 'paranal' -- see SITE_HEIGHT_KM.
     pressure overrides SITE_PRESSURE_HPA's site-keyed default (hPa) if
     given and positive -- see create_local_inputs().
+    lsf_gauss_fwhm_pix: passed through to create_local_inputs() -- see
+    its docstring; default 0.8 is unchanged behavior.
 
     By default, everything calcskymodel itself reads/writes (config/*.par,
     output/*.fits/.dat, the data symlink) lives in a fresh
@@ -684,7 +719,7 @@ def run_local(ra, dec, xtime_iso, msol=0, outroot='', eso_sky_dir='', site='lco'
     with _scratch_dir('EsoSkyObs_local_', workdir='.' if keep_workdir else None) as workdir:
         setup(eso_sky_dir, workdir=workdir)
         create_local_inputs(ra=ra, dec=dec, obstime=xtime_iso, msol=msol, site=site, pressure=pressure,
-                            workdir=workdir)
+                            workdir=workdir, lsf_gauss_fwhm_pix=lsf_gauss_fwhm_pix)
 
         result = subprocess.run([binary], capture_output=True, text=True, cwd=workdir)
         if len(result.stderr):
@@ -914,7 +949,7 @@ def resolve_solar_flux(xtime_iso, msol=-1):
 
 
 def run_sky_obs(ra, dec, xtime, outroot='', msol=-1, engine='auto', print_output=False, eso_sky_dir='',
-                site='lco', pressure=None, keep_workdir=False):
+                site='lco', pressure=None, keep_workdir=False, lsf_gauss_fwhm_pix=0.8):
     '''
     Generate a predicted sky spectrum for ra, dec, xtime using the real ESO
     Sky Model.  By default (engine='auto') the local calcskymodel install is
@@ -930,6 +965,14 @@ def run_sky_obs(ra, dec, xtime, outroot='', msol=-1, engine='auto', print_output
     local engine only -- see create_local_inputs()/-pres in the CLI help;
     has no effect on the remote engine (skycalc_cli exposes no separate
     pressure parameter).
+
+    lsf_gauss_fwhm_pix: local engine only (no effect on the remote engine,
+    which has its own separate, unrelated lsf_gauss_fwhm default in
+    xdefaults) -- passed through to run_local()/create_local_inputs();
+    default 0.8 is unchanged behavior. See create_local_inputs()'s
+    docstring before changing this -- there is a real numerical floor
+    below which this stops being "less smoothing" and starts being
+    aliasing.
 
     keep_workdir=True (-keep_workdir) trades the default concurrency-safe
     behavior (a fresh, auto-deleted temp directory per call) for the pre-
@@ -954,7 +997,8 @@ def run_sky_obs(ra, dec, xtime, outroot='', msol=-1, engine='auto', print_output
 
     if engine in ('local', 'auto'):
         xroot = run_local(ra, dec, xtime_iso, msol=msol_resolved, outroot=outroot, eso_sky_dir=eso_sky_dir,
-                          site=site, pressure=pressure, keep_workdir=keep_workdir)
+                          site=site, pressure=pressure, keep_workdir=keep_workdir,
+                          lsf_gauss_fwhm_pix=lsf_gauss_fwhm_pix)
         if xroot:
             used_engine = 'local'
         elif engine == 'local':

@@ -46,7 +46,7 @@ Three Places This Work Lives
        prediction/evaluation/test-set-curation scripts promoted from
        ``niv/`` — ``PredictSky.py``, ``BatchPredictSky.py``,
        ``BatchPredictSkyESO.py``, ``EvalFluxResiduals.py``,
-       ``MasterResidualByMoon.py``, ``SelectXCF.py`` — copied, not
+       ``PlotSkyResiduals.py``, ``SelectXCF.py`` — copied, not
        moved, so the ``niv/`` originals still exist too.
    * - ``lvmsky/skysub/``
      - Separate git repo, not controlled by this documentation
@@ -130,7 +130,7 @@ rest are still ``niv/``-only)::
     PredictSky.py [py_dev] (single exposure)  --or--  BatchPredictSky.py [py_dev] (parallel batch)
         -> EvalFluxResiduals.py [py_dev] (method-agnostic, via sky_residual_eval.py)
         -> EvalCoefResiduals.py (model-specific, coefficient-space)
-        -> MasterResidualByMoon.py [py_dev] (moon-brightness-stacked residual spectra)
+        -> PlotSkyResiduals.py [py_dev] (moon-brightness-stacked residual spectra)
         -> PlotPredictSky.py (per-exposure interactive diagnostic)
 
 ``BatchPredictSkyESO.py`` [py_dev] runs the *ESO* candidate through this
@@ -174,20 +174,20 @@ checkpoint::
 
     # 1. Curate a test set
     SelectXCF.py source.fits my_test_set.fits \
-        --n 200 --seed 42 --exptime 900 --fluxcal MOD --min-glat 10
+        -n 200 -seed 42 -exptime 900 -fluxcal MOD -min_glat 10
 
     # 2. Run the MLP candidate against it
     BatchPredictSky.py my_test_set.fits \
-        --model /path/to/mlp_ensemble_stage2_production.pt \
-        --n 200 --n-workers 8 --outfile my_test_set_batch.fits
+        -model /path/to/mlp_ensemble_stage2_production.pt \
+        -n 200 -n_workers 8 -outfile my_test_set_batch.fits
 
     # 3. Quantify accuracy
     EvalFluxResiduals.py my_test_set_batch.fits \
         -out my_test_set_eval -plotdir plots_my_test_set
 
     # 4. Produce the comparison plots
-    MasterResidualByMoon.py my_test_set_batch.fits \
-        --outfile my_test_set_master_resid.fits --html my_test_set_master_resid.html
+    PlotSkyResiduals.py my_test_set_batch.fits \
+        -outfile my_test_set_master_resid.fits -html my_test_set_master_resid.html
 
 Step 2 is the expensive one (real per-row PALACE decomposition + LSF
 reconstruction per exposure; minutes, not seconds, for a few hundred
@@ -201,7 +201,7 @@ handful of test rows.
 plots" step).
 
 **To add the ESO candidate to the same comparison**, run
-``BatchPredictSkyESO.py my_test_set.fits --outfile my_test_set_batch_eso.fits``
+``BatchPredictSkyESO.py my_test_set.fits -outfile my_test_set_batch_eso.fits``
 against the identical test set, then steps 3-4 unchanged on that file —
 this is exactly the multi-candidate harness confirmed working under
 `MLP Ensemble Prediction Workflow`_ above. As of 2026-09-03 this step
@@ -306,6 +306,42 @@ inputs could have supplied it. Verified numerically on real data
 4.15e-12, convolved peak 1.85e-12 — broader and lower, as physically
 expected, with integrated flux over the line roughly conserved.
 
+**Refined 2026-09-03 (same day)**: the first version of the fix above
+convolved with the *full* target LSF on top of ESO's own already-applied
+internal ~0.4 A kernel — a real, if small (~3% in FWHM), double-blurring
+bias. ``EsoSkyObs.py``'s local-engine LSF kernel (``inst_base``'s
+``wgauss``) was previously fully hardcoded (0.8 pixels, unlike ``sm_h``/
+``alt``/etc., which were already ``%``-substituted); it's now an explicit
+``lsf_gauss_fwhm_pix`` parameter on ``create_local_inputs``/
+``run_local``/``run_sky_obs``, default unchanged so every other caller
+(including the script's own CLI) is unaffected — verified byte-identical
+output at the default. Deliberately *not* lowered to reduce ESO's
+internal smoothing directly: at the 0.5 A/pixel output grid this
+convolution doubles as calcskymodel's anti-aliasing filter going from
+the model's native library resolution (``resol``, R~60000) down to that
+grid, so pushing it much narrower risks aliasing rather than a genuinely
+sharper spectrum — there's a real numerical floor here, and 0.8 pixels
+is already close to it. Instead, ``BatchPredictSkyESO.py`` now
+quadrature-subtracts that known, now-explicit internal FWHM from each
+row's target LSF before building its own convolution kernel
+(``ESO_LSF_GAUSS_FWHM_PIX = 0.8``, kept in sync with the value passed to
+``run_sky_obs``), so the *combined* effective FWHM matches the target
+exactly rather than overshooting it; floored at zero (with a printed
+warning) for the physically-shouldn't-happen case of a target LSF
+narrower than ESO's own internal kernel. Confirmed on real data: this
+raises the 5577 A peak from 1.8498e-12 to 1.8988e-12 (~2.6%), the
+expected-direction, expected-magnitude correction.
+
+``BatchPredictSkyESO.py`` also gained ``-no_lsf_convolve`` (skips this
+whole step, writing ESO's raw interpolated prediction instead) and a
+default ``-outfile`` suffix that records which was used
+(``_eso_lsf.fits`` vs. ``_eso_nolsf.fits``) — for seeing the effect of
+the convolution directly, run both on the same ``fits_file`` and
+compare. Confirmed on real data: peak at 5577 A is 1.90e-12 convolved
+vs. 4.15e-12 unconvolved (i.e. ESO's own internal kernel only) — over
+2x, since the real per-row LSF (~1.5-1.6 A) is much broader than ESO's
+internal ~0.4 A one.
+
 Planned next step: re-run ``lvm_line_profile.py``-style fits across
 multiple *separate* exposures to determine whether the DRP's own
 header-vs-fit LSF gap (first bullet above) is stable or exposure
@@ -330,20 +366,32 @@ Known Gaps and Promotion Candidates
 
 **Recently promoted** (2026-09-03): ``PredictSky.py``,
 ``BatchPredictSky.py``, ``BatchPredictSkyESO.py``, ``EvalFluxResiduals.py``,
-``MasterResidualByMoon.py``, ``SelectXCF.py`` copied from ``niv/``
+``PlotSkyResiduals.py``, ``SelectXCF.py`` copied from ``niv/``
 (untracked) to ``py_dev/`` (tracked, not yet Sphinx-documented) — the
 first test of the ``py_dev`` tier described in the table above (``niv/``
 originals left in place, not deleted). Along the way: a placeholder
 ``DEFAULT_MODEL`` path in ``PredictSky.py``/``BatchPredictSky.py``
 (``~/foo/goo/...``, never filled in) was found and, on reflection, not
-just fixed but removed — ``--model`` is now a required argument with no
+just fixed but removed — ``-model`` is now a required argument with no
 default at all, since this tier is meant to work against different
 trained models for different purposes and a silent fallback (even a
 correct one) risks going stale the moment that stops being true.
-``EvalFluxResiduals.py``/``MasterResidualByMoon.py``/
+``EvalFluxResiduals.py``/``PlotSkyResiduals.py``/
 ``BatchPredictSkyESO.py``'s ``py_progs``-location constants were also
 made CLI-overridable for the same reason, matching the pattern
-``PredictSky.py`` already used for ``--lvmsky-skysub``.
+``PredictSky.py`` already used for ``-lvmsky_skysub``.
+
+All of ``py_dev``'s options were further switched from double-dash
+(``--n-workers``) to single-dash (``-n_workers``) on 2026-09-03, matching
+``py_progs``'s own convention — a real, if accidental, inconsistency:
+``py_dev`` had drifted onto ordinary Python argparse habits (double-dash,
+hyphens) rather than the convention already established here, and even
+``py_dev`` itself wasn't internally consistent (``EvalFluxResiduals.py``
+alone already matched ``py_progs``). See each script's own History for
+the per-file note; ``BatchPredictSky.py``'s worker-process ``sys.argv``
+injection into ``PredictSky.py``'s own module-level argument parser
+needed a matching fix, since it fakes a command line with the old
+spelling hardcoded.
 
 **Remaining promotion candidates**:
 

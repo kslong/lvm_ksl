@@ -16,28 +16,28 @@ Synopsis:
 
 Command line usage (if any):
 
-    usage: MasterResidualByMoon.py [-h] [--mask-file PATH] [--outfile PATH]
-                                   [--html PATH]
-                                   batch_fits
+    usage: PlotSkyResiduals.py [-h] [-mask_file PATH] [-outfile PATH]
+                               [-html PATH]
+                               batch_fits
 
     where
 
     batch_fits      a BatchPredictSky.py output FITS file (WAVE,
                     FLUX_OBS, FLUX_PRED, META[row,expnum]).
 
-    --mask-file PATH
+    -mask_file PATH
                     palace_make_mask.py mask FITS (default:
                     data/sky_mask.fits, same default as PlotSpec.py/
                     sky_residual_eval.py).
 
-    --outfile PATH  output FITS path for the 3 master residual spectra +
+    -outfile PATH   output FITS path for the 3 master residual spectra +
                     percentile bands (default: <stem>_master_resid.fits).
 
-    --html PATH     output interactive Plotly HTML comparing the 3
+    -html PATH      output interactive Plotly HTML comparing the 3
                     tercile median residuals (default:
                     Overview_Plot/<stem>_master_resid.html).
 
-    --py-progs-dir PATH
+    -py_progs_dir PATH
                     path to the lvm_ksl repo's py_progs/ directory, which
                     supplies PlotSpec.get_sky_mask/GetSkyCont (default:
                     ~/SDSS/lvm_ksl/py_progs).
@@ -60,6 +60,12 @@ Description:
 History::
 
     260902  ksl  Coding begun.
+    260903  ksl  Renamed from MasterResidualByMoon.py -- name now matches
+        the PlotSpec*.py/PlotPredictSky.py convention (verb-first,
+        "what it does" rather than "how it does it").
+    260903  ksl  Switched every option from double-dash (--mask-file) to
+        single-dash (-mask_file), matching py_progs/'s convention -- see
+        BatchPredictSkyESO.py's History for the fuller note.
 
 '''
 
@@ -74,7 +80,7 @@ import plotly.graph_objects as go
 DEFAULT_PY_PROGS_DIR = Path('~/SDSS/lvm_ksl/py_progs').expanduser()
 
 _pre = argparse.ArgumentParser(add_help=False)
-_pre.add_argument('--py-progs-dir', default=str(DEFAULT_PY_PROGS_DIR))
+_pre.add_argument('-py_progs_dir', default=str(DEFAULT_PY_PROGS_DIR))
 _pre_args, _ = _pre.parse_known_args()
 
 sys.path.insert(0, _pre_args.py_progs_dir)
@@ -334,10 +340,10 @@ def main():
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
     p.add_argument('batch_fits', help='BatchPredictSky.py output FITS file')
-    p.add_argument('--mask-file', default=None, dest='mask_file',
+    p.add_argument('-mask_file', default=None, dest='mask_file',
                    help='palace_make_mask.py mask FITS')
-    p.add_argument('--outfile', default=None, help='output FITS path')
-    p.add_argument('--html', default=None, help='output interactive HTML path')
+    p.add_argument('-outfile', default=None, help='output FITS path')
+    p.add_argument('-html', default=None, help='output interactive HTML path')
     args = p.parse_args()
 
     with fits.open(args.batch_fits) as hdul:

@@ -18,12 +18,12 @@ Synopsis:
 
 Command line usage (if any):
 
-    usage: SelectXCF.py [-h] [--n N] [--seed SEED] [--nbins NBINS]
-                        [--exptime EXPTIME] [--fluxcal FLUXCAL]
-                        [--min-glat MIN_GLAT]
-                        [--lmc-ra LMC_RA] [--lmc-dec LMC_DEC] [--lmc-radius LMC_RADIUS]
-                        [--smc-ra SMC_RA] [--smc-dec SMC_DEC] [--smc-radius SMC_RADIUS]
-                        [--orion-ra ORION_RA] [--orion-dec ORION_DEC] [--orion-radius ORION_RADIUS]
+    usage: SelectXCF.py [-h] [-n N] [-seed SEED] [-nbins NBINS]
+                        [-exptime EXPTIME] [-fluxcal FLUXCAL]
+                        [-min_glat MIN_GLAT]
+                        [-lmc_ra LMC_RA] [-lmc_dec LMC_DEC] [-lmc_radius LMC_RADIUS]
+                        [-smc_ra SMC_RA] [-smc_dec SMC_DEC] [-smc_radius SMC_RADIUS]
+                        [-orion_ra ORION_RA] [-orion_dec ORION_DEC] [-orion_radius ORION_RADIUS]
                         fits_file [output_file]
 
     where
@@ -33,39 +33,40 @@ Command line usage (if any):
                     SummarizeCframe.py -- all share the same
                     WAVE/FLUX/SKY_EAST/SKY_WEST/LSF/DRP_ALL layout).
 
-    output_file     output FITS path (default: <stem>_sel<N>.fits next to
-                    the input file).
+    output_file     output FITS path (default: <stem>_sel<N>.fits in the
+                    current working directory, regardless of where
+                    fits_file itself lives).
 
-    --n N           number of rows to select (default: 100).
+    -n N            number of rows to select (default: 100).
 
-    --seed SEED     random seed for reproducible sampling (default: 42).
+    -seed SEED      random seed for reproducible sampling (default: 42).
 
-    --nbins NBINS   number of quantile bins per axis (moon_alt, moon_fli)
+    -nbins NBINS    number of quantile bins per axis (moon_alt, moon_fli)
                     for the stratified draw (default: 4, giving up to
                     NBINS**2 strata).
 
-    --exptime EXPTIME
+    -exptime EXPTIME
                     required DRP_ALL 'exptime' value in seconds (default:
                     900.0).
 
-    --fluxcal FLUXCAL
+    -fluxcal FLUXCAL
                     required DRP_ALL 'fluxcal' value (default: 'MOD').
 
-    --min-glat MIN_GLAT
+    -min_glat MIN_GLAT
                     minimum |galactic latitude| in degrees for the Sci
                     pointing (default: 10.0).
 
-    --lmc-ra/--lmc-dec/--lmc-radius
+    -lmc_ra/-lmc_dec/-lmc_radius
                     LMC exclusion center + radius in degrees (default:
                     80.8942, -69.7561, 6.0 -- py_progs/rss2image.py's
                     values).
 
-    --smc-ra/--smc-dec/--smc-radius
+    -smc_ra/-smc_dec/-smc_radius
                     SMC exclusion center + radius in degrees (default:
                     13.1583, -72.8003, 3.0 -- py_progs/rss2image.py's
                     values).
 
-    --orion-ra/--orion-dec/--orion-radius
+    -orion_ra/-orion_dec/-orion_radius
                     Orion Nebula exclusion center + radius in degrees
                     (default: 83.8221, -5.3911, 15.0).
 
@@ -74,7 +75,7 @@ Description:
     1. Reads DRP_ALL from the input file and applies the hard cuts (exptime,
        fluxcal, galactic latitude, LMC/SMC/Orion exclusion) using the Sci
        telescope's pointing (sci_ra/sci_dec).
-    2. From the surviving candidate rows, draws --n rows via a stratified
+    2. From the surviving candidate rows, draws -n rows via a stratified
        random sample over a (moon_alt x moon_fli) quantile grid, so the
        small output corpus spans the moon-geometry range the sky-prediction
        model conditions on, rather than clustering at whatever moon state
@@ -94,6 +95,15 @@ Notes::
 History::
 
     260901  ksl  Coding begun.
+    260903  ksl  Default output_file now lands in the current working
+        directory, not next to fits_file -- found running from a fresh
+        directory (fits_file pointing at a shared source corpus
+        elsewhere) that the old default silently wrote the selection
+        back into that source directory instead of where the user was
+        actually working.
+    260903  ksl  Switched every option from double-dash (--min-glat) to
+        single-dash (-min_glat), matching py_progs/'s convention -- see
+        BatchPredictSkyESO.py's History for the fuller note.
 
 '''
 
@@ -305,34 +315,34 @@ def main():
     p.add_argument('fits_file', help='LVM XCframe summary FITS file')
     p.add_argument('output_file', nargs='?', default=None,
                    help='Output FITS path (default: <stem>_sel<N>.fits)')
-    p.add_argument('--n', type=int, default=DEFAULT_N,
+    p.add_argument('-n', type=int, default=DEFAULT_N,
                    help='Number of rows to select')
-    p.add_argument('--seed', type=int, default=DEFAULT_SEED,
+    p.add_argument('-seed', type=int, default=DEFAULT_SEED,
                    help='Random seed for the stratified draw')
-    p.add_argument('--nbins', type=int, default=DEFAULT_NBINS,
+    p.add_argument('-nbins', type=int, default=DEFAULT_NBINS,
                    help='Quantile bins per axis for the moon_alt x moon_fli stratification')
-    p.add_argument('--exptime', type=float, default=DEFAULT_EXPTIME,
+    p.add_argument('-exptime', type=float, default=DEFAULT_EXPTIME,
                    help='Required DRP_ALL exptime value (seconds)')
-    p.add_argument('--fluxcal', default=DEFAULT_FLUXCAL,
+    p.add_argument('-fluxcal', default=DEFAULT_FLUXCAL,
                    help='Required DRP_ALL fluxcal value')
-    p.add_argument('--min-glat', type=float, default=DEFAULT_MIN_GLAT,
+    p.add_argument('-min_glat', type=float, default=DEFAULT_MIN_GLAT,
                    dest='min_glat',
                    help='Minimum |galactic latitude| in degrees for sci_ra/sci_dec')
-    p.add_argument('--lmc-ra', type=float, default=DEFAULT_LMC['ra'], dest='lmc_ra')
-    p.add_argument('--lmc-dec', type=float, default=DEFAULT_LMC['dec'], dest='lmc_dec')
-    p.add_argument('--lmc-radius', type=float, default=DEFAULT_LMC['radius'], dest='lmc_radius')
-    p.add_argument('--smc-ra', type=float, default=DEFAULT_SMC['ra'], dest='smc_ra')
-    p.add_argument('--smc-dec', type=float, default=DEFAULT_SMC['dec'], dest='smc_dec')
-    p.add_argument('--smc-radius', type=float, default=DEFAULT_SMC['radius'], dest='smc_radius')
-    p.add_argument('--orion-ra', type=float, default=DEFAULT_ORION['ra'], dest='orion_ra')
-    p.add_argument('--orion-dec', type=float, default=DEFAULT_ORION['dec'], dest='orion_dec')
-    p.add_argument('--orion-radius', type=float, default=DEFAULT_ORION['radius'], dest='orion_radius')
+    p.add_argument('-lmc_ra', type=float, default=DEFAULT_LMC['ra'], dest='lmc_ra')
+    p.add_argument('-lmc_dec', type=float, default=DEFAULT_LMC['dec'], dest='lmc_dec')
+    p.add_argument('-lmc_radius', type=float, default=DEFAULT_LMC['radius'], dest='lmc_radius')
+    p.add_argument('-smc_ra', type=float, default=DEFAULT_SMC['ra'], dest='smc_ra')
+    p.add_argument('-smc_dec', type=float, default=DEFAULT_SMC['dec'], dest='smc_dec')
+    p.add_argument('-smc_radius', type=float, default=DEFAULT_SMC['radius'], dest='smc_radius')
+    p.add_argument('-orion_ra', type=float, default=DEFAULT_ORION['ra'], dest='orion_ra')
+    p.add_argument('-orion_dec', type=float, default=DEFAULT_ORION['dec'], dest='orion_dec')
+    p.add_argument('-orion_radius', type=float, default=DEFAULT_ORION['radius'], dest='orion_radius')
     args = p.parse_args()
 
     outpath = args.output_file
     if outpath is None:
         stem = Path(args.fits_file).stem
-        outpath = str(Path(args.fits_file).parent / f'{stem}_sel{args.n}.fits')
+        outpath = f'{stem}_sel{args.n}.fits'
 
     selected_idx = select(args.fits_file, args)
     write_subset(args.fits_file, selected_idx, outpath)

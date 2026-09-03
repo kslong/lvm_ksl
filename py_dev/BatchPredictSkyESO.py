@@ -6,12 +6,17 @@
 
 Synopsis:
 
-    Run EsoSkyObs.py's run_sky_obs() across many rows of the same
-    exposure corpus used by BatchPredictSky.py (the MLP candidate),
-    producing a directly comparable WAVE/FLUX_OBS/FLUX_PRED/LINE_PRED/
-    META batch file for the same evaluation tools (EvalFluxResiduals.py,
-    MasterResidualByMoon.py) -- this is the ESO-sky-model candidate, not
-    a replacement for the MLP one.
+    Run EsoSkyObs.py's run_sky_obs() across many rows of an XCframe-
+    layout corpus (e.g. SelectXCF.py's output -- the same file
+    BatchPredictSky.py itself takes directly), producing a WAVE/
+    FLUX_OBS/FLUX_PRED/LINE_PRED/META batch file for the same
+    evaluation tools (EvalFluxResiduals.py, MasterResidualByMoon.py) --
+    this is the ESO-sky-model candidate, not a replacement for the MLP
+    one. Applies the same per-row instrumental LSF convolution
+    PredictSky.py applies to the MLP candidate (via
+    sky_decomp.lsf_surface_iterative's build_lsf_operator), so the two
+    candidates are compared on equal footing rather than one being
+    convolved and the other not.
 
 Command line usage (if any)::
 
@@ -19,46 +24,64 @@ Command line usage (if any)::
                                  [--n-workers N] [--outfile PATH]
                                  [--site {lco,paranal}] [--engine E]
                                  [--lvm-ksl-progs PATH]
-                                 meta_file batch_file
+                                 [--lvmsky-skysub PATH]
+                                 fits_file
 
     where
 
-    meta_file       the *_meta_only.fits file (has sci_ra/sci_dec/obstime
-                    per row -- same row order as batch_file's META).
-    batch_file      BatchPredictSky.py's own output (supplies WAVE and
-                    the ground-truth FLUX_OBS/row/expnum to reuse
-                    unchanged, so the two candidates are compared on
-                    the exact same exposures and the exact same
-                    observed spectra).
+    fits_file       an XCframe-layout FITS file (e.g. SelectXCF.py's
+                    output) with WAVE/FLUX/LSF extensions and a DRP_ALL
+                    table (sci_ra/sci_dec/obstime/expnum) -- the same
+                    file BatchPredictSky.py itself takes directly, so
+                    both candidates can be run independently against the
+                    exact same test set with no ordering dependency
+                    between them.
 
-    --n N           use the first N rows of batch_file (default: 20).
+    --n N           use the first N rows of fits_file (default: 20).
     --rows R [R ...]
-                    explicit row indices (overrides --n; indices are
-                    into batch_file's FLUX_OBS/META, not meta_file).
+                    explicit row indices (overrides --n).
     --n-workers N   parallel worker processes (default: 8).
     --outfile PATH  output FITS path (default:
-                    <batch_file stem>_eso.fits).
+                    <fits_file stem>_eso.fits).
     --site S        'lco' (default) or 'paranal' -- passed to
                     EsoSkyObs.run_sky_obs.
     --engine E      'auto' (default), 'local', or 'remote'.
     --lvm-ksl-progs PATH
                     path to the lvm_ksl repo's py_progs/ directory, which
                     supplies EsoSkyObs.py (default: ~/SDSS/lvm_ksl/py_progs).
+    --lvmsky-skysub PATH
+                    path to the lvmsky repo's skysub/ directory, which
+                    supplies sky_decomp.lsf_surface_iterative's LSF
+                    convolution operator (default: ~/SDSS/lvmsky/skysub).
 
 Description:
 
-    For each row, looks up sci_ra/sci_dec/obstime from meta_file (joined
-    to batch_file via expnum) and calls EsoSkyObs.run_sky_obs(ra, dec,
+    For each row, reads sci_ra/sci_dec/obstime/expnum straight from
+    fits_file's DRP_ALL table and calls EsoSkyObs.run_sky_obs(ra, dec,
     obstime, engine=..., site=...), which writes a small per-row FITS
     with WAVE (already on the same 3600-9800 A / 0.5 A grid as our
     XCframe corpus -- verified to sub-pixel precision) and FLUX/CONT/
     LINES columns (already extinction-corrected to the same
     above-the-atmosphere convention LVM spectra are compared against).
 
-    FLUX_PRED is the FLUX column as-is. LINE_PRED is FLUX - CONT
+    FLUX_PRED is the FLUX column as-is, LINE_PRED is FLUX - CONT
     (verified numerically equal to LINES/trans, the model's own
     line-only prediction correctly extinction-corrected) -- ESO's own
-    physically-based line/continuum split, not a mask or refit of ours.
+    physically-based line/continuum split, not a mask or refit of ours
+    -- both interpolated onto fits_file's own WAVE grid and then
+    convolved with a Gaussian kernel built from that row's own LSF
+    extension (FWHM -> sigma_pix = fwhm/2.355/dlam_pix, evaluated at
+    LSF_TAP_OFFSETS, each row normalized to sum to 1, applied via
+    build_lsf_operator -- identical construction to PredictSky.py's own
+    reconstruction step). Convolution is linear, so convolving FLUX_PRED
+    and LINE_PRED independently with the same per-row kernel is
+    equivalent to convolving FLUX_PRED and CONT independently and
+    resumming. Before this change, the ESO candidate was compared
+    unconvolved against LVM data while the MLP candidate already had
+    this LSF reconstruction applied -- see docs/source/
+    sky_model_landscape.rst's "Current Open Problem" section for the
+    fuller context (the ESO local engine's own internal convolution is
+    a fixed, LVM-untuned ~0.4 A kernel, unrelated to this per-row step).
 
     Each per-row scratch FITS is deleted after being read (EsoSkyObs.py
     already isolates every call in its own scratch tempdir internally
@@ -70,6 +93,18 @@ Description:
 History::
 
     260902  ksl  Coding begun.
+    260903  ksl  Switched from a (meta_file, batch_file) pair to a single
+        fits_file argument (the same XCframe-layout file
+        BatchPredictSky.py itself already takes) -- meta_file's
+        sci_ra/sci_dec/obstime/expnum are all in fits_file's own
+        DRP_ALL table, and batch_file's WAVE/FLUX_OBS are identical to
+        fits_file's WAVE/FLUX (FLUX_OBS is FLUX unchanged, verified in
+        PredictSky.read_row). This also removes the previous ordering
+        dependency on BatchPredictSky.py having already been run.
+        Added the LSF convolution step described above, made possible
+        by fits_file's own LSF extension being available now that
+        meta_file (which never carried spectral extensions at all) is
+        no longer in the loop.
 
 '''
 
@@ -85,6 +120,7 @@ from astropy.io import fits
 
 THIS_DIR = str(Path(__file__).resolve().parent)
 DEFAULT_LVM_KSL_PY_PROGS = str(Path('~/SDSS/lvm_ksl/py_progs').expanduser())
+DEFAULT_LVMSKY_SKYSUB = str(Path('~/SDSS/lvmsky/skysub').expanduser())
 
 _WORKER_ESO = None
 _WORKER_OUTDIR = None
@@ -133,50 +169,79 @@ def predict_one_row(task):
     )
 
 
+def _clean_lsf(fwhm):
+    '''
+    Fill any non-finite value in a per-row LSF FWHM array by linear
+    interpolation from its own neighbours (same fallback PredictSky.py's
+    read_row uses) so the convolution kernel below never sees a NaN.
+    '''
+    fwhm = np.asarray(fwhm, dtype=np.float64)
+    bad = ~np.isfinite(fwhm)
+    if bad.any():
+        good = ~bad
+        if good.any():
+            fwhm = fwhm.copy()
+            fwhm[bad] = np.interp(np.flatnonzero(bad), np.flatnonzero(good), fwhm[good])
+    return fwhm
+
+
 def main():
     p = argparse.ArgumentParser(
-        description="Batch-run EsoSkyObs.py's run_sky_obs across the same corpus "
-                    "used for BatchPredictSky.py's MLP output, for a directly "
-                    "comparable candidate dataset.",
+        description="Batch-run EsoSkyObs.py's run_sky_obs across an XCframe-layout "
+                    "corpus, applying the same per-row LSF convolution PredictSky.py "
+                    "applies to the MLP candidate, for a directly comparable dataset.",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
-    p.add_argument('meta_file', help='*_meta_only.fits with sci_ra/sci_dec/obstime/expnum')
-    p.add_argument('batch_file', help="BatchPredictSky.py's output (WAVE/FLUX_OBS/row/expnum)")
-    p.add_argument('--n', type=int, default=20, help='use the first N rows of batch_file')
+    p.add_argument('fits_file', help='XCframe-layout FITS file (WAVE/FLUX/LSF/DRP_ALL)')
+    p.add_argument('--n', type=int, default=20, help='use the first N rows of fits_file')
     p.add_argument('--rows', type=int, nargs='+', default=None,
-                   help='explicit row indices into batch_file (overrides --n)')
+                   help='explicit row indices into fits_file (overrides --n)')
     p.add_argument('--n-workers', type=int, default=8, help='parallel worker processes')
     p.add_argument('--outfile', default=None, help='output FITS path')
     p.add_argument('--site', default='lco', choices=['lco', 'paranal'])
     p.add_argument('--engine', default='auto', choices=['auto', 'local', 'remote'])
     p.add_argument('--lvm-ksl-progs', default=DEFAULT_LVM_KSL_PY_PROGS,
                    help='path to the lvm_ksl repo\'s py_progs/ directory, which supplies EsoSkyObs.py')
+    p.add_argument('--lvmsky-skysub', default=DEFAULT_LVMSKY_SKYSUB,
+                   help='path to the lvmsky repo\'s skysub/ directory, which supplies '
+                        'sky_decomp.lsf_surface_iterative')
     args = p.parse_args()
 
-    with fits.open(args.meta_file) as hdul:
-        meta = hdul[1].data
-        meta_ra = {int(e): float(r) for e, r in zip(meta['expnum'], meta['sci_ra'])}
-        meta_dec = {int(e): float(d) for e, d in zip(meta['expnum'], meta['sci_dec'])}
-        meta_obstime = {int(e): str(o) for e, o in zip(meta['expnum'], meta['obstime'])}
-
-    with fits.open(args.batch_file) as hdul:
+    with fits.open(args.fits_file) as hdul:
         wave_ref = np.asarray(hdul['WAVE'].data, dtype=np.float64)
-        flux_obs_all = np.asarray(hdul['FLUX_OBS'].data, dtype=np.float32)
-        batch_row = np.asarray(hdul['META'].data['row'], dtype=np.int64)
-        batch_expnum = np.asarray(hdul['META'].data['expnum'], dtype=np.int64)
+        flux_obs_all = np.asarray(hdul['FLUX'].data, dtype=np.float32)
+        lsf_all = np.asarray(hdul['LSF'].data, dtype=np.float64)
+        drp = hdul['DRP_ALL'].data
+        sci_ra_all = np.asarray(drp['sci_ra'], dtype=np.float64)
+        sci_dec_all = np.asarray(drp['sci_dec'], dtype=np.float64)
+        obstime_all = np.asarray(drp['obstime'], dtype=str)
+        expnum_all = np.asarray(drp['expnum'], dtype=np.int64)
 
-    rows = args.rows if args.rows is not None else list(range(min(args.n, len(batch_row))))
+    n_rows = len(sci_ra_all)
+    rows = args.rows if args.rows is not None else list(range(min(args.n, n_rows)))
 
-    tasks = []
-    for idx in rows:
-        expnum = int(batch_expnum[idx])
-        if expnum not in meta_ra:
-            print(f'  batch row {idx} (expnum {expnum}): not found in {args.meta_file}, skipping')
-            continue
-        tasks.append((idx, expnum, meta_ra[expnum], meta_dec[expnum], meta_obstime[expnum]))
+    tasks = [
+        (idx, int(expnum_all[idx]), float(sci_ra_all[idx]), float(sci_dec_all[idx]),
+         str(obstime_all[idx]))
+        for idx in rows
+    ]
 
-    outdir = str(Path(args.batch_file).resolve().parent / '_eso_scratch')
+    outdir = str(Path(args.fits_file).resolve().parent / '_eso_scratch')
     os.makedirs(outdir, exist_ok=True)
+
+    sys.path.insert(0, args.lvmsky_skysub)
+    from scipy.stats import norm  # noqa: E402
+    from sky_decomp.lsf_surface_iterative import LSF_TAP_OFFSETS, build_lsf_operator  # noqa: E402
+
+    dlam_pix = float(np.median(np.diff(wave_ref)))
+    taps = np.asarray(LSF_TAP_OFFSETS, dtype=np.float64)
+
+    def _convolve(spec, lsf_fwhm):
+        sigma_pix = _clean_lsf(lsf_fwhm) / 2.355 / dlam_pix
+        kernel = norm.pdf(taps[None, :], loc=0.0, scale=sigma_pix[:, None])
+        kernel /= kernel.sum(axis=1, keepdims=True)
+        operator = build_lsf_operator(wave_ref, kernel)
+        return np.asarray(spec[None, :] @ operator.T).ravel()
 
     print(f'Predicting {len(tasks)} rows with {args.n_workers} workers '
           f'(engine={args.engine}, site={args.site}) ...')
@@ -202,6 +267,13 @@ def main():
         # grid changes on either side.
         flux_pred = np.interp(wave_ref, r['wave'], r['flux_pred'])
         line_pred = np.interp(wave_ref, r['wave'], r['line_pred'])
+        # Apply this row's own real instrumental LSF -- ESO's local engine
+        # only applies its own fixed, LVM-untuned ~0.4 A kernel internally
+        # (see module Description), so without this step the ESO candidate
+        # would be compared unconvolved while the MLP candidate already has
+        # its own per-row LSF reconstruction applied.
+        flux_pred = _convolve(flux_pred, lsf_all[idx])
+        line_pred = _convolve(line_pred, lsf_all[idx])
         flux_pred_list.append(flux_pred)
         line_pred_list.append(line_pred)
         flux_obs_list.append(flux_obs_all[idx])
@@ -214,7 +286,7 @@ def main():
 
     outfile = args.outfile
     if outfile is None:
-        outfile = str(Path(args.batch_file).with_suffix('').as_posix()) + '_eso.fits'
+        outfile = str(Path(args.fits_file).with_suffix('').as_posix()) + '_eso.fits'
 
     hdul = fits.HDUList([
         fits.PrimaryHDU(),

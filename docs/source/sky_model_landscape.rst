@@ -13,7 +13,7 @@ already document the pieces that live in this repository in full.
    prose, not autodoc** — Sphinx/AutoAPI only scans this repository's own
    ``py_progs/``, so it has no way to notice changes in the other two
    locations described below. Treat this page as a snapshot, most
-   recently updated 2026-09-03, and expect it to drift; it is deliberately
+   recently updated 2026-09-04, and expect it to drift; it is deliberately
    kept to an index of *what* and *where*, not a copy of details that
    live (and change) elsewhere.
 
@@ -56,12 +56,12 @@ Three Places This Work Lives
        vendored into ``py_progs`` — see `The SkyDecomp Fork`_ below.
    * - ``~/Projects/lvm_sky2609/niv/``
      - **Not a git repo.** Working directory only.
-     - The MLP candidate's training pipeline (still here, not promoted —
-       see `Known Gaps and Promotion Candidates`_) plus
-       ``EvalCoefResiduals.py``/``PlotPredictSky.py`` and the (now also
-       copied to ``py_dev/``) prediction/evaluation scripts. Several
-       training-pipeline scripts hardcode local paths and are one-off
-       drivers, not reusable CLI tools.
+     - As of 2026-09-04, no ``.py`` scripts remain here unpromoted --
+       ``EvalCoefResiduals.py``/``PlotPredictSky.py`` (the last two) were
+       promoted to ``py_dev/`` this session (see `Known Gaps and
+       Promotion Candidates`_). Only the training-run data directories
+       (``moon_zodi_stage1*``, ``moon_zodi_stage2``, ``Overview_Plot``,
+       ``solar_activity_cache``) remain.
 
 Two informal, untracked notes at the ``lvm_ksl`` repo root go one level
 deeper than this page on two specific sub-threads: ``ivan.md``
@@ -118,20 +118,39 @@ you're testing.
 Training (occasional, only needed for a *new* checkpoint)::
 
     SelectXCF.py [py_dev] (criteria-filtered exposure subset)
-        -> ConvertForDecompose.py (reformat for lvmsky's decompose_parallel.py)
-        -> [lvmsky: decompose_parallel.py --fit-model lsf-surface-iterative-split-zodi]
-        -> stage1_wavecache.py -> stage1_train.py -> stage2_train.py
-        -> mlp_ensemble_stage2_production.pt (checkpoint)
+        -> TrainSkyModel.py [py_dev] (consolidated, resumable driver:
+             convert -> decompose -> wavecache -> train, one call)
+        -> mlp_ensemble.pt (checkpoint)
+
+``TrainSkyModel.py`` (2026-09-04) replaces the four hand-run steps this
+diagram used to list separately (``ConvertForDecompose.py`` ->
+``lvmsky``'s ``decompose_parallel.py`` -> a wavecache script -> a train
+script) with one driver that runs all four in order, skipping any stage
+whose output already exists unless ``-force`` is given, and resumable
+from any stage via ``-start_at``/``-stop_after`` (e.g. rerun just
+``decompose`` with a different ``-np``, or resume straight into
+``train`` after it finishes). ``ConvertForDecompose.py`` is now promoted
+to ``py_dev/`` too, since ``TrainSkyModel.py`` imports its ``convert()``
+function directly. The B-spline knot counts the training stage needs
+(``n_moon_knots``/``split_zodi``/``n_zodi_knots``) are inferred from the
+decomposed ``coef_names`` (``mlp_predictor.wavelengths.
+infer_spline_knots``) rather than hand-transcribed, removing a class of
+copy/paste error the old ``stage1_train.py``/``stage2_train.py`` were
+exposed to. It also patches ``plotly.basedatatypes.BaseFigure.show`` at
+import time (not in ``lvmsky``) so the two diagnostic histograms
+``mlp_predictor.data.apply_triplet_filters()`` builds during the
+``wavecache`` stage are written to ``work_dir/plots/*.html`` instead of
+popping a browser tab per run.
 
 Prediction and evaluation (the part that runs against an existing
-checkpoint; scripts marked ``[py_dev]`` are promoted and tracked, the
-rest are still ``niv/``-only)::
+checkpoint; every script below is now promoted and tracked in
+``py_dev/``)::
 
     PredictSky.py [py_dev] (single exposure)  --or--  BatchPredictSky.py [py_dev] (parallel batch)
         -> EvalFluxResiduals.py [py_dev] (method-agnostic, via sky_residual_eval.py)
-        -> EvalCoefResiduals.py (model-specific, coefficient-space)
+        -> EvalCoefResiduals.py [py_dev] (model-specific, coefficient-space)
         -> PlotSkyResiduals.py [py_dev] (moon-brightness-stacked residual spectra)
-        -> PlotPredictSky.py (per-exposure interactive diagnostic)
+        -> PlotPredictSky.py [py_dev] (per-exposure interactive diagnostic)
 
 ``BatchPredictSkyESO.py`` [py_dev] runs the *ESO* candidate through this
 same batch/evaluation interface (``EsoSkyObs.run_sky_obs`` in place of
@@ -141,8 +160,9 @@ by the same downstream tools — the multi-candidate harness design is
 confirmed working (ESO continuum found ~25-35% too bright, worse than
 the MLP, as expected for a model with no data-driven correction).
 
-The training pipeline above and the two still-``niv/``-only evaluation
-scripts remain outside git — see `Known Gaps and Promotion Candidates`_.
+The whole training-through-evaluation pipeline is now fully tracked in
+``py_dev/`` — see `Known Gaps and Promotion Candidates`_ for the
+2026-09-04 promotion of these last two scripts.
 
 
 How To: Test the MLP Candidate Against New Data
@@ -230,6 +250,69 @@ original retraining/evaluation effort); per-arm line-amplitude ratio
 (predicted/observed) medians 0.87 (B) / 0.94 (R) / 0.92 (Z), consistent
 with the ~6-12% line under-prediction already known from the original
 training-time evaluation.
+
+
+How To: Train a New Checkpoint
+--------------------------------
+
+The occasional case — you want a genuinely new ``mlp_ensemble_split_zodi``
+checkpoint, not just to test an existing one. As of 2026-09-04 this is
+one command, ``TrainSkyModel.py`` [py_dev], from a ``SelectXCF.py``
+selection through to a saved ``.pt`` file::
+
+    # 1. Curate the training corpus (same tool as the test-set case above,
+    #    just typically a much larger -n)
+    SelectXCF.py source.fits my_train_set.fits -n 1000 -seed 42
+
+    # 2. Run the whole training pipeline
+    TrainSkyModel.py my_train_set.fits -np 8
+
+This writes everything to ``my_train_set_train/`` by default (override
+with ``-work_dir``): the reformatted ``decompose_parallel.py`` input, its
+decomposition outputs, ``filtered_triplet.pkl``, any diagnostic plots
+(``plots/*.html`` — see below), and the final checkpoint at
+``my_train_set_train/mlp_ensemble.pt`` (override with ``-output``).
+
+**Same prerequisites** as the testing recipe above (``conda activate
+niv``; ``py_dev``/``py_progs`` on ``PATH``/``PYTHONPATH``).
+
+**Resuming a partial run**: every stage (``convert``, ``decompose``,
+``wavecache``, ``train``) is skipped automatically if its output already
+exists, so a failed or interrupted run can just be re-invoked unchanged.
+To deliberately redo one stage in isolation — e.g. rerun ``decompose``
+alone with a different ``-np`` before continuing — use ``-start_at``/
+``-stop_after``::
+
+    TrainSkyModel.py my_train_set.fits -start_at decompose -stop_after decompose -np 16
+    TrainSkyModel.py my_train_set.fits -start_at wavecache
+
+**Known data-volume floor**: the ``train`` stage's per-group compressor
+fit requires at least ``max(20, n_coef // 2)`` finite training rows
+*per coefficient group* (``mlp_predictor/compressor.py``'s
+``fit_group_compressor``). The largest group, ``mesospheric`` (358 OH-line
+coefficients), needs roughly 60+ rows in the training split alone —
+confirmed empirically 2026-09-04: a 26-row selection (14 train after the
+default 70/15/15 split) failed there with "not enough finite training
+rows to standardise this group." Select at least ~150-200 rows for a
+smoke test that reaches the actual ``run_ensemble``/``save_ensemble``
+call, and something on the order of the original production corpora
+(1,000-3,501 rows) for a real checkpoint.
+
+**No auto-opened browser tab**: ``mlp_predictor.data.
+apply_triplet_filters()`` (inside the ``wavecache`` stage) builds two
+Plotly diagnostic histograms and calls ``fig.show()`` on each, which pops
+a browser tab under Plotly's default non-notebook renderer.
+``TrainSkyModel.py`` patches this at import time (not in ``lvmsky``) so
+both are written to ``work_dir/plots/*.html`` instead, with a log line
+naming each file — view them locally at will rather than having them
+pushed at you.
+
+**No evaluation stage included by design** — follow up with
+``EvalCoefResiduals.py`` [py_dev] (``-model PATH triplet_pkl meta_fits``,
+where ``triplet_pkl=work_dir/filtered_triplet_augmented.pkl`` and
+``meta_fits=work_dir/<decomp_stem>_meta_only.fits``) and/or the testing
+recipe above (``BatchPredictSky.py`` + ``EvalFluxResiduals.py``) against the new
+checkpoint.
 
 
 The SkyDecomp Fork
@@ -393,23 +476,46 @@ injection into ``PredictSky.py``'s own module-level argument parser
 needed a matching fix, since it fakes a command line with the old
 spelling hardcoded.
 
-**Remaining promotion candidates**:
+**Recently promoted** (2026-09-04): the training pipeline previously
+listed below as "not a promotion candidate" was superseded rather than
+promoted as-is. ``ConvertForDecompose.py`` (byte-identical, was already
+single-dash/argparse-compliant) was copied into ``py_dev/`` since the
+new ``TrainSkyModel.py`` [py_dev] imports its ``convert()`` function
+directly; ``TrainSkyModel.py`` itself is new, consolidating what
+``stage1_wavecache.py``/``stage1_train.py``/``stage2_train.py`` (plus a
+hand-run ``decompose_parallel.py`` call) used to do across four separate
+scripts into one resumable driver — see the training diagram and `How
+To: Train a New Checkpoint`_ above. All four of those ``niv/`` originals
+were then deleted, being one-off drivers with hardcoded local paths
+(``ConvertForDecompose.py`` was reusable, but redundant with its ``py_dev``
+copy). ``-n_workers`` was renamed to ``-np`` in the same script, matching
+``py_progs/Reduce.py``/``sky_gaussfit.py``'s process-count convention
+more closely than the ``-n_workers`` spelling the 2026-09-03 promotions
+above settled on — the two conventions still coexist across ``py_dev``
+(``BatchPredictSky.py``/``BatchPredictSkyESO.py`` keep ``-n_workers``,
+``EvalFluxResiduals.py`` uses ``-nproc``), not yet reconciled.
 
-- ``EvalCoefResiduals.py`` / ``PlotPredictSky.py`` — still ``niv/``-only;
-  reasonably parameter-driven already (take a file path as their main
-  argument) and could follow the same path once there's a reason to.
+**Recently promoted** (2026-09-04, same session): ``EvalCoefResiduals.py``
+and ``PlotPredictSky.py`` — the last two ``niv/``-only scripts, both
+already reasonably parameter-driven (take a file path as their main
+argument, no hardcoded corpus paths). Same two fixes applied as the
+2026-09-03 batch: options switched from double-dash to single-dash, and
+``EvalCoefResiduals.py``'s ``--model`` placeholder default (pointed at
+one specific ``niv/`` checkpoint) removed — ``-model`` is now required,
+no default, matching ``PredictSky.py``/``BatchPredictSky.py``'s
+precedent. ``PlotPredictSky.py``'s hardcoded ``py_progs`` location is
+now CLI-overridable (``-py_progs_dir``), matching
+``EvalFluxResiduals.py``'s existing pattern. Both verified against real
+data from a completed ``TrainSkyModel.py`` run (a 511-row filtered
+corpus and its checkpoint). ``niv/`` now holds no ``.py`` scripts, only
+the training-run data directories.
+
+**Remaining candidates**:
+
 - ``lvmsky/skysub/sky_decomp/lsf_surface_iterative.py`` — candidate for
   a second, updated vendoring pass (into ``py_progs``, following PALACE's
   own precedent — see `The SkyDecomp Fork`_) if the LSF investigation
   above concludes the smoother kernel is worth the extra complexity.
-
-**Not promotion candidates** (tied to one specific exercise, not
-reusable tools): the rest of ``niv``'s training pipeline
-(``ConvertForDecompose.py``, ``stage1_wavecache.py``, ``stage1_train.py``,
-``stage2_train.py``) — ``SelectXCF.py`` itself turned out to be general
-enough to promote (see above): it's used for curating a fresh test set
-just as much as for building a training corpus, so it wasn't really
-training-pipeline-specific after all.
 
 
 See Also

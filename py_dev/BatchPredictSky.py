@@ -15,31 +15,33 @@ Synopsis:
 
 Command line usage (if any):
 
-    usage: BatchPredictSky.py [-h] -model PATH [-n N] [-rows R [R ...]]
-                              [-n_workers N] [-outfile PATH]
-                              [-lvmsky_skysub PATH]
-                              fits_file
+    usage: BatchPredictSky.py [-h] [-lvmsky_skysub PATH] [-n N]
+                              [-rows R [R ...]] [-np N] [-outfile PATH]
+                              model fits_file
 
     where
 
-    fits_file       LVM XCframe summary FITS file.
-
-    -model PATH     trained ensemble .pt archive. Required, no default --
-                    this script is meant to work against different
-                    trained models for different purposes, so the
-                    checkpoint is always named explicitly.
-
-    -n N            use the first N rows of fits_file (default: 20).
-                    Ignored if -rows is given.
+    -n N            use only the first N rows of fits_file (default: all
+                    rows). Ignored if -rows is given.
 
     -rows R [R ...]
                     explicit row indices to use instead of -n.
 
-    -n_workers N    parallel worker processes (default: 8).
+    -np N           parallel worker processes (default: 8; matches
+                    py_progs/Reduce.py and py_progs/sky_gaussfit.py's
+                    process-count convention).
 
     -outfile PATH   output FITS path for the batch WAVE/FLUX_OBS/
                     FLUX_PRED/EXPNUM arrays (default:
                     <stem>_batch_predictsky.fits).
+
+    model           trained ensemble .pt archive. Positional and
+                    required, no default -- this script is meant to
+                    work against different trained models for different
+                    purposes, so the checkpoint is always named
+                    explicitly.
+
+    fits_file       LVM XCframe summary FITS file.
 
 Description:
 
@@ -67,6 +69,13 @@ History::
                  decompose_parallel.py's clamp-to-1-thread +
                  multiprocess-across-rows pattern after a single-process,
                  BLAS-auto-threaded version only gave a ~19% speedup.
+    260904  ksl  -model switched from a required dashed option to a
+        plain positional argument (py_progs/'s convention: required
+        inputs are positional), ordered model then fits_file.
+        -n_workers renamed to -np, matching py_progs/Reduce.py/
+        sky_gaussfit.py and TrainSkyModel.py. -n's default changed
+        from 20 to all rows in fits_file (reads DRP_ALL's row count
+        up front to resolve this before dispatching to workers).
 
 '''
 
@@ -156,17 +165,26 @@ def main():
                     'WAVE/FLUX_OBS/FLUX_PRED arrays for a flux-space evaluator.',
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
-    p.add_argument('fits_file', help='LVM XCframe summary FITS file')
-    p.add_argument('-model', required=True,
-                   help='trained ensemble .pt archive (required, no default)')
-    p.add_argument('-n', type=int, default=20, help='use the first N rows')
+    p.add_argument('-n', type=int, default=None,
+                   help='use only the first N rows (default: all rows in fits_file)')
     p.add_argument('-rows', type=int, nargs='+', default=None,
                    help='explicit row indices (overrides -n)')
-    p.add_argument('-n_workers', type=int, default=8, help='parallel worker processes')
+    p.add_argument('-np', dest='n_workers', type=int, default=8,
+                   help='parallel worker processes')
     p.add_argument('-outfile', default=None, help='output FITS path')
+    p.add_argument('model', help='trained ensemble .pt archive')
+    p.add_argument('fits_file', help='LVM XCframe summary FITS file')
     args = p.parse_args()
 
-    rows = args.rows if args.rows is not None else list(range(args.n))
+    with fits.open(args.fits_file, memmap=True) as hdul:
+        n_rows_total = len(hdul['DRP_ALL'].data)
+
+    if args.rows is not None:
+        rows = args.rows
+    elif args.n is not None:
+        rows = list(range(min(args.n, n_rows_total)))
+    else:
+        rows = list(range(n_rows_total))
 
     print(f'Predicting {len(rows)} rows with {args.n_workers} workers '
           f'(model={args.model}) ...')

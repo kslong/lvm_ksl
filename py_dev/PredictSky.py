@@ -12,30 +12,17 @@ Synopsis:
 
 Command line usage (if any):
 
-    usage: PredictSky.py [-h] [-row N | -expnum N] -model PATH
-                         [-output PATH] [-lvmsky_skysub PATH]
-                         [-lvmcore_dir PATH]
-                         fits_file
+    usage: PredictSky.py [-h] [-lvmsky_skysub PATH] [-lvmcore_dir PATH]
+                         [-row N | -expnum N] [-output PATH]
+                         model fits_file
 
     where
-
-    fits_file       is the path to an LVM XCframe summary FITS file
-                    containing WAVE, FLUX, SKY_EAST, SKY_WEST, LSF
-                    extensions and a DRP_ALL table (as produced by
-                    SummarizeCframe.py in -by fiber mode).
 
     -row N          selects the exposure by row index into the file
                     (default: 0).
 
     -expnum N       selects the exposure by its DRP_ALL 'expnum' value
                     instead of a row index (overrides -row).
-
-    -model PATH     path to the trained ensemble .pt archive. Required,
-                    no default -- this script is meant to work against
-                    different trained models for different purposes, so
-                    the checkpoint is always named explicitly rather than
-                    silently falling back to whichever one was current
-                    when the script was last edited.
 
     -output PATH    output FITS path (default: PredictedSky_<expnum>.fits).
 
@@ -47,6 +34,18 @@ Command line usage (if any):
     -lvmcore_dir PATH
                     sets LVMCORE_DIR, needed by mlp_predictor.data for the
                     LCO extinction curve (default: ~/SDSS/lvmcore).
+
+    model           path to the trained ensemble .pt archive. Positional
+                    and required, no default -- this script is meant to
+                    work against different trained models for different
+                    purposes, so the checkpoint is always named explicitly
+                    rather than silently falling back to whichever one
+                    was current when the script was last edited.
+
+    fits_file       is the path to an LVM XCframe summary FITS file
+                    containing WAVE, FLUX, SKY_EAST, SKY_WEST, LSF
+                    extensions and a DRP_ALL table (as produced by
+                    SummarizeCframe.py in -by fiber mode).
 
 Description:
 
@@ -113,6 +112,13 @@ History::
         also required fixing BatchPredictSky.py's worker-init sys.argv
         injection, which fakes a command line for this module's own
         module-level _pre parser and had hardcoded the old spelling.
+    260904  ksl  -model switched from a required dashed option to a
+        plain positional argument, matching py_progs/'s convention that
+        required inputs are positional and only truly optional settings
+        get a -flag (does not affect BatchPredictSky.py's worker-init
+        sys.argv injection, which only drives the module-level _pre
+        parser above, never this main() parser). Positional order is
+        model then fits_file.
 
 '''
 
@@ -453,15 +459,14 @@ def main():
                      "exposure from an XCframe summary file."),
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
-    p.add_argument("fits_file", help="LVM XCframe summary FITS file")
     p.add_argument("-row", type=int, default=None,
                    help="Row index to select (default: 0)")
     p.add_argument("-expnum", type=int, default=None,
                    help="Select by DRP_ALL expnum instead of row index")
-    p.add_argument("-model", required=True,
-                   help="Trained ensemble .pt archive (required, no default)")
     p.add_argument("-output", default=None,
                    help="Output FITS path (default: PredictedSky_<expnum>.fits)")
+    p.add_argument("model", help="Trained ensemble .pt archive")
+    p.add_argument("fits_file", help="LVM XCframe summary FITS file")
     args = p.parse_args()
 
     row_data = read_row(args.fits_file, row=args.row, expnum=args.expnum)

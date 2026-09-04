@@ -21,7 +21,7 @@ Synopsis:
 Command line usage (if any)::
 
     usage: BatchPredictSkyESO.py [-h] [-n N] [-rows R [R ...]]
-                                 [-n_workers N] [-outfile PATH]
+                                 [-np N] [-outfile PATH]
                                  [-no_lsf_convolve]
                                  [-site {lco,paranal}] [-engine E]
                                  [-lvm_ksl_progs PATH]
@@ -38,10 +38,13 @@ Command line usage (if any)::
                     exact same test set with no ordering dependency
                     between them.
 
-    -n N            use the first N rows of fits_file (default: 20).
+    -n N            use only the first N rows of fits_file (default: all
+                    rows).
     -rows R [R ...]
                     explicit row indices (overrides -n).
-    -n_workers N    parallel worker processes (default: 8).
+    -np N           parallel worker processes (default: 8; matches
+                    py_progs/Reduce.py and py_progs/sky_gaussfit.py's
+                    process-count convention).
     -outfile PATH   output FITS path (default: <fits_file stem>_eso_lsf.fits
                     with the LSF convolution, <fits_file stem>_eso_nolsf.fits
                     with -no_lsf_convolve -- the suffix always records which
@@ -124,6 +127,11 @@ History::
         py_dev had drifted onto ordinary Python argparse habits instead
         (double-dash, hyphens) without reference to it; only
         EvalFluxResiduals.py had already followed py_progs's style.
+    260904  ksl  -n_workers renamed to -np, matching py_progs/Reduce.py/
+        sky_gaussfit.py's own process-count spelling more closely (this
+        script's -n_workers had matched BatchPredictSky.py instead, a
+        second, less-precise convention that had crept in alongside it).
+        -n's default changed from 20 to all rows in fits_file.
 
 '''
 
@@ -222,10 +230,12 @@ def main():
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
     p.add_argument('fits_file', help='XCframe-layout FITS file (WAVE/FLUX/LSF/DRP_ALL)')
-    p.add_argument('-n', type=int, default=20, help='use the first N rows of fits_file')
+    p.add_argument('-n', type=int, default=None,
+                   help='use only the first N rows of fits_file (default: all rows)')
     p.add_argument('-rows', type=int, nargs='+', default=None,
                    help='explicit row indices into fits_file (overrides -n)')
-    p.add_argument('-n_workers', type=int, default=8, help='parallel worker processes')
+    p.add_argument('-np', dest='n_workers', type=int, default=8,
+                   help='parallel worker processes')
     p.add_argument('-outfile', default=None,
                    help='output FITS path (default: <fits_file stem>_eso_lsf.fits with the '
                         'LSF convolution, <fits_file stem>_eso_nolsf.fits with -no_lsf_convolve)')
@@ -254,7 +264,12 @@ def main():
         expnum_all = np.asarray(drp['expnum'], dtype=np.int64)
 
     n_rows = len(sci_ra_all)
-    rows = args.rows if args.rows is not None else list(range(min(args.n, n_rows)))
+    if args.rows is not None:
+        rows = args.rows
+    elif args.n is not None:
+        rows = list(range(min(args.n, n_rows)))
+    else:
+        rows = list(range(n_rows))
 
     tasks = [
         (idx, int(expnum_all[idx]), float(sci_ra_all[idx]), float(sci_dec_all[idx]),

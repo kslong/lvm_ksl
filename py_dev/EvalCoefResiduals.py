@@ -17,36 +17,44 @@ Synopsis:
 
 Command line usage (if any):
 
-    usage: EvalCoefResiduals.py [-h] -model PATH [-top N]
-                                [-outfile PATH] [-lvmsky_skysub PATH]
-                                triplet_pkl meta_fits
+    usage: EvalCoefResiduals.py [-h] [-triplet_pkl PATH] [-meta_fits PATH]
+                                [-model PATH] [-top N] [-outfile PATH]
+                                [-lvmsky_skysub PATH]
+                                work_dir
 
     where
 
-    triplet_pkl     is a pickled, augmented filtered-triplet dict (as
-                    written by TrainSkyModel.py's train stage, or the
-                    older stage2_train.py / stage1_train.py -- must
+    work_dir        a TrainSkyModel.py work_dir (e.g. the directory
+                    holding its mlp_ensemble.pt). triplet_pkl, meta_fits
+                    and model are all auto-derived from this single
+                    directory -- see Notes -- since TrainSkyModel.py
+                    always writes them together; pass the three -*
+                    overrides below only to mix files from different
+                    directories (e.g. evaluate a different checkpoint
+                    against this work_dir's own triplet).
+
+    -triplet_pkl PATH
+                    pickled, augmented filtered-triplet dict (default:
+                    work_dir/filtered_triplet_augmented.pkl -- must
                     already carry ctx_names/coef_names/coef_near/
                     coef_far/coef_sci/coef_err_sci/row_index/obstime_mjd
                     and compress_train_idx/compress_val_idx/
                     compress_test_idx).
 
-    meta_fits       is the corpus's "*_meta_only.fits" file (for the
-                    expnum column; everything else needed is already in
+    -meta_fits PATH the corpus's "*_meta_only.fits" file, for the expnum
+                    column (default: the single such file found directly
+                    in work_dir; everything else needed is already in
                     triplet_pkl).
 
-    -model PATH     trained ensemble .pt archive. Required, no default --
-                    this script is meant to work against different
-                    trained models for different purposes, so the
-                    checkpoint is always named explicitly rather than
-                    silently falling back to whichever one was current
-                    when the script was last edited.
+    -model PATH     trained ensemble .pt archive (default:
+                    work_dir/mlp_ensemble.pt, if that exists -- pass
+                    explicitly to evaluate a checkpoint from elsewhere
+                    against this work_dir's triplet).
 
     -top N          print the N worst exposures by overall WRMSE
                     (default: 20).
 
-    -outfile PATH   output table path (default: <triplet_pkl stem>
-                    _residuals.fits, ECSV-readable via astropy).
+    -outfile PATH   output table path (default: work_dir/coef_residuals.fits).
 
     -lvmsky_skysub PATH
                     path to the lvmsky repo's skysub/ directory (default:
@@ -75,17 +83,33 @@ Description:
     sorted worst-first by WRMSE_ALL and written to -outfile for later
     filtering/thresholding.
 
+Notes::
+
+    work_dir's auto-derivation is a directory-local default, not the
+    kind of silent global fallback -model deliberately avoids (see
+    260904 History entry below): work_dir/mlp_ensemble.pt is *the
+    checkpoint that specific run produced*, not an arbitrary "current"
+    model that could go stale as the project moves on to new ones. The
+    -triplet_pkl/-meta_fits/-model overrides exist precisely for the
+    case that default doesn't cover -- evaluating a checkpoint from one
+    run against a triplet from another.
+
 History::
 
     260902  ksl  Coding begun.
     260904  ksl  Promoted from niv/ to py_dev/. Switched every option
         from double-dash (--model) to single-dash (-model), matching
         py_progs/'s convention. Removed the DEFAULT_MODEL placeholder
-        (pointed at one specific niv/ checkpoint) -- -model is now a
+        (pointed at one specific niv/ checkpoint) -- -model was made a
         required argument with no default, matching PredictSky.py/
         BatchPredictSky.py's precedent: this tier works against
         different trained models for different purposes, so a silent
         fallback risks going stale.
+    260904  ksl  Replaced the triplet_pkl/meta_fits positional pair (and
+        required -model) with a single work_dir positional, since
+        TrainSkyModel.py always writes all three into the same
+        directory -- auto-derived, with -triplet_pkl/-meta_fits/-model
+        left as overrides for mixing files across directories.
 
 '''
 
@@ -107,6 +131,43 @@ sys.path.insert(0, _pre_args.lvmsky_skysub)
 
 from mlp_predictor import serialization, data as mp_data, trainer as mp_trainer  # noqa: E402
 from mlp_predictor.metrics import weighted_rmse_per_row  # noqa: E402
+
+
+def resolve_inputs(work_dir, triplet_pkl=None, meta_fits=None, model=None):
+    '''
+    Fill in triplet_pkl/meta_fits/model from work_dir wherever an
+    explicit override wasn't given.
+
+    Returns
+    -------
+    (triplet_pkl, meta_fits, model) : tuple of str
+    '''
+    work_dir = Path(work_dir)
+
+    if triplet_pkl is None:
+        triplet_pkl = work_dir / 'filtered_triplet_augmented.pkl'
+        if not triplet_pkl.exists():
+            raise FileNotFoundError(
+                f'{triplet_pkl} not found -- pass -triplet_pkl explicitly '
+                f'if this work_dir uses a different layout.')
+
+    if meta_fits is None:
+        matches = sorted(work_dir.glob('*_meta_only.fits'))
+        if len(matches) != 1:
+            raise FileNotFoundError(
+                f'Expected exactly one *_meta_only.fits in {work_dir}, '
+                f'found {len(matches)} ({[m.name for m in matches]}) -- '
+                f'pass -meta_fits explicitly.')
+        meta_fits = matches[0]
+
+    if model is None:
+        model = work_dir / 'mlp_ensemble.pt'
+        if not model.exists():
+            raise FileNotFoundError(
+                f'{model} not found -- pass -model explicitly to evaluate '
+                f'a checkpoint from elsewhere against this work_dir.')
+
+    return str(triplet_pkl), str(meta_fits), str(model)
 
 
 def evaluate(triplet, meta_fits, ensemble):
@@ -210,18 +271,28 @@ def main():
         description='Per-exposure, per-group coefficient-space model-quality audit.',
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
-    p.add_argument('triplet_pkl', help='pickled augmented filtered-triplet dict')
-    p.add_argument('meta_fits', help='corpus *_meta_only.fits file (for expnum)')
-    p.add_argument('-model', required=True, help='trained ensemble .pt archive (required, no default)')
+    p.add_argument('work_dir', help='a TrainSkyModel.py work_dir')
+    p.add_argument('-triplet_pkl', default=None,
+                   help='override: pickled augmented filtered-triplet dict '
+                        '(default: work_dir/filtered_triplet_augmented.pkl)')
+    p.add_argument('-meta_fits', default=None,
+                   help='override: corpus *_meta_only.fits file '
+                        '(default: the one found in work_dir)')
+    p.add_argument('-model', default=None,
+                   help='override: trained ensemble .pt archive '
+                        '(default: work_dir/mlp_ensemble.pt)')
     p.add_argument('-top', type=int, default=20, help='print the N worst exposures')
     p.add_argument('-outfile', default=None, help='output table path')
     args = p.parse_args()
 
-    with open(args.triplet_pkl, 'rb') as fh:
+    triplet_pkl, meta_fits, model = resolve_inputs(
+        args.work_dir, args.triplet_pkl, args.meta_fits, args.model)
+
+    with open(triplet_pkl, 'rb') as fh:
         triplet = pickle.load(fh)
 
-    ensemble = serialization.load_ensemble(args.model)
-    tab = evaluate(triplet, args.meta_fits, ensemble)
+    ensemble = serialization.load_ensemble(model)
+    tab = evaluate(triplet, meta_fits, ensemble)
 
     print(f'\nWorst {args.top} exposures by MEAN_NORM_WRMSE '
           f'(per-group WRMSE normalised to that group\'s own corpus median, '
@@ -230,7 +301,7 @@ def main():
 
     outfile = args.outfile
     if outfile is None:
-        outfile = str(Path(args.triplet_pkl).with_suffix('').as_posix()) + '_residuals.fits'
+        outfile = str(Path(args.work_dir) / 'coef_residuals.fits')
     tab.write(outfile, overwrite=True)
     print(f'\nWrote {len(tab)} rows to {outfile}')
 

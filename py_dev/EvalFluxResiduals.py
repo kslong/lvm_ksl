@@ -16,20 +16,19 @@ Synopsis:
 
 Command line usage (if any):
 
-    usage: EvalFluxResiduals.py [-h] [-mask MASK] [-nproc NPROC] [-out ROOT]
+    usage: EvalFluxResiduals.py [-h] [-mask MASK] [-np N] [-out ROOT]
                                 [-plotdir DIR] [-residuals FITS]
                                 batch_fits
 
     where
 
-    batch_fits      a BatchPredictSky.py output FITS file (WAVE,
-                    FLUX_OBS, FLUX_PRED, META[row,expnum]).
-
     -mask MASK      palace_make_mask.py mask FITS (default:
                     data/sky_mask.fits, same as sky_residual_eval.py's
                     own default).
 
-    -nproc NPROC    worker processes (default: 8).
+    -np N           worker processes (default: 8; matches
+                    py_progs/Reduce.py and py_progs/sky_gaussfit.py's
+                    process-count convention).
 
     -out ROOT       output filename root (default: <batch_fits stem>).
 
@@ -47,6 +46,9 @@ Command line usage (if any):
                     supplies sky_residual_eval.py (default:
                     ~/SDSS/lvm_ksl/py_progs).
 
+    batch_fits      a BatchPredictSky.py output FITS file (WAVE,
+                    FLUX_OBS, FLUX_PRED, META[row,expnum]).
+
 Description:
 
     Thin wrapper around sky_residual_eval.analyze_sky_residuals() +
@@ -57,6 +59,11 @@ Description:
 History::
 
     260902  ksl  Coding begun.
+    260904  ksl  -nproc renamed to -np, matching py_progs/Reduce.py/
+        sky_gaussfit.py's process-count spelling. batch_fits (the only
+        positional) moved to the end of the "where" list in this
+        docstring to match where it already appears in the usage line
+        and -h output -- no code change, just doc ordering.
 
 '''
 
@@ -88,13 +95,13 @@ def main():
                     "BatchPredictSky.py output file.",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
-    p.add_argument('batch_fits', help='BatchPredictSky.py output FITS file')
     p.add_argument('-mask', default=None, help='palace_make_mask.py mask FITS')
-    p.add_argument('-nproc', type=int, default=8, help='worker processes')
+    p.add_argument('-np', dest='nproc', type=int, default=8, help='worker processes')
     p.add_argument('-out', default=None, help='output filename root')
     p.add_argument('-plotdir', default='plots_sky_resid', help='summary-plot directory')
     p.add_argument('-residuals', default=None,
                    help='EvalCoefResiduals.py output table, for expnum/split merge')
+    p.add_argument('batch_fits', help='BatchPredictSky.py output FITS file')
     args = p.parse_args()
 
     with fits.open(args.batch_fits) as hdul:

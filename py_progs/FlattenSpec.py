@@ -9,9 +9,9 @@ Synopsis:
     underlying continuum, which usually arises from stellar contributions
     to the overall spectrum rather than from the nebular gas itself.  Fits
     and subtracts a smooth continuum from a single ascii spectrum table
-    (WAVE, FLUX[, ERROR, MASK] columns, e.g. the *_ave_sum.txt files written
-    by region-averaging scripts), writing the continuum and residual back
-    into the same table.
+    (WAVE, FLUX[, ERROR, MASK] columns, e.g. the ``*_ave_sum.txt`` files
+    written by region-averaging scripts), writing the continuum and residual
+    back into the same table.
 
 Command line usage (if any):
 

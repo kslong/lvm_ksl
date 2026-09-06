@@ -14,14 +14,17 @@ what they actually check rather than listed alphabetically:
 - **Sky subtraction** — how well the subtracted sky matches what was
   actually there, both spectroscopically and fiber-by-fiber
   (``eval_sky.py``, ``plot_sky_gaussfit.py``).
-- **Flux calibration** — how well calibrated standard-star spectra agree
-  with their Gaia reference spectra (``eval_standard.py``).
+- **Flux calibration** — how well calibrated standard-star spectra
+  (STD/MOD methods) and Gaia-matched field stars (SCI method) agree
+  with their Gaia reference spectra, and how well the three
+  flux-calibration methods agree with each other (``eval_standard.py``).
 - **Sky telescope pointing** — whether a sky exposure's recorded
   position actually agrees with the sky field name it was labelled with
   (``SummarizeSkyHdr.py``, ``check_sky_positions.py``).
 - **Combined quality report** — a single-exposure HTML report combining
-  header overview, sky subtraction, and flux calibration checks
-  (``Quicklook.py``).
+  header overview, sky subtraction, and flux calibration checks, for
+  the sky-subtracted lvmSFrame (``QuickLook.py``) or, before sky
+  subtraction, the lvmCFrame (``QualCFrame.py``).
 
 
 Wavelength Calibration
@@ -391,11 +394,18 @@ Gaia BP/RP reference spectra.
 eval_standard.py — Flux Standard Calibration Plot
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-Compares the observed spectra of the Gaia-matched field stars in an
-lvmSFrame file -- identified via the ``SCI#ID``/``SCI#FIB`` header
-keywords written by the DRP's flux calibration -- against their Gaia
-XP reference spectra, providing a visual check of the flux calibration
-quality.
+Compares the flux-calibrated spectra of both the SCI method's
+Gaia-matched field stars (``SCI#ID``/``SCI#FIB`` header keywords) and
+the STD/MOD methods' dedicated standard-star fibers (``STD#ID``/
+``STD#FIB``) in an lvmSFrame file against their Gaia XP reference
+spectra, in two panels, providing a visual check of the flux
+calibration quality. This module also hosts the STD/SCI/MOD
+flux-calibration sensitivity comparison (sensitivity curves +
+band-averaged summary table, used by both this section and
+``QuickLook.py``/``QualCFrame.py``'s "Flux Calibration Comparison"
+sections) and the shared per-line diagnostic panels used by those two
+tools' sky-quality checks below, so the report tools can't drift apart
+on shared logic.
 
 **Command line usage**::
 
@@ -409,10 +419,15 @@ filename
 **Output:**
 
 One PNG file per input file, named ``standard_<basename>.png``, written
-to the current directory.  If none of the matched stars' Gaia spectra
-can be retrieved or plotted, no plot is produced; the caller (and, from
-``Quicklook.py``, the HTML report) gets a message explaining why -- e.g.
-no ``SCI#ID``/``SCI#FIB`` keywords in the header, or no network access
+to the current directory, with a top panel for the SCI field stars and
+a bottom panel for the STD/MOD standard stars. A star can be acquired
+but still excluded by the pipeline itself (e.g. a low-signal cut) even
+though it appears in the header -- those are drawn dashed and grey,
+labeled "[excluded]", and left out of the panel's axis auto-scaling. If
+none of the matched stars' Gaia spectra can be retrieved or plotted, no
+plot is produced; the caller (and, from ``QuickLook.py``, the HTML
+report) gets a message explaining why -- e.g. no ``SCI#ID``/``SCI#FIB``
+or ``STD#ID``/``STD#FIB`` keywords in the header, or no network access
 to the Gaia archive with nothing cached locally either.
 
 **Notes:**
@@ -595,18 +610,28 @@ Combined Quality Report
 Produces a single self-contained HTML report for one exposure, combining
 a header overview with the sky-subtraction and flux-calibration checks
 above, so that an exposure can be assessed at a glance without running
-several scripts separately.
+several scripts separately. ``QuickLook.py`` works on the sky-subtracted
+lvmSFrame; ``QualCFrame.py`` works on the lvmCFrame, before sky
+subtraction, so it can additionally look directly at the two independent
+SkyE/SkyW sky models and at all three flux-calibration methods' own
+sensitivity curves -- none of which survive into the lvmSFrame. Both
+tools share their flux-calibration and per-line diagnostic-panel logic
+via ``eval_standard.py`` (see above) and write their
+PNGs to the same ``figs_qual/`` directory, since every filename already
+embeds the full ``lvmSFrame-``/``lvmCFrame-`` basename and so can't
+collide.
 
-Quicklook.py — Per-Exposure HTML Quality Report
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+QuickLook.py — Per-Exposure HTML Quality Report (SFrame)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 Reads an lvmSFrame file and builds an HTML file containing header
 information plus the science/sky spectral comparison, Hα/[SII]/continuum
-images, and (if possible) the flux-calibrated standard-star comparison.
+images, the STD/SCI/MOD flux-calibration sensitivity comparison, and (if
+possible) the flux-calibrated standard-star vs. Gaia comparison.
 
 **Command line usage**::
 
-    Quicklook.py [-h] SFrame1 SFrame2 ...
+    QuickLook.py [-h] SFrame1 SFrame2 ...
 
 **Options:**
 
@@ -625,33 +650,111 @@ filename
   (``<root>`` is the SFrame filename with its directory and ``.fits``
   extension stripped). Image links in the file are relative, so the
   report and the ``figs_qual/`` directory below must be kept together.
-- ``figs_qual/`` — subdirectory holding all PNGs referenced by the
-  report (science/sky spectra from ``eval_qual_sframe``, line and
-  continuum images from ``make_images``, and the standard-star
-  comparison from ``eval_standard.qual_eval``).
+- ``figs_qual/`` — subdirectory (shared with ``QualCFrame.py``) holding
+  all PNGs referenced by the report: science/sky spectra and the
+  doublet-aware sky-subtraction-residual line panels from
+  ``eval_qual_sframe`` (via ``eval_standard.plot_diagnostic_line_panels``),
+  line and continuum images from ``make_images``, the STD/SCI/MOD
+  sensitivity comparison from ``eval_standard.eval_sensitivity_comparison``,
+  and the standard-star vs. Gaia comparison from ``eval_standard.qual_eval``.
 
 **Overview section:**
 
 The top of the report lists, from the SFrame's PRIMARY header: exposure
 number, MJD, observation time, object name, DRP version (``DRPVER``) and
-commit hash (``COMMIT``), the science and sky-telescope RA/Dec/PA (with
-angular distance from the science pointing), and the Moon/Sun RA, Dec,
-altitude, and (for the Moon) illumination at Las Campanas. Any of these
-header keywords that are missing falls back to a placeholder (``Unknown``
-for strings, ``-999.0`` for numbers) rather than raising an error, since
-not every keyword is present in every DRP version's headers.
+commit hash (``COMMIT``), the flux-calibration method applied
+(``FLUXCAL``) and sky source (``SKYSRC``), the science and sky-telescope
+RA/Dec/PA (with angular distance from the science pointing), and the
+Moon/Sun RA, Dec, altitude, and (for the Moon) illumination at Las
+Campanas. Any of these header keywords that are missing falls back to a
+placeholder (``Unknown`` for strings, ``-999.0`` for numbers) rather than
+raising an error, since not every keyword is present in every DRP
+version's headers.
 
 **Notes:**
 
-The standard-star comparison panel requires ``lvmdrp`` (via
-``eval_standard.py``); if the comparison fails -- e.g. no matched
-standards in the header, or no Gaia spectra could be retrieved -- the
-report includes the specific reason in place of the plot and continues
-without it.
+The STD/SCI/MOD sensitivity comparison and standard-star comparison
+panels require ``lvmdrp`` (via ``eval_standard.py``); if a comparison
+fails -- e.g. no matched standards in the header, or no Gaia spectra
+could be retrieved -- the report includes the specific reason in place
+of the plot and continues without it.
 
 **Example**::
 
-    Quicklook.py data/lvmSFrame-00012345.fits
+    QuickLook.py data/lvmSFrame-00012345.fits
+
+
+QualCFrame.py — Per-Exposure HTML Quality Report (CFrame)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Reads an lvmCFrame file (before sky subtraction) and builds an HTML file
+summarizing how the SCI/STD/MOD flux-calibration methods compare to each
+other and how consistent the SkyE and SkyW per-telescope sky models are
+with each other and with the observed field -- checks that can only be
+made on the CFrame, since the independent SkyE/SkyW models and the three
+methods' own sensitivity curves don't survive into the sky-subtracted
+lvmSFrame.
+
+**Command line usage**::
+
+    QualCFrame.py [-h] CFrame1 CFrame2 ...
+
+**Options:**
+
+-h
+    Print help and exit.
+
+**Arguments:**
+
+filename
+    One or more lvmCFrame FITS files to analyse. Each produces its own
+    HTML report.
+
+**Output:**
+
+- ``<root>.html`` — the report, written to the current working directory
+  (``<root>`` is the CFrame filename with its directory and ``.fits``
+  extension stripped).
+- ``figs_qual/`` — subdirectory (shared with ``QuickLook.py``) holding
+  all PNGs referenced by the report.
+
+**Report sections:**
+
+- *Overview* — header summary plus the STD/SCI/MOD numeric sensitivity
+  table, flagging the applied method and any >20% pairwise disagreement
+  (``eval_standard.sensitivity_summary_table``).
+- *Flux Calibration Comparison* — STD/SCI/MOD sensitivity curves
+  overlaid plus a ratio-to-MOD panel
+  (``eval_standard.eval_sensitivity_comparison``).
+- *Flux Calibration Input Spectra* — individual SCI#FIB/STD#FIB star
+  spectra, approximately sky-subtracted and smoothed for display,
+  overlaid with each star's own cached Gaia XP spectrum
+  (``eval_calibration_spectra``). Pipeline-excluded stars (a
+  ``FLUXCAL_*`` column all-NaN despite ``ACQ=True``) are flagged
+  distinctly and left out of the axis auto-scaling.
+- *SkyE / SkyW Consistency* — ``SKY_EAST``/``SKY_WEST`` model spectra
+  plus raw dedicated-fiber ``FLUX``, the only way to see a per-telescope
+  problem (e.g. Moon contamination) when ``SKY_EAST``/``SKY_WEST`` still
+  reflect a pre-"Option A" SCIMED broadcast (``eval_sky_comparison``).
+  Auto-flags a >3x SkyE/SkyW raw-flux ratio as possible Moon
+  contamination.
+- *Field Brightness vs Sky Estimate* — the field's 10th-90th
+  percentile/median brightness across Sci-telescope fibers, for six
+  diagnostic emission-line windows, compared against the ``SKY_EAST``/
+  ``SKY_WEST`` spectra (``eval_field_vs_sky_lines``, via the same
+  ``eval_standard.plot_diagnostic_line_panels`` ``QuickLook.py`` uses
+  for its post-subtraction residual check).
+
+**Notes:**
+
+Shares header-access, angular-distance, moon/sun-info, percentile
+y-scaling, and fiber-selection helpers with ``QuickLook.py``, and the
+flux-calibration/per-line-diagnostic logic with ``eval_standard.py``,
+rather than duplicating them.
+
+**Example**::
+
+    QualCFrame.py data/lvmCFrame-00012345.fits
 
 
 See Also
@@ -666,6 +769,7 @@ See Also
 - :doc:`api/SummarizeSkyHdr/index` - API documentation
 - :doc:`api/check_sky_positions/index` - API documentation
 - :doc:`api/QuickLook/index` - API documentation
+- :doc:`api/QualCFrame/index` - API documentation
 - :doc:`summarize` - Tools for cataloging and summarizing exposures
 - :doc:`spectral_fitting_local` - ``sky_gaussfit.py`` produces the input tables for ``plot_sky_gaussfit.py``
 - :doc:`plotting_outputs` - ``radec_plot.py``, which ``plot_sky_gaussfit.py`` now uses for its spatial rendering

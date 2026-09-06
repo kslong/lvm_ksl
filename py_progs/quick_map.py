@@ -40,6 +40,13 @@ History::
         SCIRA/SCIDEC/SCIPA, the keywords actually populated by current
         SFrame files, matching the migration already done in
         rss_combine.py.
+    260906 ksl Vectorized doit()'s non-interpolated IFU image
+        reconstruction with a scipy cKDTree nearest-fiber lookup,
+        replacing an O(n_fibers * npix**2) per-fiber full-image scan
+        (96s -> 11s per QuickLook.py run). Fiber disks are non-
+        overlapping by construction (rspaxel matches the fiber pitch),
+        so "nearest fiber center, if within rspaxel" is equivalent to
+        the old fill order.
 
 '''
 

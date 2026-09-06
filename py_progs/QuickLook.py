@@ -77,6 +77,23 @@ History::
         specific reason from eval_standard.qual_eval() when the
         comparison fails or partially fails, instead of a generic
         "could not do" message.
+    260906 ksl Ported QualCFrame.py's STD/SCI/MOD flux-calibration
+        sensitivity comparison (table + overlay/ratio plot) into
+        make_html() as a new "Flux Calibration Comparison" section.
+        Replaced eval_qual_sframe()'s three hardcoded science-zoom
+        panels with the same doublet-aware, 10-90th-percentile-band
+        line diagnostics QualCFrame.py uses (six line windows instead
+        of three), via new shared eval_standard.
+        plot_diagnostic_line_panels(). Moved SENS_BANDS/SENS_METHODS/
+        SENS_COLORS/SENS_DISAGREE_WARN, get_fluxcal_curve,
+        sensitivity_summary_table, fluxcal_comment,
+        eval_sensitivity_comparison, get_header_value/get_header_string,
+        and _col_valid into eval_standard.py so this file and
+        QualCFrame.py share one implementation instead of two that
+        could silently drift apart (see eval_standard.py's History for
+        the real header-slot bug this consolidation fixed).
+        create_overview() now also reports the FLUXCAL method applied
+        and SKYSRC. Fixed the report title's "Asssessment" typo.
 
 '''
 

@@ -63,6 +63,22 @@ Notes:
 History::
 
     260905 ksl Coding begun
+    260906 ksl Moved SENS_BANDS/SENS_METHODS/SENS_COLORS/
+        SENS_DISAGREE_WARN, get_fluxcal_curve, sensitivity_summary_
+        table, fluxcal_comment, eval_sensitivity_comparison,
+        DIAGNOSTIC_LINES/LINE_WINDOW_HALF_WIDTH, and the per-panel
+        line-diagnostic plotting logic (now plot_diagnostic_line_
+        panels) out to eval_standard.py, shared with QuickLook.py's
+        matching new sections -- see eval_standard.py's History. Output
+        directory switched from this tool's own figs_qual_cf/ to the
+        shared figs_qual/ (every filename here already embeds the full
+        lvmCFrame-<expnum> basename, so nothing collides with
+        QuickLook's lvmSFrame-<expnum> files). Replaced several
+        np.ma.median reductions (eval_calibration_spectra's sky
+        estimate, eval_sky_comparison's per-telescope medians) with
+        np.nanmedian on filled arrays -- masked-array median carries
+        much more overhead over the full ~1800-fiber array (15s -> 6s
+        per run).
 
 '''
 

@@ -4,7 +4,7 @@
 '''
                     Space Telescope Science Institute
 
-Synopsis:  
+Synopsis:
 
 Plot how well the standards that are observed in an LVM exposure
 are calibrated.
@@ -12,16 +12,39 @@ are calibrated.
 
 Command line usage (if any):
 
-    usage: eval_standard.py filename
+    usage: eval_standard.py filename [filename ...]
 
-Description:  
+Description:
+
+    For each lvmSFrame file, compares the flux-calibrated spectra of
+    the SCI-method Gaia-matched field stars and the STD/MOD-method
+    dedicated standard stars to their Gaia XP reference spectra, and
+    writes a PNG summary plot.
+
+    This module also hosts several helpers with no direct connection
+    to the Gaia comparison, factored out here so QuickLook.py and
+    QualCFrame.py share one implementation instead of two that could
+    silently drift apart: robust header access (get_header_value/
+    get_header_string), the STD/SCI/MOD flux-calibration sensitivity
+    comparison (get_fluxcal_curve, sensitivity_summary_table,
+    eval_sensitivity_comparison), and the doublet-aware, percentile-
+    band per-line diagnostic panels used by both tools'
+    sky-quality checks (plot_diagnostic_line_panels).
 
 Primary routines:
 
-    doit
+    qual_eval, compare_with_gaia -- the Gaia comparison
+    eval_sensitivity_comparison -- the STD/SCI/MOD flux-cal comparison
+    plot_diagnostic_line_panels -- shared per-line diagnostic panels
 
 Notes:
-                                       
+
+    Requires lvmdrp (for lvmdrp.core.fluxcal.GaiaXPSpectra). Gaia XP
+    spectra are cached under $LVM_MASTER_DIR/gaia_cache, the same
+    directory the DRP's own flux calibration populates during
+    reduction, so spectra it already downloaded are reused instead of
+    being re-queried from the archive.
+
 History::
 
     240318 ksl Coding begun
@@ -47,6 +70,28 @@ History::
         (outfile_or_None, message), so a caller (QuickLook.py) can show
         *why* the comparison failed or partially failed instead of a
         generic could-not-do message.
+    260906 ksl Consolidated flux-cal comparison code that QuickLook.py
+        and QualCFrame.py had each been carrying separately: moved in
+        get_header_value/get_header_string, SENS_BANDS/SENS_METHODS/
+        SENS_COLORS/SENS_DISAGREE_WARN, get_fluxcal_curve,
+        sensitivity_summary_table, fluxcal_comment, and
+        eval_sensitivity_comparison. Added plot_diagnostic_line_panels()
+        (doublet-aware, 10th/50th/90th-percentile-band per-line
+        diagnostic panels, with DIAGNOSTIC_LINES/LINE_WINDOW_HALF_WIDTH)
+        shared by QuickLook.py's post-subtraction residual check and
+        QualCFrame.py's pre-subtraction field-vs-sky check. Rewrote
+        compare_with_gaia() to cover both the SCI-method field stars
+        and the STD/MOD-method standard stars in two panels (previously
+        SCI-only), via new get_std_header_stars() and a shared
+        _plot_star_panel() helper (see also _col_valid()). Fixed a real
+        bug in the process: get_header_stars() used to return plain
+        (fiber, gaia_id) lists renumbered by loop position rather than
+        true header slot number, so a header with gapped slots (e.g.
+        SCI5/SCI10/SCI15 present but not SCI1-4/6-9/11-14) mismatched
+        stars against the wrong FLUXCAL_*SEN column and wrongly flagged
+        every star past the first gap as pipeline-excluded;
+        get_header_stars()/get_std_header_stars() now return (slot,
+        fiber, gaia_id) triples keyed by the true slot number.
 
 '''
 
@@ -178,7 +223,7 @@ def get_fluxcal_curve(hdul, ext_name):
 def sensitivity_summary_table(hdr):
     '''
     Build a small html table (as rows for xhtml.table) comparing the
-    band-averaged STD/SCI/MOD sensitivities from the *SENM{band}
+    band-averaged STD/SCI/MOD sensitivities from the ``*SENM{band}``
     header keywords, flagging the method actually applied (FLUXCAL
     header) and any missing (-999.9 sentinel) or wildly discrepant
     values.
@@ -230,10 +275,11 @@ def eval_sensitivity_comparison(filename, outroot='', fignum=1, outdir='./figs_q
     '''
     Compare the SCI, STD, and MOD flux-calibration sensitivity curves
     stored in the FLUXCAL_STD/FLUXCAL_SCI/FLUXCAL_MOD extensions.
-    fignum/outdir let callers avoid a matplotlib figure-number clash
-    with their own other plots and keep each tool's PNGs in its own
-    directory (e.g. QuickLook.py's figs_qual/ vs QualCFrame.py's
-    figs_qual_cf/).
+    fignum lets callers avoid a matplotlib figure-number clash with
+    their own other plots; outdir defaults to the figs_qual/ directory
+    both QuickLook.py and QualCFrame.py write into (every filename
+    already embeds the full lvmSFrame-/lvmCFrame- basename, so the two
+    tools' PNGs never collide there).
 
     Returns (figname, note): figname is None (with an explanatory
     note) only if *no* method has usable data at all. With just one

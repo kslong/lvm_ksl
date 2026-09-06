@@ -97,6 +97,7 @@ from astropy.time import Time
 import astropy.units as u
 from lvm_ksl import quick_map
 from lvm_ksl import eval_standard
+from lvm_ksl.eval_standard import get_header_value, get_header_string
 
 
 import re
@@ -286,6 +287,13 @@ def get_percentile_yscale(arr,low,high,min_half_range=None):
     return zmin,zmax
 
 
+# SENS_BANDS/SENS_METHODS/SENS_COLORS/SENS_DISAGREE_WARN, get_fluxcal_curve,
+# sensitivity_summary_table, fluxcal_comment, and eval_sensitivity_comparison
+# now live in eval_standard.py, shared with QualCFrame.py, so the two tools'
+# flux-cal comparison logic can't silently drift apart. get_header_value/
+# get_header_string are imported from there too (see the import block above)
+# so every existing unqualified call site below keeps working unchanged.
+
 
 def eval_qual_sframe(filename='data/lvmSFrame-00011061.fits',ymin=-0.2e-13,ymax=1e-13,xmin=3600,xmax=9500,outroot=''):
     '''
@@ -354,9 +362,9 @@ def eval_qual_sframe(filename='data/lvmSFrame-00011061.fits',ymin=-0.2e-13,ymax=
     skyw_flux_med=np.ma.median(skyw_flux,axis=0)
     skyw_sky_med=np.ma.median(skyw_sky,axis=0)
 
-    fig=plt.figure(1,(8,12))
+    fig=plt.figure(1,(12,14))
     plt.clf()
-    gs= GridSpec(3, 3, figure=fig)
+    gs= GridSpec(4, 3, figure=fig)
 
     ax1 = fig.add_subplot(gs[0, :])
     ax1.plot(wav,sci_flux_med,label='Sky-Subtracted Science',zorder=2)
@@ -380,58 +388,18 @@ def eval_qual_sframe(filename='data/lvmSFrame-00011061.fits',ymin=-0.2e-13,ymax=
     ax2.legend()
 
 
-    ax3 = fig.add_subplot(gs[2, 0])
-    wmin=4650
-    wmax=5100
-
-    xwav,xsci_flux_med=limit_spectrum(wav,sci_flux_med,wmin,wmax)
-    xmedian=np.ma.median(xsci_flux_med)
-    xsci_flux_med-=xmedian
-    ax3.plot(xwav,xsci_flux_med,label='Sky-Subtracted Science',zorder=2)
-
-    ax3.plot([wmin,wmax],[5.9e-15,5.9e-15],':r',label=r'$Med \pm$ MW 5 $\sigma$' )
-    ax3.plot([wmin,wmax],[-5.9e-15,-5.9e-15],':r')
-    ax3.set_xlim(wmin,wmax)
-    ymin,ymax=get_yscale(xsci_flux_med,-2e-14,2e-14)
-    ax3.set_ylim(ymin,ymax)
-
-
-    ax4 = fig.add_subplot(gs[2, 1])
-    wmin=6250
-    wmax=6800
-    wmin=6500
-    wmax=6800
-
-    xwav,xsci_flux_med=limit_spectrum(wav,sci_flux_med,wmin,wmax)
-    xmedian=np.ma.median(xsci_flux_med)
-    xsci_flux_med-=xmedian
-    ax4.plot(xwav,xsci_flux_med,label=r'H$\alpha$/[NII]/[SII]',zorder=2)
-
-    ax4.plot([wmin,wmax],[5.9e-15,5.9e-15],':r',label=r'$Med \pm$ MW 5 $\sigma$' )
-    ax4.plot([wmin,wmax],[-5.9e-15,-5.9e-15],':r')
-    ax4.set_xlim(wmin,wmax)
-    ymin,ymax=get_yscale(xsci_flux_med,-2e-14,2e-14)
-    ax4.set_ylim(ymin,ymax)
-    # ax4.legend()
-    
-
-    ax5 = fig.add_subplot(gs[2, 2])
-    wmin=9450
-    wmax=9600
-    wmin=9480
-    wmax=9586
-    xwav,xsci_flux_med=limit_spectrum(wav,sci_flux_med,wmin,wmax)
-    xmedian=np.ma.median(xsci_flux_med)
-    xsci_flux_med-=xmedian
-    
-
-    ax5.plot(xwav,xsci_flux_med,label='Sky-Subtracted Science',zorder=2)
-
-    ax5.plot([wmin,wmax],[5.9e-15,5.9e-15],':r',label=r'$Med \pm$ MW 5 $\sigma$' )
-    ax5.plot([wmin,wmax],[-5.9e-15,-5.9e-15],':r')
-    ax5.set_xlim(wmin,wmax)
-    ymin,ymax=get_yscale(xsci_flux_med,-2e-14,2e-14)
-    ax5.set_ylim(ymin,ymax)
+    # doublet-aware sky-subtraction residual check: for each diagnostic line
+    # window, the 10-90%ile band (not just the population median) of the
+    # sky-subtracted Sci-fiber FLUX across all Sci fibers, which should
+    # hover near zero within the +/-MW_5SIGMA reference lines if the sky
+    # subtraction is clean. Shares its line-window definitions and per-panel
+    # plotting with QualCFrame.py's eval_field_vs_sky_lines (eval_standard.
+    # plot_diagnostic_line_panels) -- that CFrame check instead compares raw
+    # (pre-subtraction) field brightness to the SKY_EAST/SKY_WEST models,
+    # which don't exist as SFrame extensions once the sky is subtracted.
+    line_axs = [fig.add_subplot(gs[2 + i // 3, i % 3]) for i in range(6)]
+    eval_standard.plot_diagnostic_line_panels(line_axs, wav, sci_flux, refline=MW_5SIGMA)
+    line_axs[0].legend(fontsize=8, loc='best')
 
     plt.tight_layout()
 
@@ -554,53 +522,8 @@ def eval_qual_sframe(filename='data/lvmSFrame-00011061.fits',ymin=-0.2e-13,ymax=
                  
 
 
-def get_header_value(header, key, default_value=-999.0, verbose=False):
-    '''
-    Robust way to get a header value if it exists
-    '''
-
-    try:
-        value = header[key]
-        if value==None:
-            value=default_value
-        elif isinstance(value, str):
-            try:
-                value = float(value)  # or int(value) if it's an integer
-            except ValueError as e:
-                if verbose:
-                    print(f"Failed to convert '{value}' to a number for key '{key}': {e}")
-                value = default_value
-    except KeyError as e:
-        if verbose:
-            print(f"Key '{key}' not found in header: {e}")
-        value = default_value
-    return value
-
-
-
-def get_header_string(header, key, default_string='Unknown', verbose=False):
-    '''
-    Robust way to get a header value if it exists
-    '''
-
-    try:
-        value = header[key]
-        if value==None:
-            value=default_string
-        elif isinstance(value, str):
-            if value=='':
-                return default_string
-            return value
-        else:
-            if verbose:
-                print(f"Key '{key}' found, but not string")
-            return default_string
-    except KeyError as e:
-        if verbose:
-            print(f"Key '{key}' not found in header: {e}")
-        value = default_string
-    return value
-
+# get_header_value/get_header_string now live in eval_standard.py (imported
+# above), shared with QualCFrame.py.
 
 
 def create_overview(filename='data/lvmSFrame-00011061.fits'):
@@ -620,6 +543,8 @@ def create_overview(filename='data/lvmSFrame-00011061.fits'):
     obs_time=get_header_string(hdr,'OBSTIME')
     drp_version=get_header_string(hdr,'DRPVER')
     drp_commit=get_header_string(hdr,'COMMIT')
+    fluxcal_method=get_header_string(hdr,'FLUXCAL','Unknown')
+    sky_src=get_header_string(hdr,'SKYSRC','Unknown')
     ra=get_header_value(hdr,'SCIRA')
     dec=get_header_value(hdr,'SCIDEC')
     pa=get_header_value(hdr,'SCIPA',default_value=0)
@@ -651,6 +576,8 @@ def create_overview(filename='data/lvmSFrame-00011061.fits'):
     xlist.append('Object.  : %s' % object_name)
     xlist.append('DRP Version : %s' % drp_version)
     xlist.append('DRP Commit  : %s' % drp_commit)
+    xlist.append('Flux-cal method applied : %s' % fluxcal_method)
+    xlist.append('Sky source (flux-cal)   : %s' % sky_src)
     xlist.append('Science RA  Dec. PA : %8.2f %8.2f %8.2f' % (ra,dec,pa))
     xlist.append('SkyE    RA  Dec. PA (ang distance): %8.2f %8.2f %8.2f (%8.2f)' % (ra_sky_e,dec_sky_e,pa_sky_e,distance_sky_e))
     xlist.append('SkyW    RA  Dec. PA (ang distance): %8.2f %8.2f %8.2f (%8.2f)' % (ra_sky_w,dec_sky_w,pa_sky_w,distance_sky_w))
@@ -795,13 +722,11 @@ def make_html(filename='data/lvmSFrame-00011061.fits', outroot=''):
         words=filename.split('/')
         outroot=words[-1].replace('.fits','')
 
-    string=xhtml.begin('LVMDRP Quality Asssessment for %s' % filename)
+    string=xhtml.begin('LVMDRP SFrame Quality Assessment for %s' % filename)
     string+=xhtml.hline()
-    
+
     overview_list=create_overview(filename)
     string+=xhtml.add_list(overview_list)
-
-
 
     string+=xhtml.hline()
     string+=xhtml.h2('Science Spectrum')
@@ -826,6 +751,21 @@ def make_html(filename='data/lvmSFrame-00011061.fits', outroot=''):
     string+=xhtml.image('%s' % (ha_plot),width=900,height=900)
     string+=xhtml.image('%s' % (s2_plot),width=900,height=900)
     string+=xhtml.image('%s' % (cont_plot),width=900,height=900)
+
+    string+=xhtml.hline()
+    string+=xhtml.h2('Flux Calibration Comparison (STD / SCI / MOD)')
+
+    hdr = fits.getheader(filename, 0)
+    string+=xhtml.table(eval_standard.sensitivity_summary_table(hdr))
+    string+=xhtml.paragraph(eval_standard.fluxcal_comment)
+
+    fluxcal_figname,fluxcal_note = eval_standard.eval_sensitivity_comparison(filename, outroot, fignum=3, outdir='./figs_qual/')
+    if fluxcal_figname:
+        string+=xhtml.image(fluxcal_figname,width=900,height=900)
+        if fluxcal_note:
+            string+=xhtml.paragraph('Note: %s' % fluxcal_note)
+    else:
+        string+=xhtml.paragraph('Could not compare flux-cal methods: %s' % fluxcal_note)
 
     string+=xhtml.hline()
 

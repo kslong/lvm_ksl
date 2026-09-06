@@ -53,6 +53,7 @@ from astropy.wcs.utils import fit_wcs_from_points
 import matplotlib.pyplot as plt
 from astropy.wcs import WCS
 from scipy.interpolate import griddata
+from scipy.spatial import cKDTree
 from lvm_ksl import fib2radec
 from astropy.coordinates import SkyCoord
 
@@ -261,9 +262,19 @@ def doit(filename,out_label='',wrange=[6560,6566],
     # print('Making image')
     ima=np.full((npix,npix),np.nan)
     if not interpolate:
-        for i in range(len(x)):
-            sel=(xima-x[i])**2+(yima-y[i])**2<=rspaxel**2
-            ima[sel]=flux[i]
+        # Nearest-fiber lookup via a KDTree instead of, for every one of the
+        # ~1800 fibers, scanning the entire 1800x1800-pixel image for pixels
+        # within its disk (an O(n_fibers * npix**2) loop that dominated this
+        # routine's runtime, ~29s/call). Fiber disks are non-overlapping by
+        # construction (rspaxel matches the fiber pitch), so "nearest fiber
+        # center, if within rspaxel" is equivalent to the old fill order.
+        tree = cKDTree(np.column_stack([x, y]))
+        query_pts = np.column_stack([xima.ravel(), yima.ravel()])
+        dist, idx = tree.query(query_pts, k=1)
+        within = dist <= rspaxel
+        flat = np.full(npix*npix, np.nan)
+        flat[within] = flux[idx[within]]
+        ima = flat.reshape(npix, npix)
     else:
         ima = griddata((x,y), flux, (xima,yima), method='linear')
                 

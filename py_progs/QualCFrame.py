@@ -48,10 +48,12 @@ Primary routines:
 Notes:
 
     The html file is created in the current working directory
-    and the various plots are in a subdirectory figs_qual_cf
-    (kept separate from QuickLook.py's figs_qual, so both tools
-    can be run in the same directory on a matching CFrame/SFrame
-    pair without clobbering each other's images).
+    and the various plots are in a subdirectory figs_qual, shared
+    with QuickLook.py -- every filename here embeds the full
+    lvmCFrame-<expnum> basename, which never collides with
+    QuickLook's lvmSFrame-<expnum> names, so both tools can be run
+    in the same directory on a matching CFrame/SFrame pair without
+    clobbering each other's images.
 
     Shared helpers (header access, angular distance, moon/sun
     info, percentile-based y-scaling, fiber selection) are
@@ -91,181 +93,10 @@ def _usage_from_doc(doc):
     return doc[:m.start()].rstrip() + '\n' if m else doc
 
 
-SENS_BANDS = ('B', 'R', 'Z')
-SENS_METHODS = ('STD', 'SCI', 'MOD')
-SENS_COLORS = {'STD': 'tab:blue', 'SCI': 'tab:orange', 'MOD': 'tab:green'}
-SENS_DISAGREE_WARN = 0.2  # fractional spread across methods that triggers a WARN note
-
-
-def get_fluxcal_curve(hdul, ext_name):
-    '''
-    Read the mean/rms sensitivity curve from a FLUXCAL_STD/FLUXCAL_SCI/
-    FLUXCAL_MOD extension of an lvmCFrame.
-
-    Returns (wave, mean, rms, valid) where valid is False if the
-    extension is missing or the mean curve is entirely non-finite/zero
-    -- i.e. that method produced no usable calibration for this exposure.
-    '''
-    try:
-        wave = hdul['WAVE'].data
-        table = hdul[ext_name].data
-        mean = np.asarray(table['mean'], dtype=float)
-        rms = np.asarray(table['rms'], dtype=float)
-    except KeyError:
-        return None, None, None, False
-
-    finite = np.isfinite(mean) & (mean != 0)
-    valid = np.sum(finite) > 0.5 * len(mean)
-    return wave, mean, rms, valid
-
-
-def sensitivity_summary_table(hdr):
-    '''
-    Build a small html table (as rows for xhtml.table) comparing the
-    band-averaged STD/SCI/MOD sensitivities from the *SENM{band}
-    header keywords, flagging the method actually applied (FLUXCAL
-    header) and any missing (-999.9 sentinel) or wildly discrepant
-    values.
-    '''
-    method = QuickLook.get_header_string(hdr, 'FLUXCAL', 'Unknown')
-    rows = [['Band', 'STD', 'SCI', 'MOD', 'Note']]
-
-    for band in SENS_BANDS:
-        vals = {name: QuickLook.get_header_value(hdr, '%sSENM%s' % (name, band))
-                for name in SENS_METHODS}
-        ok = {name: (vals[name] is not None and vals[name] > -900 and vals[name] > 0)
-              for name in SENS_METHODS}
-        good_vals = [vals[name] for name in SENS_METHODS if ok[name]]
-
-        note = ''
-        if len(good_vals) >= 2:
-            spread = (max(good_vals) - min(good_vals)) / np.median(good_vals)
-            if spread > SENS_DISAGREE_WARN:
-                note = 'WARN: methods disagree by %.0f%%' % (spread * 100)
-        note = (note + (', ' if note else '') + 'chosen: %s' % method)
-
-        def fmt(name):
-            if not ok[name]:
-                return 'FAILED'
-            marker = ' *' if name == method else ''
-            return '%.3e%s' % (vals[name], marker)
-
-        rows.append([band, fmt('STD'), fmt('SCI'), fmt('MOD'), note])
-
-    return rows
-
-
-fluxcal_comment = '''
-Comparison of the three possible flux-calibration methods (STD=dedicated standard-star fibers,
-SCI=Gaia-matched field stars in the science IFU, MOD=stellar atmosphere models fit to the standard
-stars), read directly from the FLUXCAL_STD/FLUXCAL_SCI/FLUXCAL_MOD extensions already present in this
-lvmCFrame -- these are computed independently for all three methods regardless of which one ends up
-applied, so no external network access is needed for this comparison. The top panel overlays whichever
-methods produced usable sensitivity curves for this exposure; the thicker line marks the method
-actually applied to the delivered FLUX (see the FLUXCAL header, and the table above). The bottom panel
-shows the ratio of each available method to MOD (or to whichever pair is available if MOD failed), to
-reveal wavelength-dependent disagreement rather than just an overall offset. A '*' in the table above
-marks the applied method; FAILED marks a method with no usable data for this exposure/band.
-'''
-
-
-def eval_sensitivity_comparison(filename, outroot=''):
-    '''
-    Compare the SCI, STD, and MOD flux-calibration sensitivity curves
-    stored in the lvmCFrame's FLUXCAL_STD/FLUXCAL_SCI/FLUXCAL_MOD
-    extensions.
-
-    Returns (figname, note): figname is None (with an explanatory
-    note) only if *no* method has usable data at all. With just one
-    valid method, the sensitivity curve is still plotted (no ratio
-    panel, since there's nothing to compare it to).
-    '''
-    try:
-        x = fits.open(filename)
-    except Exception as e:
-        return None, 'Could not open %s (%s)' % (filename, e)
-
-    hdr = x['PRIMARY'].header
-    method = QuickLook.get_header_string(hdr, 'FLUXCAL', 'Unknown')
-
-    curves = {}
-    for name in SENS_METHODS:
-        wave, mean, rms, valid = get_fluxcal_curve(x, 'FLUXCAL_%s' % name)
-        if valid:
-            curves[name] = (wave, mean, rms)
-
-    if len(curves) == 0:
-        return None, 'No flux-cal method has usable data for this exposure'
-
-    have_comparison = len(curves) >= 2
-    if have_comparison:
-        fig = plt.figure(1, (9, 9))
-        plt.clf()
-        gs = GridSpec(2, 1, figure=fig, height_ratios=[2, 1])
-        ax1 = fig.add_subplot(gs[0])
-    else:
-        fig = plt.figure(1, (9, 6))
-        plt.clf()
-        ax1 = fig.add_subplot(1, 1, 1)
-
-    for name, (wave, mean, rms) in curves.items():
-        lw = 2.5 if name == method else 1.2
-        label = '%s%s' % (name, ' (applied)' if name == method else '')
-        ax1.semilogy(wave, mean, label=label, color=SENS_COLORS[name], lw=lw)
-    ax1.set_xlim(3600, 9600)
-    ax1.set_ylabel('Sensitivity [erg / (ct cm2)]')
-    ax1.legend()
-    ax1.set_title('Flux calibration comparison, %s' % os.path.basename(filename))
-    if not have_comparison:
-        ax1.set_xlabel('Wavelength [Angstrom]')
-
-    note = ''
-    if have_comparison:
-        ax2 = fig.add_subplot(gs[1], sharex=ax1)
-        ratios = []
-        if 'MOD' in curves:
-            _, mean_mod, _ = curves['MOD']
-            for name in ('SCI', 'STD'):
-                if name in curves:
-                    wave, mean, _ = curves[name]
-                    ratio = mean / mean_mod
-                    ax2.plot(wave, ratio, label='%s / MOD' % name, color=SENS_COLORS[name])
-                    ratios.append(ratio)
-        if not ratios:
-            names = list(curves.keys())
-            wave_a, mean_a, _ = curves[names[0]]
-            _, mean_b, _ = curves[names[1]]
-            ratio = mean_a / mean_b
-            ax2.plot(wave_a, ratio, label='%s / %s' % (names[0], names[1]), color='k')
-            ratios.append(ratio)
-        ax2.axhline(1.0, ls=':', color='0.4')
-        # auto-scale around 1.0, never zooming in tighter than +/-0.5 (the normal-
-        # agreement case) but widening for a real large disagreement (like SCI vs
-        # MOD/STD above) instead of silently clipping it off-screen
-        all_ratios = np.concatenate(ratios)
-        lo, hi = np.nanpercentile(all_ratios, [1, 99])
-        ax2.set_ylim(min(lo, 0.5), max(hi, 1.5))
-        ax2.set_xlim(3600, 9600)
-        ax2.set_xlabel('Wavelength [Angstrom]')
-        ax2.set_ylabel('Ratio')
-        ax2.legend()
-    else:
-        note = ('Only %s has usable data for this exposure -- no comparison possible.'
-                % list(curves.keys())[0])
-
-    plt.tight_layout()
-
-    location = './figs_qual_cf/'
-    if not os.path.isdir(location):
-        os.mkdir(location)
-    if outroot == '':
-        outroot = os.path.basename(filename).replace('.fits', '')
-
-    figname = '%s/%s_fluxcal.png' % (location, outroot)
-    plt.savefig(figname)
-    plt.close(fig)
-
-    return figname, note
+# SENS_BANDS/SENS_METHODS/SENS_COLORS/SENS_DISAGREE_WARN, get_fluxcal_curve,
+# sensitivity_summary_table, fluxcal_comment, eval_sensitivity_comparison, and
+# _col_valid now live in eval_standard.py, shared with QuickLook.py, so the
+# two tools' flux-cal comparison logic can't silently drift apart.
 
 
 def get_sci_calibration_fibers(hdr, max_n=15):
@@ -390,10 +221,7 @@ def eval_calibration_spectra(filename, outroot=''):
     std_sen = x['FLUXCAL_STD'].data if 'FLUXCAL_STD' in x else None
     mod_sen = x['FLUXCAL_MOD'].data if 'FLUXCAL_MOD' in x else None
 
-    def _col_valid(table, colname):
-        if table is None or colname not in table.columns.names:
-            return None
-        return np.isfinite(np.asarray(table[colname])).any()
+    _col_valid = eval_standard._col_valid
 
     def _spectrum(fiberid):
         return np.ma.masked_array(flux[fiberid - 1], mask[fiberid - 1])
@@ -416,7 +244,10 @@ def eval_calibration_spectra(filename, outroot=''):
     sci_fibers_tab = QuickLook.scifib(xtab, select='science', telescope='Sci')
     sci_sky_mask = mask[sci_fibers_tab['fiberid'] - 1]
     sci_sky_flux = np.ma.masked_array(flux[sci_fibers_tab['fiberid'] - 1], sci_sky_mask)
-    approx_sky = np.ma.median(sci_sky_flux, axis=0)
+    # np.nanmedian on a filled array instead of np.ma.median: numpy's masked-
+    # array sort/median carries much more overhead than a plain array median,
+    # and this reduction runs over the full ~1800-fiber x ~7000-pixel array
+    approx_sky = np.nanmedian(np.ma.filled(sci_sky_flux, np.nan), axis=0)
 
     def _sky_subtracted(fiberid):
         return _spectrum(fiberid) - approx_sky
@@ -508,7 +339,7 @@ def eval_calibration_spectra(filename, outroot=''):
 
     plt.tight_layout()
 
-    location = './figs_qual_cf/'
+    location = './figs_qual/'
     if not os.path.isdir(location):
         os.mkdir(location)
     if outroot == '':
@@ -580,8 +411,8 @@ def eval_sky_comparison(filename, outroot=''):
     sky_e = np.ma.masked_array(x['SKY_EAST'].data[sci_fibers['fiberid'] - 1], mask)
     sky_w = np.ma.masked_array(x['SKY_WEST'].data[sci_fibers['fiberid'] - 1], mask)
 
-    sky_e_med = np.ma.median(sky_e, axis=0)
-    sky_w_med = np.ma.median(sky_w, axis=0)
+    sky_e_med = np.nanmedian(np.ma.filled(sky_e, np.nan), axis=0)
+    sky_w_med = np.nanmedian(np.ma.filled(sky_w, np.nan), axis=0)
 
     # Raw FLUX at the actual dedicated SkyE/SkyW telescope fibers -- what
     # those telescopes really observed, independent of whatever combine_skies
@@ -596,8 +427,8 @@ def eval_sky_comparison(filename, outroot=''):
     skyw_mask = x['MASK'].data[skyw_fibers['fiberid'] - 1].astype(bool)
     skye_flux = np.ma.masked_array(x['FLUX'].data[skye_fibers['fiberid'] - 1], skye_mask)
     skyw_flux = np.ma.masked_array(x['FLUX'].data[skyw_fibers['fiberid'] - 1], skyw_mask)
-    skye_flux_med = np.ma.median(skye_flux, axis=0)
-    skyw_flux_med = np.ma.median(skyw_flux, axis=0)
+    skye_flux_med = np.nanmedian(np.ma.filled(skye_flux, np.nan), axis=0)
+    skyw_flux_med = np.nanmedian(np.ma.filled(skyw_flux, np.nan), axis=0)
 
     fig = plt.figure(2, (8, 12))
     plt.clf()
@@ -636,7 +467,7 @@ def eval_sky_comparison(filename, outroot=''):
     for i, (wmin, wmax) in enumerate(windows):
         ax = fig.add_subplot(gs[2, i])
         xwav, xdelta = QuickLook.limit_spectrum(wav, delta, wmin, wmax)
-        xdelta = xdelta - np.ma.median(xdelta)
+        xdelta = xdelta - np.nanmedian(xdelta)
         ax.plot(xwav, xdelta)
         ax.plot([wmin, wmax], [QuickLook.MW_5SIGMA] * 2, ':r')
         ax.plot([wmin, wmax], [-QuickLook.MW_5SIGMA] * 2, ':r')
@@ -646,7 +477,7 @@ def eval_sky_comparison(filename, outroot=''):
 
     plt.tight_layout()
 
-    location = './figs_qual_cf/'
+    location = './figs_qual/'
     if not os.path.isdir(location):
         os.mkdir(location)
     if outroot == '':
@@ -668,9 +499,9 @@ def eval_sky_comparison(filename, outroot=''):
     # caught issue #250's original motivating case (SkyW 4.5 deg from a
     # near-full Moon) even on a file where the models above show no
     # disagreement at all
-    e_level = np.ma.median(skye_flux_med)
-    w_level = np.ma.median(skyw_flux_med)
-    if e_level is not np.ma.masked and w_level is not np.ma.masked and min(e_level, w_level) > 0:
+    e_level = np.nanmedian(skye_flux_med)
+    w_level = np.nanmedian(skyw_flux_med)
+    if np.isfinite(e_level) and np.isfinite(w_level) and min(e_level, w_level) > 0:
         raw_ratio = max(e_level, w_level) / min(e_level, w_level)
         if raw_ratio > 3:
             brighter = 'SkyE' if e_level > w_level else 'SkyW'
@@ -681,20 +512,9 @@ def eval_sky_comparison(filename, outroot=''):
     return figname, ' '.join(notes)
 
 
-DIAGNOSTIC_LINES = [
-    # (label, center wavelength, y-scale sub-window or None to use the full plotted range)
-    ('[OII]3727', 3727.0, None),
-    ('Hbeta4861', 4861.0, None),
-    ('[OIII]4959,5007', (4959.0 + 5007.0) / 2, None),
-    ('Halpha6563', 6563.0, None),
-    ('[SII]6717,6731', (6717.0 + 6731.0) / 2, None),
-    # this window is dominated by strong OH airglow (see the sharp peaks
-    # outside 9525-9540 in the plot) that would otherwise blow out the
-    # y-scale -- base it on just the actual [SIII] line region instead,
-    # while still showing the full +/-50A window on the x-axis
-    ('[SIII]9533', 9533.1, (9525.0, 9540.0)),
-]
-LINE_WINDOW_HALF_WIDTH = 50.0  # Angstrom, +/- around each line center -- wide enough to show line + local continuum
+# DIAGNOSTIC_LINES/LINE_WINDOW_HALF_WIDTH and the per-panel plotting logic now
+# live in eval_standard.plot_diagnostic_line_panels, shared with QuickLook.py's
+# analogous post-sky-subtraction residual check.
 
 field_vs_sky_comment = '''
 For each diagnostic emission-line window ([OII], Hbeta, the [OIII] doublet, Halpha, and the [SII]
@@ -753,51 +573,22 @@ def eval_field_vs_sky_lines(filename, outroot=''):
     nrows, ncols = 2, 3
     fig, axs = plt.subplots(nrows, ncols, figsize=(16, 9))
     axs = axs.flatten()
-    for extra_ax in axs[len(DIAGNOSTIC_LINES):]:
+    for extra_ax in axs[len(eval_standard.DIAGNOSTIC_LINES):]:
         extra_ax.set_visible(False)
 
-    for i, (ax, (name, wl, yscale_window)) in enumerate(zip(axs, DIAGNOSTIC_LINES)):
-        wmin, wmax = wl - LINE_WINDOW_HALF_WIDTH, wl + LINE_WINDOW_HALF_WIDTH
-        idx = (wav > wmin) & (wav < wmax)
-        if idx.sum() == 0:
-            ax.set_title('%s\n(out of range)' % name)
-            continue
-
-        xwav = wav[idx]
-        filled = np.ma.filled(flux[:, idx], np.nan)
-        p10 = np.nanpercentile(filled, 10, axis=0)
-        p50 = np.nanpercentile(filled, 50, axis=0)
-        p90 = np.nanpercentile(filled, 90, axis=0)
-
-        sky_e_spec = np.ma.filled(np.ma.median(sky_e[:, idx], axis=0), np.nan)
-        sky_w_spec = np.ma.filled(np.ma.median(sky_w[:, idx], axis=0), np.nan)
-
-        ax.fill_between(xwav, p10, p90, color='0.85', label='field 10-90%ile' if i == 0 else None)
-        ax.plot(xwav, p50, color='k', lw=1.5, label='field median' if i == 0 else None)
-        ax.plot(xwav, sky_e_spec, color='tab:blue', lw=1.2,
-               label='SKY_EAST (%s)' % e_tag if i == 0 else None)
-        ax.plot(xwav, sky_w_spec, color='tab:orange', lw=1.2,
-               label='SKY_WEST (%s)' % w_tag if i == 0 else None)
-
-        ax.set_xlim(wmin, wmax)
-        if yscale_window is not None:
-            y_wmin, y_wmax = yscale_window
-            yidx = (xwav >= y_wmin) & (xwav <= y_wmax)
-            combined = np.concatenate([p10[yidx], p90[yidx], sky_e_spec[yidx], sky_w_spec[yidx]])
-            combined = combined[np.isfinite(combined)]
-            if len(combined) > 0:
-                ax.set_ylim(min(0, np.nanmin(combined)), np.nanmax(combined) * 1.15)
-        ax.set_title('%s (%.0f A)' % (name, wl))
-        if i % ncols == 0:
-            ax.set_ylabel('FLUX')
-        if i >= len(DIAGNOSTIC_LINES) - ncols:
-            ax.set_xlabel('Wavelength [Angstrom]')
+    sky_e_med = np.nanmedian(np.ma.filled(sky_e, np.nan), axis=0)
+    sky_w_med = np.nanmedian(np.ma.filled(sky_w, np.nan), axis=0)
+    overlays = [
+        ('SKY_EAST (%s)' % e_tag, sky_e_med, 'tab:blue'),
+        ('SKY_WEST (%s)' % w_tag, sky_w_med, 'tab:orange'),
+    ]
+    eval_standard.plot_diagnostic_line_panels(axs, wav, flux, overlays=overlays)
 
     axs[0].legend(fontsize=8, loc='best')
     fig.suptitle('Field brightness (10-90%%ile) vs sky estimate, %s' % os.path.basename(filename))
     plt.tight_layout()
 
-    location = './figs_qual_cf/'
+    location = './figs_qual/'
     if not os.path.isdir(location):
         os.mkdir(location)
     if outroot == '':
@@ -882,10 +673,10 @@ def make_html(filename, outroot=''):
     string += xhtml.h2('Flux Calibration Comparison (STD / SCI / MOD)')
 
     hdr = fits.getheader(filename, 0)
-    string += xhtml.table(sensitivity_summary_table(hdr))
-    string += xhtml.paragraph(fluxcal_comment)
+    string += xhtml.table(eval_standard.sensitivity_summary_table(hdr))
+    string += xhtml.paragraph(eval_standard.fluxcal_comment)
 
-    figname, note = eval_sensitivity_comparison(filename, outroot)
+    figname, note = eval_standard.eval_sensitivity_comparison(filename, outroot, fignum=1, outdir='./figs_qual/')
     if figname:
         string += xhtml.image(figname, width=900, height=900)
         if note:

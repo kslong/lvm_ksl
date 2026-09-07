@@ -47,6 +47,8 @@ History::
         (outfile_or_None, message), so a caller (QuickLook.py) can show
         *why* the comparison failed or partially failed instead of a
         generic could-not-do message.
+    260907 ksl Updated a docstring reference for QuickLook.py's rename
+        to QualSFrame.py -- no functional change.
 
 '''
 
@@ -232,7 +234,7 @@ def eval_sensitivity_comparison(filename, outroot='', fignum=1, outdir='./figs_q
     stored in the FLUXCAL_STD/FLUXCAL_SCI/FLUXCAL_MOD extensions.
     fignum/outdir let callers avoid a matplotlib figure-number clash
     with their own other plots and keep each tool's PNGs in its own
-    directory (e.g. QuickLook.py's figs_qual/ vs QualCFrame.py's
+    directory (e.g. QualSFrame.py's figs_qual/ vs QualCFrame.py's
     figs_qual_cf/).
 
     Returns (figname, note): figname is None (with an explanatory

@@ -13,7 +13,7 @@ of an exposure.
 
 Command line usage (if any):
 
-    usage: QuickLook.py [-h] SFrame1 SFrame2 ...
+    usage: QualSFrame.py [-h] SFrame1 SFrame2 ...
 
     where 
         -h prints this documentation and exits
@@ -116,6 +116,11 @@ History::
         print, eval_qual_sframe()'s unused `xtype` variable (guarded
         by a filename check that could never match real lvmCFrame
         filenames anyway), and an unused plt.ylim() call.
+    260907 ksl Renamed QuickLook.py to QualSFrame.py, matching
+        QualCFrame.py's naming and making explicit that the two are a
+        matched SFrame/CFrame quality-assessment pair. Updated all
+        cross-file references (QualCFrame.py, eval_standard.py) and
+        the Sphinx docs accordingly; no functional change.
 
 '''
 

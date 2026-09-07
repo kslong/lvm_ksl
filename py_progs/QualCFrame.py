@@ -34,7 +34,7 @@ Description:
         - how consistent the SkyE and SkyW per-telescope sky
           models (SKY_EAST/SKY_WEST) are with each other
 
-    Unlike QuickLook.py (which works on the sky-subtracted
+    Unlike QualSFrame.py (which works on the sky-subtracted
     lvmSFrame), this routine works on the lvmCFrame, before sky
     subtraction, so it can look directly at the two independent
     sky models and at all three flux calibration methods' own
@@ -49,15 +49,15 @@ Notes:
 
     The html file is created in the current working directory
     and the various plots are in a subdirectory figs_qual, shared
-    with QuickLook.py -- every filename here embeds the full
+    with QualSFrame.py -- every filename here embeds the full
     lvmCFrame-<expnum> basename, which never collides with
-    QuickLook's lvmSFrame-<expnum> names, so both tools can be run
+    QualSFrame's lvmSFrame-<expnum> names, so both tools can be run
     in the same directory on a matching CFrame/SFrame pair without
     clobbering each other's images.
 
     Shared helpers (header access, angular distance, moon/sun
     info, percentile-based y-scaling, fiber selection) are
-    imported from QuickLook.py rather than duplicated, so the two
+    imported from QualSFrame.py rather than duplicated, so the two
     tools don't drift apart on shared logic.
 
 History::
@@ -81,6 +81,9 @@ History::
         basis, making this file's two six-panel diagnostic-line
         figures directly comparable to each other. sky_comment updated
         to match.
+    260907 ksl Updated all references for QuickLook.py's rename to
+        QualSFrame.py (import, QuickLook.* call sites, and the prose
+        above) -- no functional change.
 
 '''
 
@@ -92,7 +95,7 @@ from astropy.table import Table
 import matplotlib.pyplot as plt
 from matplotlib.gridspec import GridSpec
 import xhtml
-from lvm_ksl import QuickLook
+from lvm_ksl import QualSFrame
 from lvm_ksl import eval_standard
 from lvmdrp.core.fluxcal import GaiaXPSpectra
 
@@ -113,7 +116,7 @@ def _usage_from_doc(doc):
 
 # SENS_BANDS/SENS_METHODS/SENS_COLORS/SENS_DISAGREE_WARN, get_fluxcal_curve,
 # sensitivity_summary_table, fluxcal_comment, eval_sensitivity_comparison, and
-# _col_valid now live in eval_standard.py, shared with QuickLook.py, so the
+# _col_valid now live in eval_standard.py, shared with QualSFrame.py, so the
 # two tools' flux-cal comparison logic can't silently drift apart.
 
 
@@ -258,8 +261,8 @@ def eval_calibration_spectra(filename, outroot=''):
     # combine_skies actually did it, and if SKYSRC is not SCIMED (an
     # explicit sky_weights override) this isn't the quantity that was
     # actually used at all.
-    sky_src = QuickLook.get_header_string(hdr, 'SKYSRC', 'Unknown')
-    sci_fibers_tab = QuickLook.scifib(xtab, select='science', telescope='Sci')
+    sky_src = QualSFrame.get_header_string(hdr, 'SKYSRC', 'Unknown')
+    sci_fibers_tab = QualSFrame.scifib(xtab, select='science', telescope='Sci')
     sci_sky_mask = mask[sci_fibers_tab['fiberid'] - 1]
     sci_sky_flux = np.ma.masked_array(flux[sci_fibers_tab['fiberid'] - 1], sci_sky_mask)
     # np.nanmedian on a filled array instead of np.ma.median: numpy's masked-
@@ -381,11 +384,11 @@ def eval_calibration_spectra(filename, outroot=''):
 
 sky_comment = '''
 Comparison of the SkyE and SkyW per-telescope sky models (SKY_EAST/SKY_WEST), before sky subtraction.
-Unlike the equivalent panel in QuickLook.py (which compares sky-subtraction residuals in the final
+Unlike the equivalent panel in QualSFrame.py (which compares sky-subtraction residuals in the final
 lvmSFrame), this compares the two telescopes' own raw sky estimates directly, evaluated at the
 science-telescope fibers. The middle panel shows the difference in total sky flux between the two
-telescopes (nearer minus further, matching QuickLook's convention); the bottom panels show the same
-difference in the same six diagnostic line windows used in QuickLook.py's residual check and in the
+telescopes (nearer minus further, matching QualSFrame's convention); the bottom panels show the same
+difference in the same six diagnostic line windows used in QualSFrame.py's residual check and in the
 field-vs-sky plausibility check below ([OII]3727, Hbeta4861, [OIII]4959,5007, Halpha6563,
 [SII]6717,6731, [SIII]9533).
 '''
@@ -406,23 +409,23 @@ def eval_sky_comparison(filename, outroot=''):
         return None, 'Could not open %s (%s)' % (filename, e)
 
     hdr = x['PRIMARY'].header
-    ra = QuickLook.get_header_value(hdr, 'SCIRA')
-    dec = QuickLook.get_header_value(hdr, 'SCIDEC')
-    ra_sky_e = QuickLook.get_header_value(hdr, 'SKYERA')
-    dec_sky_e = QuickLook.get_header_value(hdr, 'SKYEDEC')
-    ra_sky_w = QuickLook.get_header_value(hdr, 'SKYWRA')
-    dec_sky_w = QuickLook.get_header_value(hdr, 'SKYWDEC')
+    ra = QualSFrame.get_header_value(hdr, 'SCIRA')
+    dec = QualSFrame.get_header_value(hdr, 'SCIDEC')
+    ra_sky_e = QualSFrame.get_header_value(hdr, 'SKYERA')
+    dec_sky_e = QualSFrame.get_header_value(hdr, 'SKYEDEC')
+    ra_sky_w = QualSFrame.get_header_value(hdr, 'SKYWRA')
+    dec_sky_w = QualSFrame.get_header_value(hdr, 'SKYWDEC')
 
-    distance_sky_e = QuickLook.distance(ra, dec, ra_sky_e, dec_sky_e)
-    distance_sky_w = QuickLook.distance(ra, dec, ra_sky_w, dec_sky_w)
+    distance_sky_e = QualSFrame.distance(ra, dec, ra_sky_e, dec_sky_e)
+    distance_sky_w = QualSFrame.distance(ra, dec, ra_sky_w, dec_sky_w)
 
-    sky_ew = QuickLook.get_header_value(hdr, 'SKYEW')
-    sky_ww = QuickLook.get_header_value(hdr, 'SKYWW')
+    sky_ew = QualSFrame.get_header_value(hdr, 'SKYEW')
+    sky_ww = QualSFrame.get_header_value(hdr, 'SKYWW')
 
     xtab = Table(x['SLITMAP'].data)
-    sci_fibers = QuickLook.scifib(xtab, select='science', telescope='Sci')
-    skye_fibers = QuickLook.scifib(xtab, select='SKY', telescope='SkyE')
-    skyw_fibers = QuickLook.scifib(xtab, select='SKY', telescope='SkyW')
+    sci_fibers = QualSFrame.scifib(xtab, select='science', telescope='Sci')
+    skye_fibers = QualSFrame.scifib(xtab, select='SKY', telescope='SkyE')
+    skyw_fibers = QualSFrame.scifib(xtab, select='SKY', telescope='SkyW')
 
     wav = x['WAVE'].data
     mask = x['MASK'].data[sci_fibers['fiberid'] - 1].astype(bool)
@@ -482,26 +485,26 @@ def eval_sky_comparison(filename, outroot=''):
         delta = -delta
         ax2.plot(wav, delta, label='SkyE-SkyW (Nearer-Further)')
     ax2.axhline(0, color='orange', lw=1.5, ls='-', zorder=3)
-    ymin, ymax = QuickLook.get_percentile_yscale(delta, 1, 99.9, min_half_range=2 * QuickLook.MW_5SIGMA)
+    ymin, ymax = QualSFrame.get_percentile_yscale(delta, 1, 99.9, min_half_range=2 * QualSFrame.MW_5SIGMA)
     ax2.set_ylim(ymin, ymax)
     ax2.set_xlim(3600, 9600)
     ax2.legend()
 
-    # Same 6 diagnostic line windows (and half-width) as QuickLook.py's
+    # Same 6 diagnostic line windows (and half-width) as QualSFrame.py's
     # analogous residual check and eval_field_vs_sky_lines below, instead
     # of the 3 broader, differently-chosen windows this used to show.
     line_axs = [fig.add_subplot(gs[2 + i // 3, i % 3]) for i in range(6)]
     for i, (ax, (name, wl, _yscale_window)) in enumerate(zip(line_axs, eval_standard.DIAGNOSTIC_LINES)):
         wmin = wl - eval_standard.LINE_WINDOW_HALF_WIDTH
         wmax = wl + eval_standard.LINE_WINDOW_HALF_WIDTH
-        xwav, xdelta = QuickLook.limit_spectrum(wav, delta, wmin, wmax)
+        xwav, xdelta = QualSFrame.limit_spectrum(wav, delta, wmin, wmax)
         xdelta = xdelta - np.nanmedian(xdelta)
         ax.plot(xwav, xdelta, zorder=1)
         ax.axhline(0, color='orange', lw=1.5, ls='-', zorder=3)
-        ax.plot([wmin, wmax], [QuickLook.MW_5SIGMA] * 2, ':r', label=r'$Med \pm$ MW 5 $\sigma$' if i == 0 else None)
-        ax.plot([wmin, wmax], [-QuickLook.MW_5SIGMA] * 2, ':r')
+        ax.plot([wmin, wmax], [QualSFrame.MW_5SIGMA] * 2, ':r', label=r'$Med \pm$ MW 5 $\sigma$' if i == 0 else None)
+        ax.plot([wmin, wmax], [-QualSFrame.MW_5SIGMA] * 2, ':r')
         ax.set_xlim(wmin, wmax)
-        ymin, ymax = QuickLook.get_percentile_yscale(xdelta, 1, 99, min_half_range=2 * QuickLook.MW_5SIGMA)
+        ymin, ymax = QualSFrame.get_percentile_yscale(xdelta, 1, 99, min_half_range=2 * QualSFrame.MW_5SIGMA)
         ax.set_ylim(ymin, ymax)
         ax.set_title('%s (%.0f A)' % (name, wl))
     line_axs[0].legend(fontsize=8, loc='best')
@@ -544,7 +547,7 @@ def eval_sky_comparison(filename, outroot=''):
 
 
 # DIAGNOSTIC_LINES/LINE_WINDOW_HALF_WIDTH and the per-panel plotting logic now
-# live in eval_standard.plot_diagnostic_line_panels, shared with QuickLook.py's
+# live in eval_standard.plot_diagnostic_line_panels, shared with QualSFrame.py's
 # analogous post-sky-subtraction residual check.
 
 field_vs_sky_comment = '''
@@ -581,19 +584,19 @@ def eval_field_vs_sky_lines(filename, outroot=''):
         return None, 'Could not open %s (%s)' % (filename, e)
 
     hdr = x['PRIMARY'].header
-    ra = QuickLook.get_header_value(hdr, 'SCIRA')
-    dec = QuickLook.get_header_value(hdr, 'SCIDEC')
-    ra_sky_e = QuickLook.get_header_value(hdr, 'SKYERA')
-    dec_sky_e = QuickLook.get_header_value(hdr, 'SKYEDEC')
-    ra_sky_w = QuickLook.get_header_value(hdr, 'SKYWRA')
-    dec_sky_w = QuickLook.get_header_value(hdr, 'SKYWDEC')
-    distance_sky_e = QuickLook.distance(ra, dec, ra_sky_e, dec_sky_e)
-    distance_sky_w = QuickLook.distance(ra, dec, ra_sky_w, dec_sky_w)
+    ra = QualSFrame.get_header_value(hdr, 'SCIRA')
+    dec = QualSFrame.get_header_value(hdr, 'SCIDEC')
+    ra_sky_e = QualSFrame.get_header_value(hdr, 'SKYERA')
+    dec_sky_e = QualSFrame.get_header_value(hdr, 'SKYEDEC')
+    ra_sky_w = QualSFrame.get_header_value(hdr, 'SKYWRA')
+    dec_sky_w = QualSFrame.get_header_value(hdr, 'SKYWDEC')
+    distance_sky_e = QualSFrame.distance(ra, dec, ra_sky_e, dec_sky_e)
+    distance_sky_w = QualSFrame.distance(ra, dec, ra_sky_w, dec_sky_w)
     e_tag = 'near' if distance_sky_e < distance_sky_w else 'far'
     w_tag = 'far' if distance_sky_e < distance_sky_w else 'near'
 
     xtab = Table(x['SLITMAP'].data)
-    sci_fibers = QuickLook.scifib(xtab, select='science', telescope='Sci')
+    sci_fibers = QualSFrame.scifib(xtab, select='science', telescope='Sci')
 
     wav = x['WAVE'].data
     fmask = x['MASK'].data[sci_fibers['fiberid'] - 1].astype(bool)
@@ -636,15 +639,15 @@ def create_overview(filename):
     '''
     Summarize header information about the CFrame exposure
 
-    This is a thin wrapper around QuickLook.create_overview() -- CFrame and
+    This is a thin wrapper around QualSFrame.create_overview() -- CFrame and
     SFrame primary headers carry the same astrometry/sky-model keywords
     (SCIRA/SCIDEC/SCIPA/SCIALT/SCIASRC and the SkyE/SkyW/Moon/Sun
     equivalents, plus the SKY ..._SH_HGHT shadow-height keywords), so
     duplicating that logic here risked the two tools' overview tables
-    silently drifting apart. See QuickLook.create_overview() for what each
+    silently drifting apart. See QualSFrame.create_overview() for what each
     returned pointing-table column means.
     '''
-    return QuickLook.create_overview(filename)
+    return QualSFrame.create_overview(filename)
 
 
 def make_html(filename, outroot=''):

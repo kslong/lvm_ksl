@@ -21,7 +21,7 @@ what they actually check rather than listed alphabetically:
   (``SummarizeSkyHdr.py``, ``check_sky_positions.py``).
 - **Combined quality report** — a single-exposure HTML report combining
   header overview, sky subtraction, and flux calibration checks
-  (``Quicklook.py``).
+  (``QualSFrame.py``).
 
 
 Wavelength Calibration
@@ -411,7 +411,7 @@ filename
 One PNG file per input file, named ``standard_<basename>.png``, written
 to the current directory.  If none of the matched stars' Gaia spectra
 can be retrieved or plotted, no plot is produced; the caller (and, from
-``Quicklook.py``, the HTML report) gets a message explaining why -- e.g.
+``QualSFrame.py``, the HTML report) gets a message explaining why -- e.g.
 no ``SCI#ID``/``SCI#FIB`` keywords in the header, or no network access
 to the Gaia archive with nothing cached locally either.
 
@@ -597,16 +597,18 @@ a header overview with the sky-subtraction and flux-calibration checks
 above, so that an exposure can be assessed at a glance without running
 several scripts separately.
 
-Quicklook.py — Per-Exposure HTML Quality Report
+QualSFrame.py — Per-Exposure HTML Quality Report
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 Reads an lvmSFrame file and builds an HTML file containing header
 information plus the science/sky spectral comparison, Hα/[SII]/continuum
 images, and (if possible) the flux-calibrated standard-star comparison.
+Renamed from ``QuickLook.py`` to match ``QualCFrame.py``, its lvmCFrame
+counterpart.
 
 **Command line usage**::
 
-    Quicklook.py [-h] SFrame1 SFrame2 ...
+    QualSFrame.py [-h] SFrame1 SFrame2 ...
 
 **Options:**
 
@@ -634,9 +636,14 @@ filename
 
 The top of the report lists, from the SFrame's PRIMARY header: exposure
 number, MJD, observation time, object name, DRP version (``DRPVER``) and
-commit hash (``COMMIT``), the science and sky-telescope RA/Dec/PA (with
-angular distance from the science pointing), and the Moon/Sun RA, Dec,
-altitude, and (for the Moon) illumination at Las Campanas. Any of these
+commit hash (``COMMIT``). Below that, a pointing table gives, for the
+science and sky telescopes plus the Moon and Sun: RA/Dec, PA, angular
+distance from the science pointing, altitude, (for the Moon) illumination
+fraction, astrometry source (``GDR coadd`` if the telescope's RA/Dec/PA
+come from a solved guider astrometric solution, ``CMD position`` if it
+fell back to the commanded pointing -- SkyE/SkyW are not actively guided,
+so their PA is normally just the commanded value), and shadow height (the
+height of Earth's shadow, relevant to geocoronal emission). Any of these
 header keywords that are missing falls back to a placeholder (``Unknown``
 for strings, ``-999.0`` for numbers) rather than raising an error, since
 not every keyword is present in every DRP version's headers.
@@ -651,7 +658,7 @@ without it.
 
 **Example**::
 
-    Quicklook.py data/lvmSFrame-00012345.fits
+    QualSFrame.py data/lvmSFrame-00012345.fits
 
 
 See Also
@@ -665,7 +672,7 @@ See Also
 - :doc:`api/eval_standard/index` - API documentation
 - :doc:`api/SummarizeSkyHdr/index` - API documentation
 - :doc:`api/check_sky_positions/index` - API documentation
-- :doc:`api/QuickLook/index` - API documentation
+- :doc:`api/QualSFrame/index` - API documentation
 - :doc:`summarize` - Tools for cataloging and summarizing exposures
 - :doc:`spectral_fitting_local` - ``sky_gaussfit.py`` produces the input tables for ``plot_sky_gaussfit.py``
 - :doc:`plotting_outputs` - ``radec_plot.py``, which ``plot_sky_gaussfit.py`` now uses for its spatial rendering

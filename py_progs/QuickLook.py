@@ -77,6 +77,45 @@ History::
         specific reason from eval_standard.qual_eval() when the
         comparison fails or partially fails, instead of a generic
         "could not do" message.
+    260907 ksl eval_qual_sframe()'s science figure gains a "Continuum
+        check" panel: the same sky-subtracted science spectrum as the
+        top panel, but y-limits set to the spectrum's own median
+        +/-1e-14 instead of a fixed near-zero window -- the near-zero
+        window is tuned for sky-line residuals and clips a real
+        continuum off the top, hiding broad continuum-level over/
+        under-subtraction (a slope or offset spanning the whole band).
+        Added a solid orange zero-reference line (a plain black line
+        was invisible against the blue spectrum trace) to that panel
+        and to every other residual/delta panel in both figures (the
+        SkyE/SkyW delta panel and all diagnostic-line sub-panels).
+        The SkyE/SkyW figure's bottom row now uses the same 6
+        diagnostic-line windows (and matching title format) as the
+        science figure's residual check, replacing 3 broader combined
+        windows, so the two checks line up panel-for-panel; the figure
+        was also resized so its grid cells match the science figure's
+        exactly (same column width and row height), making the two
+        figures directly comparable side by side.
+        create_overview() now returns (xlist, pointing_rows): the
+        pointing/Moon/Sun block is a table (Target, RA, Dec., PA, Ang.
+        dist., Alt., Illum., Astrometry Src, Shadow Ht) instead of a
+        flat text list. Alt. and Shadow Ht come straight from the
+        DRP's own SCIALT/SKYEALT/SKYWALT and SKY ..._SH_HGHT header
+        keywords rather than being recomputed. Astrometry Src surfaces
+        SCIASRC/SKYEASRC/SKYWASRC ('GDR coadd' vs. 'CMD position') so
+        it's clear when SkyE/SkyW's PA is just the commanded value
+        (SkyE/SkyW aren't actively guided) rather than looking like an
+        unexplained inconsistency next to Sci's guider-derived PA.
+        Ang. dist. now also covers Moon/Sun separation from the
+        science field, not just SkyE/SkyW. make_html() renders the new
+        table via xhtml.table() right after the existing bullet list.
+        QualCFrame.py's create_overview() and eval_sky_comparison()
+        (its analogous pre-sky-subtraction SkyE/SkyW figure) were
+        brought up to the same pointing-table/6-window/zero-line/
+        sizing conventions -- see its own History entry.
+        Removed dead code found along the way: get_yscale()'s debug
+        print, eval_qual_sframe()'s unused `xtype` variable (guarded
+        by a filename check that could never match real lvmCFrame
+        filenames anyway), and an unused plt.ylim() call.
 
 '''
 
@@ -259,7 +298,6 @@ def get_yscale(f,ymin,ymax):
     med=np.ma.median(f)
     zmin=ymin+med
     zmax=ymax+med
-    print('check',zmin,zmax,med,ymin,ymax)
     return zmin,zmax
 
 
@@ -299,12 +337,6 @@ def eval_qual_sframe(filename='data/lvmSFrame-00011061.fits',ymin=-0.2e-13,ymax=
     '''
     Provide a standard plot for looking at how well the sky subtraction has worked overall
     '''
-
-    xtype='SkySubtracted'
-    if filename.count('CFRAME'):
-        print('This is an LCFrame')
-        xtype='NotSkySubtracted'
-
 
     try:
         x=fits.open(filename)
@@ -362,9 +394,9 @@ def eval_qual_sframe(filename='data/lvmSFrame-00011061.fits',ymin=-0.2e-13,ymax=
     skyw_flux_med=np.ma.median(skyw_flux,axis=0)
     skyw_sky_med=np.ma.median(skyw_sky,axis=0)
 
-    fig=plt.figure(1,(12,14))
+    fig=plt.figure(1,(12,16))
     plt.clf()
-    gs= GridSpec(4, 3, figure=fig)
+    gs= GridSpec(5, 3, figure=fig)
 
     ax1 = fig.add_subplot(gs[0, :])
     ax1.plot(wav,sci_flux_med,label='Sky-Subtracted Science',zorder=2)
@@ -377,11 +409,29 @@ def eval_qual_sframe(filename='data/lvmSFrame-00011061.fits',ymin=-0.2e-13,ymax=
     ax1.set_ylim(-1e-14,ymax)
     ax1.legend()
 
-    ax2 = fig.add_subplot(gs[1, :])
+    # Continuum-subtraction check: same sky-subtracted science spectrum as
+    # ax1, but y-limits are set to the spectrum's own median +/-1e-14
+    # instead of a fixed near-zero window. ax1's near-zero window is tuned
+    # to show sky-line residuals and clips a real (non-zero) continuum off
+    # the top, so a broad continuum-level over/under-subtraction -- a slope
+    # or offset spanning the whole band -- is invisible there. Centering on
+    # the spectrum's own median keeps the panel on-scale regardless of the
+    # field's overall brightness while still using a fixed window width, so
+    # panels are visually comparable across exposures.
+    axc = fig.add_subplot(gs[1, :])
+    axc.plot(wav,sci_flux_med,label='Sky-Subtracted Science',zorder=2)
+    axc.axhline(0,color='orange',lw=1.5,ls='-',zorder=3)
+    axc.plot([3600,9600],[5.9e-15,5.9e-15],':r',label=r'$Med \pm$ MW 5 $\sigma$' )
+    axc.plot([3600,9600],[-5.9e-15,-5.9e-15],':r')
+    axc.set_xlim(3600,9600)
+    ymin,ymax=get_yscale(sci_flux_med,-1e-14,1e-14)
+    axc.set_ylim(ymin,ymax)
+    axc.set_title('Continuum check (Median +/- 1e-14)')
+    axc.legend()
+
+    ax2 = fig.add_subplot(gs[2, :])
     ax2.semilogy(wav,sci_flux_med+sci_sky_med,label='Science Total',zorder=2)
     ax2.semilogy(wav,sci_sky_med,label='Science Sky',zorder=1)
-    ymin,ymax=plt.ylim()
-    print('toot',ymin,ymax,np.ma.mean(sci_flux_med[~np.isnan(sci_flux_med)]))
     ymax=np.nanmax(sci_flux_med+sci_sky_med)
     ax2.set_ylim(1e-3*ymax,1.1*ymax)
     ax2.set_xlim(3600,9600)
@@ -397,7 +447,7 @@ def eval_qual_sframe(filename='data/lvmSFrame-00011061.fits',ymin=-0.2e-13,ymax=
     # plot_diagnostic_line_panels) -- that CFrame check instead compares raw
     # (pre-subtraction) field brightness to the SKY_EAST/SKY_WEST models,
     # which don't exist as SFrame extensions once the sky is subtracted.
-    line_axs = [fig.add_subplot(gs[2 + i // 3, i % 3]) for i in range(6)]
+    line_axs = [fig.add_subplot(gs[3 + i // 3, i % 3]) for i in range(6)]
     eval_standard.plot_diagnostic_line_panels(line_axs, wav, sci_flux, refline=MW_5SIGMA)
     line_axs[0].legend(fontsize=8, loc='best')
 
@@ -416,9 +466,13 @@ def eval_qual_sframe(filename='data/lvmSFrame-00011061.fits',ymin=-0.2e-13,ymax=
 
     # Now make another plot for the sky fibers
 
-    fig=plt.figure(2,(8,12))
+    # Matches the science figure's per-row/per-column size (12x16 over 5
+    # rows/3 cols -> 3.2in tall, 4in wide per cell) so the two figures'
+    # panels are directly comparable side by side rather than differing in
+    # aspect just because this figure has one fewer row.
+    fig=plt.figure(2,(12,12.8))
     plt.clf()
-    gs= GridSpec(3, 3, figure=fig)
+    gs= GridSpec(4, 3, figure=fig)
 
     ax1 = fig.add_subplot(gs[0, :])
     # ax1.plot(wav,sci_flux_med,label='Sky-Subtracted Science',zorder=2)
@@ -439,75 +493,39 @@ def eval_qual_sframe(filename='data/lvmSFrame-00011061.fits',ymin=-0.2e-13,ymax=
         delta=-delta
         ax2.plot(wav,delta,label='SkyE-SkyW (Nearer-Further)',zorder=1)
 
+    ax2.axhline(0,color='orange',lw=1.5,ls='-',zorder=3)
     ymin,ymax=get_percentile_yscale(delta,1,99.9,min_half_range=2*MW_5SIGMA)
     ax2.set_ylim(ymin,ymax)
     ax2.set_xlim(3600,9600)
     ax2.legend()
 
 
-    ax3 = fig.add_subplot(gs[2, 0])
-    wmin=4650
-    wmax=5100
-    wmin=4800
-    wmax=5100
+    # Same 6 diagnostic line windows (and half-width) as the science
+    # figure's per-line residual check (eval_standard.DIAGNOSTIC_LINES /
+    # plot_diagnostic_line_panels), so the two figures' bottom panels line
+    # up one-to-one instead of the 3 broader, differently-chosen windows
+    # this used to show. delta here is already a single difference
+    # spectrum (not a fibers x wave array), so each panel is filled
+    # directly rather than via plot_diagnostic_line_panels (which expects
+    # to compute a per-fiber percentile band).
+    line_axs = [fig.add_subplot(gs[2 + i // 3, i % 3]) for i in range(6)]
+    for i,(ax,(name,wl,_yscale_window)) in enumerate(zip(line_axs,eval_standard.DIAGNOSTIC_LINES)):
+        wmin=wl-eval_standard.LINE_WINDOW_HALF_WIDTH
+        wmax=wl+eval_standard.LINE_WINDOW_HALF_WIDTH
 
+        xwav,delta_limit=limit_spectrum(wav,delta,wmin,wmax)
+        delta_median=np.ma.median(delta_limit)
+        delta_limit=delta_limit-delta_median
 
-
-    xwav,delta_limit=limit_spectrum(wav,delta,wmin,wmax)
-    delta_median=np.ma.median(delta_limit)
-    delta_limit-=delta_median
-    delta_median=np.ma.median(delta_limit)
-    ax3.plot(xwav,delta_limit,label='SkyE-Subtracted SkyE',zorder=1)
-
-    # ax3.plot(xwav,xskyw_flux_med,label='SkyW-Subtracted SkyW',zorder=0)
-
-    ax3.plot([wmin,wmax],[5.9e-15,5.9e-15],':r',label=r'$Med \pm$ MW 5 $\sigma$' )
-    ax3.plot([wmin,wmax],[-5.9e-15,-5.9e-15],':r')
-
-    ax3.set_xlim(wmin,wmax)
-    ymin,ymax=get_yscale(delta_limit,-2e-14,2e-14)
-    ax3.set_ylim(ymin,ymax)
-
-
-    ax4 = fig.add_subplot(gs[2, 1])
-    wmin=6250
-    wmax=6800
-    wmin=6500
-    wmax=6800
-
-    xwav,delta_limit=limit_spectrum(wav,delta,wmin,wmax)
-
-    delta_median=np.ma.median(delta_limit)
-    delta_limit-=delta_median
-    delta_median=np.ma.median(delta_limit)
-
-    ax4.plot(xwav,delta_limit,zorder=1)
-
-    ax4.plot([wmin,wmax],[5.9e-15,5.9e-15],':r',label=r'$Med \pm$ MW 5 $\sigma$' )
-    ax4.plot([wmin,wmax],[-5.9e-15,-5.9e-15],':r')
-    ax4.set_xlim(wmin,wmax)
-    # ymin,ymax=get_yscale(xsci_flux_med,-1e-14,1e-14)
-    ymin,ymax=get_yscale(delta_limit,-2e-14,2e-14)
-    ax4.set_ylim(ymin,ymax)
-
-    ax5 = fig.add_subplot(gs[2, 2])
-    wmin=9450
-    wmax=9600
-    wmin=9480
-    wmax=9586
-    xwav,xsci_flux_med=limit_spectrum(wav,sci_flux_med,wmin,wmax)
-    xwav,delta_limit=limit_spectrum(wav,delta,wmin,wmax)
-    delta_median=np.ma.median(delta_limit)
-    delta_limit-=delta_median
-    delta_median=np.ma.median(delta_limit)
-
-
-    ax5.plot(xwav,delta_limit,label='SkyE-Subtracted SkyE',zorder=1)
-    ax5.plot([wmin,wmax],[5.9e-15,5.9e-15],':r',label=r'$Med \pm$ MW 5 $\sigma$' )
-    ax5.plot([wmin,wmax],[-5.9e-15,-5.9e-15],':r')
-    ax5.set_xlim(wmin,wmax)
-    ymin,ymax=get_yscale(delta_limit,-2e-14,2e-14)
-    ax5.set_ylim(ymin,ymax)
+        ax.plot(xwav,delta_limit,zorder=1)
+        ax.axhline(0,color='orange',lw=1.5,ls='-',zorder=3)
+        ax.plot([wmin,wmax],[5.9e-15,5.9e-15],':r',label=r'$Med \pm$ MW 5 $\sigma$' if i==0 else None)
+        ax.plot([wmin,wmax],[-5.9e-15,-5.9e-15],':r')
+        ax.set_xlim(wmin,wmax)
+        ymin,ymax=get_yscale(delta_limit,-2e-14,2e-14)
+        ax.set_ylim(ymin,ymax)
+        ax.set_title('%s (%.0f A)' % (name,wl))
+    line_axs[0].legend(fontsize=8,loc='best')
 
     plt.tight_layout()
 
@@ -533,7 +551,7 @@ def create_overview(filename='data/lvmSFrame-00011061.fits'):
         x=fits.open(filename)
     except:
         print('Error: Could not open %s' % filename)
-        return
+        return [],[]
 
     hdr=x['PRIMARY'].header
 
@@ -548,14 +566,30 @@ def create_overview(filename='data/lvmSFrame-00011061.fits'):
     ra=get_header_value(hdr,'SCIRA')
     dec=get_header_value(hdr,'SCIDEC')
     pa=get_header_value(hdr,'SCIPA',default_value=0)
+    alt=get_header_value(hdr,'SCIALT')
+    sh_hght=get_header_value(hdr,'SKY SCI_SH_HGHT')
+    # ASRC records which of the two ways set_telescope_astrometry() (lvmdrp
+    # core/astrometry.py) can fill RA/Dec/PA actually applied: 'GDR coadd'
+    # means a real guider astrometric solution, 'CMD position' means it
+    # fell back to the commanded pointing (guider coadd missing/unsolved).
+    # SkyE/SkyW are not actively guided, so their PA is normally the
+    # commanded value (often exactly 0) rather than a measured one -- this
+    # is usually why a SkyE/SkyW PA looks surprising next to Sci's.
+    asrc=get_header_string(hdr,'SCIASRC','Unknown')
 
     ra_sky_e=get_header_value(hdr,'SKYERA')
     dec_sky_e=get_header_value(hdr,'SKYEDEC')
     pa_sky_e=get_header_value(hdr,'SKYEPA')
+    alt_sky_e=get_header_value(hdr,'SKYEALT')
+    sh_hght_sky_e=get_header_value(hdr,'SKY SKYE_SH_HGHT')
+    asrc_sky_e=get_header_string(hdr,'SKYEASRC','Unknown')
 
     ra_sky_w=get_header_value(hdr,'SKYWRA')
     dec_sky_w=get_header_value(hdr,'SKYWDEC')
     pa_sky_w=get_header_value(hdr,'SKYWPA')
+    alt_sky_w=get_header_value(hdr,'SKYWALT')
+    sh_hght_sky_w=get_header_value(hdr,'SKY SKYW_SH_HGHT')
+    asrc_sky_w=get_header_string(hdr,'SKYWASRC','Unknown')
 
 
     distance_sky_w=distance(ra,dec,ra_sky_w,dec_sky_w)
@@ -566,6 +600,14 @@ def create_overview(filename='data/lvmSFrame-00011061.fits'):
     moon_info=get_moon_info_las_campanas(obs_time)
     #for key, value in moon_info.items():
     #    print(f'{key}: {value}')
+
+    # Moon/Sun ang. distance from the science field. lvmdrp's own sky-model
+    # header block carries the Moon one (SKY SCI_MOON_SEP) but no Sun
+    # equivalent, so both are computed the same way as the SkyE/SkyW
+    # distances above for consistency (verified to match SKY SCI_MOON_SEP
+    # to the precision reported there).
+    distance_moon=distance(ra,dec,moon_info['MoonRA'],moon_info['MoonDec'])
+    distance_sun=distance(ra,dec,moon_info['SunRA'],moon_info['SunDec'])
 
    
 
@@ -578,16 +620,33 @@ def create_overview(filename='data/lvmSFrame-00011061.fits'):
     xlist.append('DRP Commit  : %s' % drp_commit)
     xlist.append('Flux-cal method applied : %s' % fluxcal_method)
     xlist.append('Sky source (flux-cal)   : %s' % sky_src)
-    xlist.append('Science RA  Dec. PA : %8.2f %8.2f %8.2f' % (ra,dec,pa))
-    xlist.append('SkyE    RA  Dec. PA (ang distance): %8.2f %8.2f %8.2f (%8.2f)' % (ra_sky_e,dec_sky_e,pa_sky_e,distance_sky_e))
-    xlist.append('SkyW    RA  Dec. PA (ang distance): %8.2f %8.2f %8.2f (%8.2f)' % (ra_sky_w,dec_sky_w,pa_sky_w,distance_sky_w))
-    xlist.append('Moon    RA  Dec. Alt.  Ill:  %8.2f %8.2f %8.2f %8.2f' % 
-                 (moon_info['MoonRA'],moon_info['MoonDec'],moon_info['MoonAlt'],moon_info['MoonIll']))
-    xlist.append('Sun.    RA  Dec. Alt.:  %8.2f %8.2f %8.2f' %
-                 (moon_info['SunRA'],moon_info['SunDec'],moon_info['SunAlt']))
 
- 
-    return xlist
+    # Pointing/moon/sun geometry, as a table (one row per target) rather
+    # than one fixed-column-format line per target -- RA/Dec apply to every
+    # row, but PA/astrometry source only make sense for the science/sky
+    # telescopes, and Illum. only for the Moon, so a shared table with
+    # blank cells where a quantity doesn't apply reads more clearly than
+    # five differently-shaped printed lines. Ang. dist. is the separation
+    # from the science field throughout (for Sci itself, blank). Alt. for
+    # Sci/SkyE/SkyW comes straight from the SCIALT/SKYEALT/SKYWALT header
+    # keywords (already computed by the DRP), not recomputed here.
+    # Column order groups Ang. dist./Alt./Illum. together since together
+    # they indicate how bright the general sky background should be;
+    # Astrometry source ('GDR coadd' vs. 'CMD position', from SCIASRC/
+    # SKYEASRC/SKYWASRC) is included because SkyE/SkyW are not actively
+    # guided -- their PA is normally just the commanded value (frequently
+    # exactly 0) rather than a measured one, which otherwise looks like an
+    # inconsistency next to Sci's guider-derived PA. Shadow height is last
+    # since, unlike the rest of the table, it speaks to geocoronal emission
+    # rather than general sky brightness.
+    pointing_rows=[['Target','RA','Dec.','PA','Ang. dist.','Alt.','Illum. (%)','Astrometry Src','Shadow Ht (km)']]
+    pointing_rows.append(['Science','%.2f' % ra,'%.2f' % dec,'%.2f' % pa,'','%.2f' % alt,'',asrc,'%.1f' % sh_hght])
+    pointing_rows.append(['SkyE','%.2f' % ra_sky_e,'%.2f' % dec_sky_e,'%.2f' % pa_sky_e,'%.2f' % distance_sky_e,'%.2f' % alt_sky_e,'',asrc_sky_e,'%.1f' % sh_hght_sky_e])
+    pointing_rows.append(['SkyW','%.2f' % ra_sky_w,'%.2f' % dec_sky_w,'%.2f' % pa_sky_w,'%.2f' % distance_sky_w,'%.2f' % alt_sky_w,'',asrc_sky_w,'%.1f' % sh_hght_sky_w])
+    pointing_rows.append(['Moon','%.2f' % moon_info['MoonRA'],'%.2f' % moon_info['MoonDec'],'','%.2f' % distance_moon,'%.2f' % moon_info['MoonAlt'],'%.2f' % moon_info['MoonIll'],'',''])
+    pointing_rows.append(['Sun','%.2f' % moon_info['SunRA'],'%.2f' % moon_info['SunDec'],'','%.2f' % distance_sun,'%.2f' % moon_info['SunAlt'],'','',''])
+
+    return xlist,pointing_rows
 
 
 
@@ -686,10 +745,13 @@ def make_images(filename='data/llvmSFrame-00011061.fits',outroot='test'):
     return ha_plot,s2_plot,cont_plot
 
 science_plot_comment='''
-The median sky subtracted spectrum from the science fibers.  The top panel shows the median spectrum.
-The middle panel shows the sum of the flux and sky, and just the sky.  The three panels at the 
+The median sky subtracted spectrum from the science fibers.  The top panel shows the median spectrum,
+scaled to highlight sky-line residuals near zero.  The second panel shows the same spectrum but scaled
+to the spectrum's own median +/- 1e-14, to make broad continuum-level over/under-subtraction (a slope or
+offset spanning the whole band) visible without being clipped by the top panel's near-zero window.
+The third panel shows the sum of the flux and sky, and just the sky.  The three panels at the
 bottom show the median scence spectra (after a crude contiumm subtraction) in three wavelength ranges, corresponding to Hbeta-[0II], Halpha-[SII], and [SIII]9071.
-Several of the plots also have dashed lines which outline the 5 sigma 
+Several of the plots also have dashed lines which outline the 5 sigma
 sensitivity limit in the Milky Way.
 '''
 
@@ -698,7 +760,9 @@ Comparisons of the median spectra in the SkyE and SkyW telescopes.  The top pane
 in each of the two sky telescopes (after sky subtraction.) The middle panel shows the difference in the the 
 total fluxes (with sky included) in the two sky telescopes. The difference is computed by subtracting the 
 spectrum of the sky telescope that is furthers from the science target to from the spectrum of the nearer sky telescope.
-The bottom panel shows the differences in sky subtracted spectra in three spectral regions. (Note that at present, 
+The bottom panels show the differences in sky subtracted spectra in the same six diagnostic line regions used for the
+science-spectrum check above ([OII]3727, Hbeta4861, [OIII]4959,5007, Halpha6563, [SII]6717,6731, [SIII]9533), so the
+two checks line up panel-for-panel. (Note that at present,
 the lvmdrp uses the sky calculated for the science telescope 
 for subtracting sky from the sky telescopes. This implies that what is presented in this figure tells one 
 mostly about the differences in the sky in the two telescopes.)
@@ -725,8 +789,9 @@ def make_html(filename='data/lvmSFrame-00011061.fits', outroot=''):
     string=xhtml.begin('LVMDRP SFrame Quality Assessment for %s' % filename)
     string+=xhtml.hline()
 
-    overview_list=create_overview(filename)
+    overview_list,pointing_rows=create_overview(filename)
     string+=xhtml.add_list(overview_list)
+    string+=xhtml.table(pointing_rows)
 
     string+=xhtml.hline()
     string+=xhtml.h2('Science Spectrum')
@@ -735,12 +800,12 @@ def make_html(filename='data/lvmSFrame-00011061.fits', outroot=''):
 
     figname,sky_figname= eval_qual_sframe(filename,ymin=-0.2e-13,ymax=1e-13,xmin=3600,xmax=9500)
 
-    string+=xhtml.image('%s' % (figname),width=900,height=1200)
+    string+=xhtml.image('%s' % (figname),width=900,height=1500)
     string+=xhtml.hline()
     string+=xhtml.h2('SkyE and SkyW  Spectra')
     string+=xhtml.paragraph(sky_plot_comment)
 
-    string+=xhtml.image('%s' % (sky_figname),width=900,height=1200)
+    string+=xhtml.image('%s' % (sky_figname),width=900,height=960)
     string+=xhtml.hline()
     string+=xhtml.h2('Line and Continuum images')
 

@@ -19,6 +19,11 @@ sky spectra to subtract the sky from the science fibers.
 The tools in lvm_ksl allow you to:
 
 - Evaluate sky subtraction quality in DRP-processed data
+- Correct an exposure whose DRP sky subtraction is compromised by a bad
+  sky-telescope pointing (e.g. too close to the Moon), by substituting in
+  a clean sky-telescope's fiber data from a different exposure and
+  rerunning the DRP's own sky-subtraction routine (SubstituteSky.py,
+  RunSky.py)
 - Run alternative sky subtraction using ESO's SkyCorr tool, a polynomial or
   B-spline continuum fit (SkySubOrig/SkySubDev1), a PALACE decomposition
   (SkySubDev2), the lvmdrp routine directly (SkySubDrp), or the ESO Sky
@@ -54,6 +59,130 @@ quality with additional visualization options.
 **Usage**::
 
     sky_plot.py filename1 filename2 ...
+
+
+Correcting and Rerunning DRP Sky Subtraction
+---------------------------------------------
+
+These two scripts work together to recover an exposure whose DRP sky
+subtraction is compromised by a bad sky-telescope pointing (e.g. SkyW
+too close to the Moon): substitute in a clean sky telescope's fiber
+data from a different exposure, then rerun the production DRP's own
+sky-subtraction routine on the result.
+
+SubstituteSky.py
+^^^^^^^^^^^^^^^^^
+
+Replaces one sky telescope's fiber data (FLUX/IVAR/MASK/LSF) and
+associated header metadata in an lvmCFrame with the corresponding data
+from a different lvmCFrame.
+
+**Usage**::
+
+    SubstituteSky.py [-h] [-o outfile] target_cframe target_tel
+                      source_cframe source_tel
+
+**Arguments:**
+
+target_cframe
+    lvmCFrame file to be corrected.
+
+target_tel
+    ``SkyE`` or ``SkyW`` (case-insensitive) -- telescope whose fibers
+    in ``target_cframe`` are replaced.
+
+source_cframe
+    lvmCFrame file to draw the replacement data from.
+
+source_tel
+    ``SkyE`` or ``SkyW`` (case-insensitive) -- telescope in
+    ``source_cframe`` supplying the replacement data.
+
+**Options:**
+
+-o outfile
+    Output filename.  Default: ``target_cframe``'s basename (directory
+    stripped) with ``.sky_subst`` inserted before the extension,
+    written to the current directory.  An existing outfile is
+    overwritten, with a warning printed first.
+
+**Description:**
+
+An lvmCFrame's SLITMAP assigns every fiber to a telescope (Sci, SkyE,
+SkyW, Spec) -- fixed by fiber-plugging hardware, identical
+fiberid-for-fiberid across all exposures.  The DRP's own sky-
+subtraction routine (``skyMethod.quick_sky_subtraction``) builds its
+sky spectrum from the raw FLUX/IVAR at the fibers tagged SkyE/SkyW in
+the CFrame being reduced -- not the extrapolated SKY_EAST/SKY_WEST
+extensions, which the current production method ignores.  So fixing a
+contaminated sky telescope means replacing the FLUX, IVAR, MASK, and
+LSF rows for that telescope's fibers, matched by fiberid.
+
+Since SkyE/SkyW fiber assignment is fixed hardware, requesting
+different telescopes on the two sides (``target_tel`` != ``source_tel``)
+fails with a clear error -- there is no physically meaningful
+fiber-by-fiber correspondence between them.
+
+Every PRIMARY header keyword tied to the source telescope (pointing,
+altitude, airmass, guider frames, sky-field name, heliocentric
+velocity, moon/shadow geometry, ecliptic coordinates, etc.) is copied
+too, renamed to the target telescope's own keyword names -- except the
+SKYEW/SKYWW combination weights, a joint SkyE+SkyW property recomputed
+elsewhere.  ``SKY SCI_SKYW_SEP`` (or the SkyE equivalent) is relative
+to the *target's* own science pointing, so it is recomputed from the
+target's real SCIRA/SCIDEC and the newly-copied sky position
+(``lvmdrp.core.sky.ang_distance``) rather than copied as-is.  New
+``SKY SUBST_*`` provenance keywords record what was substituted and
+from where.  ``target_cframe``/``source_cframe`` are never modified.
+
+**Output:**
+
+An lvmCFrame FITS file, structurally identical to the input, with the
+named telescope's FLUX/IVAR/MASK/LSF rows and header block replaced.
+
+**See Also:** :doc:`api/SubstituteSky/index`
+
+
+RunSky.py
+^^^^^^^^^
+
+Reruns the DRP's own ``quick_sky_subtraction`` on a single lvmCFrame
+file -- typically the output of ``SubstituteSky.py`` above -- producing
+a corrected lvmSFrame.
+
+**Usage**::
+
+    RunSky.py [-h] filename
+
+**Arguments:**
+
+filename
+    lvmCFrame file to run sky subtraction on.
+
+**Description:**
+
+Calling ``quick_sky_subtraction`` outside the full ``science_reduction``
+pipeline exposes three missing-directory bugs in ``lvmdrp`` (that
+pipeline happens to pre-create these directories as a side effect of an
+earlier step, so they never surface there): its own ancillary skytable
+write, ``writeFitsData``'s output write when given a bare filename, and
+``run_qa``'s skyQA PDF write.  ``RunSky.py`` works around all three
+locally rather than patching the vendored ``lvmdrp`` package, and reads
+back the freshly-written ancillary skytable -- by constructing the same
+path ``quick_sky_subtraction`` uses internally, via ``lvmdrp``'s own
+``path``/``drpver`` -- rather than searching for a pre-existing one, so
+the diagnostic plots reflect this run's own sky model, not a stale
+skytable from some other exposure or DRP version.
+
+**Output:**
+
+- ``lvmSFrame-<...>.fits`` (or ``sframe_<name>`` if the input name
+  doesn't contain ``CFrame``) in the current directory
+- ``qa/skyQA_<expnum>.pdf`` diagnostic plot
+- diagnostic matplotlib figures for the SCI/SkyE/SkyW/SkyE_super/
+  SkyW_super mean spectra
+
+**See Also:** :doc:`api/RunSky/index`
 
 
 Alternative Sky Subtraction with SkyCorr
@@ -2019,6 +2148,24 @@ Evaluating DRP Sky Subtraction
 
 3. Look for systematic residuals at sky line wavelengths
 
+Recovering an Exposure with a Bad Sky Pointing
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+1. Identify a clean exposure whose sky telescope pointed well away from
+   the Moon (e.g. by checking ``SKY SKYW_MOON_SEP``/``SKY SKYE_MOON_SEP``
+   in each candidate CFrame's header)
+2. Substitute that telescope's fiber data into the compromised
+   exposure's CFrame::
+
+       SubstituteSky.py lvmCFrame-00014964.fits SkyW \
+                         lvmCFrame-00014771.fits SkyW
+
+3. Rerun the DRP's sky subtraction on the result::
+
+       RunSky.py lvmCFrame-00014964.sky_subst.fits
+
+4. Evaluate the corrected lvmSFrame as usual (eval_sky.py, sky_plot.py)
+
 Testing Alternative Sky Subtraction
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
@@ -2080,6 +2227,8 @@ See Also
 
 - :doc:`summarize` - Tools for evaluating sky subtraction across many exposures
 - :doc:`api/eval_sky/index` - API documentation
+- :doc:`api/SubstituteSky/index` - API documentation
+- :doc:`api/RunSky/index` - API documentation
 - :doc:`api/Prep4SkyCorr/index` - API documentation
 - :doc:`api/RunSkyCorr/index` - API documentation
 - :doc:`api/SkySub/index` - API documentation

@@ -22,7 +22,7 @@ Description:
     writes a PNG summary plot.
 
     This module also hosts several helpers with no direct connection
-    to the Gaia comparison, factored out here so QuickLook.py and
+    to the Gaia comparison, factored out here so QualSFrame.py and
     QualCFrame.py share one implementation instead of two that could
     silently drift apart: robust header access (get_header_value/
     get_header_string), the STD/SCI/MOD flux-calibration sensitivity
@@ -92,6 +92,8 @@ History::
         every star past the first gap as pipeline-excluded;
         get_header_stars()/get_std_header_stars() now return (slot,
         fiber, gaia_id) triples keyed by the true slot number.
+    260907 ksl Updated a docstring reference for QuickLook.py's rename
+        to QualSFrame.py -- no functional change.
 
 '''
 
@@ -277,7 +279,7 @@ def eval_sensitivity_comparison(filename, outroot='', fignum=1, outdir='./figs_q
     stored in the FLUXCAL_STD/FLUXCAL_SCI/FLUXCAL_MOD extensions.
     fignum lets callers avoid a matplotlib figure-number clash with
     their own other plots; outdir defaults to the figs_qual/ directory
-    both QuickLook.py and QualCFrame.py write into (every filename
+    both QualSFrame.py and QualCFrame.py write into (every filename
     already embeds the full lvmSFrame-/lvmCFrame- basename, so the two
     tools' PNGs never collide there).
 

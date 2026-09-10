@@ -2187,10 +2187,12 @@ catalog and velocity convention:
   nebular-line windows before the fit, then measures whether real flux
   still leaked into those windows anyway.
 - **Which SkySub* method best recovers real nebular flux?**
-  (``SkySubRun.py`` → ``SkySubNebEval.py`` → ``PlotSkySubNebEval.py``) —
-  fits the same nebular-line catalog directly on each method's
-  sky-*subtracted* output and compares the measured ratios/repeat
-  scatter across methods.
+  (``SkySubRun.py`` → ``SkySubNebEval.py`` → ``PlotSkySubNebEval.py`` /
+  ``PlotSkySubNebRun.py``) — fits the same nebular-line catalog directly
+  on each method's sky-*subtracted* output and compares the measured
+  ratios/repeat scatter across methods, either one exposure at a time
+  (``PlotSkySubNebEval.py``) or aggregated across a whole run
+  (``PlotSkySubNebRun.py``).
 
 Both share ``sky_gaussfit.NEBULAR_LINES``/``resolve_nebular_lines()``
 (see :doc:`spectral_fitting_local`) for the line catalog and Doppler-shift
@@ -2221,11 +2223,12 @@ convention, and ``sky_nebular_leak_eval.resolve_velocity()``/``LMC_VEL``/
       at each nebular-line window)         repeat_scatter across tileid)
             |                                  |
             v                                  v
-    PlotNebularLeak.py                  PlotSkySubNebEval.py
-     (per-line before/after,             (pointing table, spectrum
-      shared-systematic template          overview, ratio summary
-      correction panels)                  table, per-line-group panels
-                                           -- one column per method)
+    PlotNebularLeak.py                  PlotSkySubNebEval.py (one exposure)
+     (per-line before/after,             or PlotSkySubNebRun.py (whole run)
+      shared-systematic template          (pointing table / run-summary
+      correction panels)                  table, ratio-vs-flux and repeat-
+                                           group scatter -- one column
+                                           per method)
 
 DRP_ALL's own ``Survey``/``Redshift`` columns (``SummarizeCframe.py``'s
 RA/Dec-based LMC/SMC/Plane/HighLat classification, 262/146/0/0 km/s) are
@@ -2620,6 +2623,130 @@ outlier.
 **See Also:** :doc:`api/PlotSkySubNebEval/index`
 
 
+PlotSkySubNebRun.py
+^^^^^^^^^^^^^^^^^^^
+
+Run-level companion to ``PlotSkySubNebEval.py``: aggregates
+``SkySubNebEval.py``'s per-row nebular-line fits and per-tileid
+``repeat_scatter`` groups across a whole run (one or more SkySub*.py
+output files, each with many rows — not just one exposure) into a single
+HTML report, so a method comparison doesn't require paging through one
+file per exposure. This is the "distributions" tool the single-exposure
+diagnostic above was always meant to be followed by.
+
+**Usage**::
+
+    PlotSkySubNebRun.py [-lines_file PATH] [-v VEL] [-lmc] [-smc]
+                        [-sigma S] [-snr_min S] [-mjd_close DAYS]
+                        [-title TITLE] [-outfile PATH]
+                        [fits_file ...]
+
+**Arguments:**
+
+fits_file
+    One or more SkySub*.py output files, the same contract
+    ``SkySubNebEval.py``'s own CLI takes. Ignored if ``-lines_file`` is
+    given.
+
+**Options:**
+
+-lines_file PATH
+    An existing ``SkySubNebEval.py`` run's ``<root>_lines.fits`` output —
+    skips the (currently unparallelized) per-row Gaussian refit, useful
+    for iterating on the report against a large sample without redoing
+    it every time. Exactly one of ``fits_file``/``-lines_file`` is
+    required. ``repeat_scatter``'s own grouping/MAD summary is always
+    recomputed from whichever row table is in hand either way — that
+    step is cheap (aggregation only, no curve fitting), so there is no
+    separate ``-repeats_file`` fast path.
+
+-v VEL / -lmc / -smc
+    Nebular systemic velocity override, same precedence/default (per-row
+    DRP_ALL ``Redshift`` lookup) as ``SkySubNebEval.py``. Ignored if
+    ``-lines_file`` is given.
+
+-sigma S / -snr_min S / -mjd_close DAYS
+    Same meaning as the equivalent ``SkySubNebEval.py`` options.
+
+-title TITLE / -outfile PATH
+    Report title (default: ``SkySubNebRun``) / output HTML path
+    (default: ``nebrun.html`` — rerun with the same path to update it in
+    place rather than accumulating one file per attempt).
+
+**Description:**
+
+The report is a real HTML document — actual ``<h1>``/``<h2>``/``<h3>``
+headings with CSS margins around several small, focused Plotly figures
+(``build_figures()``), **not** one giant multi-row Plotly canvas with
+hand-tuned pixel margins standing in for section breaks. That approach
+was tried first and kept needing another manually-tuned margin/spacer-row
+fix every time a new section was added; normal HTML block flow reserves
+space between sections automatically and cannot overlap, which a
+Plotly-internal annotation used as a section divider cannot guarantee.
+
+Every scatter section uses the same grid convention as
+``PlotSkySubNebEval.py``: one row per metric, one **column per method**
+(not all methods overlaid in one panel) — overlaying every method's
+points in a single panel is fine at the tens-of-points scale of a small
+test set, but stops being legible at real survey scale (hundreds to
+thousands of rows), whereas a single-method panel stays readable
+regardless of how large the run is::
+
+    <h1>title</h1>
+    [run-summary table: rows fit, SNR-pass count/fraction per doublet]
+    <h2>Line Ratios</h2>
+    <h3>Ratio vs. Line Flux</h3>
+    [one row per doublet, one column per method; x = mean flux of its
+     two lines (log), y = the ratio, one point per SNR-passing row,
+     pooled across the whole run]
+    <h3>Repeat-Group Scatter (MAD) vs. Median Flux</h3>
+    [same grid; x = a repeat group's median flux, y = that group's ratio
+     MAD, one point per repeat group, CLOSE groups only]
+    <h2>Repeat-Observation Flux Consistency</h2>
+    [one row per FLUX_METRICS entry (total flux for OII, OIII_b, NII_b,
+     SII_a+SII_b, SIII_b — chosen to use only lines whose partner is a
+     fixed multiple, or sum both when neither dominates), one column per
+     method; x = a repeat group's median flux, y = EACH individual
+     exposure's own measured flux in that group (all sharing that
+     group's x position) — the actual measurements, not a collapsed
+     dispersion number]
+    <h3>Summary</h3>
+    [interactive table: median-across-groups absolute MAD for ratios,
+     median-across-groups fractional STD (std/median) for flux totals]
+
+Both scatter designs replace an earlier pooled-box-plot version: pooling
+every row (or every repeat group) into one box per method hid the
+dependence of ratio/flux scatter on how bright the line actually was in
+a given fiber — plotting against flux directly controls for that
+confound instead of comparing methods across an uncontrolled mix of
+bright and faint measurements.
+
+Axis/table labels are kept short: a flux total is labeled with the bare
+line name (``OII``, not ``OII_FLUX``); a ratio is labeled with its actual
+wavelength pair (e.g. ``OII 3730:3726``, ``SII 6716:6731``) computed live
+from ``sky_gaussfit.NEBULAR_LINES`` rather than hand-typed, so the label
+stays correct if a doublet's numerator/denominator convention is ever
+changed (as ``SII`` was — see ``SkySubNebEval.DOUBLETS``'s own comment).
+Low-density-limit reference lines (dashed, not a truth/ceiling — density-
+sensitive ratios can and do vary; the low-density limit is just the value
+observed at most average sky positions) are drawn wherever
+``SkySubNebEval.DOUBLETS`` gives one for a ``'free'`` entry (OII ≈ 1.42,
+SII ≈ 1.5), the same visual treatment as the ``'fixed'``/``'bounded_above'``
+truth lines for OIII/NII/SIII/Hβ:Hα.
+
+Column order (which method is which column) is the order the input
+files/rows were actually given/created in (``_ordered_routines`` — first
+occurrence in the row table), not an alphabetical sort, and is identical
+across every section by construction (all figures are built from the
+same ``_common_setup()`` result).
+
+**Output:** one HTML file, never one file per exposure — the
+per-exposure picture is ``PlotSkySubNebEval.py``'s job; this one is the
+aggregate/distribution view across an entire run.
+
+**See Also:** :doc:`api/PlotSkySubNebRun/index`
+
+
 Science-Fiber-Based Sky Estimation
 ------------------------------------
 
@@ -2884,10 +3011,21 @@ Comparing Methods by Nebular-Line Recovery
            sky_runs/dev2/XCframe_file_dev2_scilines_nearcont.fits \
            sky_runs/dev3/XCframe_file_dev3_farlines_nearcont.fits
 
-3. For a batch statistic across many exposures/repeat groups instead of
-   one exposure, run ``SkySubNebEval.py`` on the same file list and
-   inspect its printed doublet-scatter comparison (or the ``_repeats.fits``
-   table directly)
+3. For a batch view across many exposures/repeat groups instead of one
+   exposure, run ``PlotSkySubNebRun.py`` on the same file list (or
+   ``-lines_file`` an existing ``SkySubNebEval.py`` run's own
+   ``_lines.fits`` to skip refitting)::
+
+       PlotSkySubNebRun.py -outfile nebrun.html \
+           sky_runs/orig/XCframe_file_orig_farlines_nearcont.fits \
+           sky_runs/drp/XCframe_file_drp_farlines_nearcont.fits \
+           sky_runs/dev1/XCframe_file_dev1_farlines_nearcont.fits \
+           sky_runs/dev2/XCframe_file_dev2_scilines_nearcont.fits \
+           sky_runs/dev3/XCframe_file_dev3_farlines_nearcont.fits
+
+   or run ``SkySubNebEval.py`` directly on the same file list and inspect
+   its printed doublet-scatter comparison (or the ``_repeats.fits`` table)
+   for the equivalent numbers without the report.
 
 4. To check whether SKY_EAST/SKY_WEST leak nebular flux in the first
    place (an assumption every method above depends on)::
@@ -2946,6 +3084,7 @@ See Also
 - :doc:`api/PlotNebularLeak/index` - API documentation
 - :doc:`api/SkySubNebEval/index` - API documentation
 - :doc:`api/PlotSkySubNebEval/index` - API documentation
+- :doc:`api/PlotSkySubNebRun/index` - API documentation
 - :doc:`api/SkySubSci/index` - API documentation
 - :doc:`api/SummarizeSciSky/index` - API documentation
 - :doc:`summarize` - SummarizeCframe.py, whose drpall selection logic SummarizeSciSky.py mirrors

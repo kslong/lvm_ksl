@@ -226,6 +226,11 @@ def _doublet_header(dname, kind, value):
         return f'{dname}<br>(={value:.3g})'
     if kind == 'bounded_above' and value is not None:
         return f'{dname}<br>(≤{value:.3g})'
+    if kind == 'free' and value is not None:
+        # A 'free' doublet's value (when set) is a low-density-limit
+        # REFERENCE line, not a truth/ceiling -- '≈' (not '=') signals
+        # that deviating from it is expected/fine, unlike 'fixed'.
+        return f'{dname}<br>(n_e→0: ≈{value:.3g})'
     return f'{dname}<br>(free)'
 
 

@@ -133,6 +133,36 @@ Primary routines::
 History::
 
     260909  ksl  Coding begun.
+    260910  ksl  fit_file/main() now resolve each row's own nebular
+                 velocity from DRP_ALL['Redshift'] (SummarizeCframe.py's
+                 RA/Dec-based LMC/SMC/Plane/HighLat classification) by
+                 default, instead of one -v/-lmc/-smc assumed for an
+                 entire run -- a run routinely mixes rows from different
+                 surveys, and getting this wrong silently mis-locates
+                 every fit window by the missed Doppler shift rather
+                 than reporting a clean failure. fit_file's output
+                 table gained SURVEY/VEL columns recording what was
+                 actually used, for auditability. -v/-lmc/-smc still
+                 override this per-row lookup when given explicitly.
+    260910  ksl  repeat_scatter() gained an optional return_rows=True
+                 (also returns {(routine,variant,tileid): Table} of
+                 each surviving group's own rows, for a caller wanting
+                 per-row scatter, not just the MED/MAD summary -- see
+                 PlotSkySubNebRun.py). Found and fixed a real bug while
+                 building that: grouping via Table(rows=<Row objects>)
+                 silently replaced masked/NaN entries with 0.0 (a group
+                 with 12 genuine non-detections looked like MAD=0.0
+                 instead of the correct MAD=NaN); fixed by grouping on
+                 row index and slicing row_table directly instead.
+    260910  ksl  DOUBLETS: sii_ratio's name_a/name_b swapped so the
+                 reported ratio is sii_a/sii_b (6716/6731), matching
+                 the literature convention, instead of the generic
+                 name_b/name_a rule's sii_b/sii_a; oii_ratio and
+                 sii_ratio both gained a low-density-limit reference
+                 value (1.42, 1.5) for PlotSkySubNebRun.py's scatter
+                 panels -- 'free' kind is unaffected by this (dev_sigma
+                 stays NaN regardless of value), so no spurious ⚠
+                 warning appears anywhere from setting it.
 
 '''
 
@@ -162,19 +192,26 @@ def _usage_from_doc(doc):
 #   'bounded_above' value is the maximum physically possible ratio; a
 #                   measured ratio ABOVE value is suspicious, below is not
 #                   (just means real reddening/conditions, not an error).
-#   'free'          no known truth value at all (value=None) -- only usable
-#                   via repeat_scatter's across-repeat consistency, never as
-#                   a per-row deviation check.
+#   'free'          no fixed truth value -- only usable via repeat_scatter's
+#                   across-repeat consistency, never as a per-row deviation
+#                   check (a 'free' entry's value, when not None, is a
+#                   low-density-limit REFERENCE line for visual context
+#                   only -- deviating from it is expected/fine, not
+#                   flagged, unlike 'fixed'/'bounded_above').
 # Ordered by increasing (shorter-wavelength-member) rest wavelength, so any
 # table built from this list reads left-to-right blue-to-red -- purely a
 # display convention, order has no effect on any computation here.
 DOUBLETS = [
     # SII/OII: both density-dependent doublets with no single fixed value --
-    # only meaningful via repeat_scatter (should still be roughly constant
-    # for repeat visits to the same field, even without a universal truth).
-    ('oii_ratio',   'oii_a',  'oii_b',  'free',         None,  'density-dependent; also only 3.8 A '
-                                                               'line separation -- see NEBULAR_LINES '
-                                                               'comment in sky_gaussfit.py'),
+    # value is the low-density-LIMIT ratio (n_e -> 0), a reference line for
+    # PlotSkySubNebRun.py's scatter panels, not a truth/ceiling check (kind
+    # stays 'free': _doublet_ratio's dev_sigma is always NaN for 'free'
+    # regardless of value, so this never triggers a spurious ⚠ elsewhere).
+    # OII is reported as oii_b/oii_a (3729/3726) -- standard convention, no
+    # flip needed, limit ~1.42 (260910, user-specified).
+    ('oii_ratio',   'oii_a',  'oii_b',  'free',         1.42,  'low-density limit, oii_b/oii_a; also '
+                                                               'only 3.8 A line separation -- see '
+                                                               'NEBULAR_LINES comment in sky_gaussfit.py'),
     # Hb/Ha: reddening only ever REDUCES Hb relative to Ha (dust extinguishes
     # the bluer line more), so the observed ratio can never exceed the
     # intrinsic no-reddening (Case B, Te~1e4K) value -- 1/2.86 = 0.350. A
@@ -189,7 +226,16 @@ DOUBLETS = [
     # sky6363, see sky_gaussfit.resolve_nebular_lines), not real nebular
     # flux, in most fibers -- a "ground truth" check here mostly measures
     # airglow-subtraction leftovers, not nebular-line recovery.
-    ('sii_ratio',   'sii_a',  'sii_b',  'free',         None,  'density-dependent, no fixed value'),
+    # SII is CONVENTIONALLY reported as sii_a/sii_b (6716/6731), the
+    # opposite of DOUBLETS' generic "ratio = name_b/name_a" rule -- name_a/
+    # name_b are swapped here (name_a='sii_b', name_b='sii_a') specifically
+    # so the computed ratio matches that literature convention (260910,
+    # user-specified) instead of leaving it silently inverted from what
+    # every external SII reference/comparison expects. Low-density limit
+    # ~1.5 for this (sii_a/sii_b) orientation.
+    ('sii_ratio',   'sii_b',  'sii_a',  'free',         1.5,   'low-density limit, sii_a/sii_b (note: '
+                                                               'name_a/name_b swapped from the usual '
+                                                               'convention to get this orientation)'),
     ('siii_ratio',  'siii_a', 'siii_b', 'fixed',        2.44,  'confirmed'),
 ]
 
@@ -434,7 +480,7 @@ def fit_file(fits_file, vel=None, lmc=False, smc=False, sigma_guess=1.0, snr_min
     return Table(rows=rows)
 
 
-def repeat_scatter(row_table, mjd_close=7.0):
+def repeat_scatter(row_table, mjd_close=7.0, return_rows=False):
     '''
     Group row_table by TILEID (excluding PLACEHOLDER_TILEID) and compute
     per-group flux/ratio scatter for every line and doublet.
@@ -448,6 +494,14 @@ def repeat_scatter(row_table, mjd_close=7.0):
         grouping is done separately per ROUTINE/VARIANT/TILEID triple).
     mjd_close : float
         MJD span (days) below which a group is tagged CLOSE.
+    return_rows : bool
+        If True, also return a {(routine, variant, tileid): Table} dict
+        of the individual surviving rows in each group (same rows the
+        MED/MAD summary below is computed from) -- for a caller that
+        wants to plot the actual per-row scatter, not just the summary
+        (see PlotSkySubNebRun.py), without duplicating this function's
+        grouping/tileid-exclusion/position-clustering filtering logic.
+        Default False -- existing callers/output unaffected.
 
     Returns
     -------
@@ -456,48 +510,67 @@ def repeat_scatter(row_table, mjd_close=7.0):
         N_REPEATS, MJD_SPAN, CLOSE, POS_SCATTER_DEG, then <line>_
         FLUX_MED/_FLUX_MAD for every NEBULAR_LINES entry, and
         <doublet>_MED/_MAD for every DOUBLETS entry.
+    dict, only if return_rows=True
+        {(routine, variant, tileid): astropy.table.Table} for every
+        group represented in the summary table above.
     '''
     line_names = [n for n, *_ in NEBULAR_LINES]
     doublet_names = [d.upper() for d, *_ in DOUBLETS]
 
+    # Group by row INDEX, not by collecting Row objects: row_table's
+    # float columns are masked (NaN entries read back from FITS become
+    # masked, not plain NaN), and Table(rows=<list of Row objects>)
+    # silently replaces masked entries with the column's fill_value
+    # (0.0) instead of preserving them -- found via direct inspection
+    # when a group's recomputed MAD (0.0, from 12 corrupted zeros) didn't
+    # match this function's own already-correct MAD (NaN, from 12
+    # genuinely all-non-detection rows) for the identical group. Indexing
+    # the table directly (row_table[idxs]) is a native, mask-safe Table
+    # operation and avoids the round-trip through Row objects entirely.
     groups = {}
-    for row in row_table:
+    for i, row in enumerate(row_table):
         if row['TILEID'] == PLACEHOLDER_TILEID:
             continue
         key = (row['ROUTINE'], row['VARIANT'], row['TILEID'])
-        groups.setdefault(key, []).append(row)
+        groups.setdefault(key, []).append(i)
 
     out_rows = []
-    for (routine, variant, tileid), rows in groups.items():
-        if len(rows) < 2:
+    group_rows = {}
+    for (routine, variant, tileid), idxs in groups.items():
+        if len(idxs) < 2:
             continue
-        ra = np.array([r['SCI_RA'] for r in rows], dtype=float)
-        dec = np.array([r['SCI_DEC'] for r in rows], dtype=float)
-        pos_scatter = float(np.nanmax([np.nanstd(ra), np.nanstd(dec)])) if len(rows) > 1 else 0.0
+        sub = row_table[idxs]
+        ra = np.asarray(sub['SCI_RA'], dtype=float)
+        dec = np.asarray(sub['SCI_DEC'], dtype=float)
+        pos_scatter = float(np.nanmax([np.nanstd(ra), np.nanstd(dec)])) if len(sub) > 1 else 0.0
         if pos_scatter > MAX_GROUP_POS_SCATTER_DEG:
             continue
 
-        mjd = np.array([r['MJD'] for r in rows], dtype=float)
+        mjd = np.asarray(sub['MJD'], dtype=float)
         mjd_span = float(np.nanmax(mjd) - np.nanmin(mjd)) if np.isfinite(mjd).any() else np.nan
 
-        out = dict(ROUTINE=routine, VARIANT=variant, TILEID=tileid, N_REPEATS=len(rows),
+        out = dict(ROUTINE=routine, VARIANT=variant, TILEID=tileid, N_REPEATS=len(sub),
                   MJD_SPAN=mjd_span, CLOSE=bool(np.isfinite(mjd_span) and mjd_span < mjd_close),
                   POS_SCATTER_DEG=pos_scatter)
         for name in line_names:
-            vals = np.array([r[f'{name}_FLUX'] for r in rows], dtype=float)
+            vals = np.asarray(sub[f'{name}_FLUX'], dtype=float)
             finite = vals[np.isfinite(vals)]
             out[f'{name}_FLUX_MED'] = float(np.median(finite)) if len(finite) else np.nan
             out[f'{name}_FLUX_MAD'] = (float(1.4826 * np.median(np.abs(finite - np.median(finite))))
                                        if len(finite) > 1 else np.nan)
         for dname in doublet_names:
-            vals = np.array([r[dname] for r in rows], dtype=float)
+            vals = np.asarray(sub[dname], dtype=float)
             finite = vals[np.isfinite(vals)]
             out[f'{dname}_MED'] = float(np.median(finite)) if len(finite) else np.nan
             out[f'{dname}_MAD'] = (float(1.4826 * np.median(np.abs(finite - np.median(finite))))
                                    if len(finite) > 1 else np.nan)
         out_rows.append(out)
+        group_rows[(routine, variant, tileid)] = sub
 
-    return Table(rows=out_rows) if out_rows else Table()
+    summary = Table(rows=out_rows) if out_rows else Table()
+    if return_rows:
+        return summary, group_rows
+    return summary
 
 
 def print_comparison(repeats_table, close_only=True):

@@ -141,17 +141,19 @@ Notes:
     scilines_nearcont that decomposition happens regardless, since the
     subtraction itself needs it.
 
-    Per-row LSF (when the input file has an LSF extension): rebuilding the
-    PALACE decomposer costs ~2s (measured) each time a row's LSF differs
-    from the previous row's, on top of the ~1s/decomposition already spent
-    in one_drp() -- real added cost for a full run, not just a one-time
-    setup cost as with the constant-LSF or reference-curve paths.  Any
-    non-finite or non-positive FWHM value at a given wavelength in a row's
-    own LSF array falls back to the constant -lsf default at that
-    wavelength only (not the whole row).  DRP_ALL gains LSF_FWHM_MED
-    (this row's median LSF FWHM actually used, whichever source it came
-    from); the primary header gains LSFSRC recording which of the three
-    sources was used for the whole run.
+    Per-row LSF (when the input file has an LSF extension): the decomposer
+    is only actually rebuilt (~2s, measured) when a row's LSF differs from
+    the cached one by more than 0.02 A at any pixel (XSkySepIvan.
+    _get_decomposer's np.allclose cache check) -- adjacent rows of the same
+    exposure typically differ by 0.005-0.013 A max (per-pixel measurement
+    noise, not a real LSF change) and reuse the cached decomposer; a
+    genuinely different LSF (e.g. a different exposure, typically 0.03-0.18
+    A max) still triggers a real rebuild.  Any non-finite or non-positive FWHM
+    value at a given wavelength in a row's own LSF array falls back to the
+    constant -lsf default at that wavelength only (not the whole row).
+    DRP_ALL gains LSF_FWHM_MED (this row's median LSF FWHM actually used,
+    whichever source it came from); the primary header gains LSFSRC
+    recording which of the three sources was used for the whole run.
 
     Reference LSF curve (data/lsf.fits): a FITS bintable with WAVE, LSF
     (FWHM in Angstroms), LSF_STD columns, searched for in the current
@@ -246,6 +248,15 @@ History::
                further investigation but must not be re-enabled by
                default without re-verifying against a multi-row sample,
                not a single row.
+    260909 ksl Fixed the per-row rebuild XSkySepIvan._get_decomposer()'s
+               single-instance cache was paying: its key matched lsf_sigma
+               on exact bytes, so every row missed the cache and rebuilt
+               (~2s) for no accuracy gain, even between adjacent rows of
+               the same exposure -- measured via SkySubRun.py -routine
+               dev2 -delta 1000 (14/14 sampled rows rebuilt, 55s total vs
+               3.4s for -routine orig on the same 14 rows). Fix is in
+               XSkySepIvan.py itself (np.allclose(atol=0.02 A) against the
+               cached LSF array instead of an exact-bytes key), not here.
 
 '''
 

@@ -149,11 +149,28 @@ Notes:
     Output columns are in the same flux units as the input FITS extension
     (no FACTOR scaling is applied).
 
-History:
+History::
 
-    260619  ksl  XSkySepPalace.py coding begun
-    260628  ksl  Renamed to XSkySepIvan.py; added Sky file mode and -lsf/-refits
-    260629  ksl  Added COEF image, COEF_META table, and DRP_ALL coefficient summary
+        260619  ksl  XSkySepPalace.py coding begun
+        260628  ksl  Renamed to XSkySepIvan.py; added Sky file mode and -lsf/-refits
+        260629  ksl  Added COEF image, COEF_META table, and DRP_ALL coefficient summary
+        260909  ksl  _get_decomposer() rebuilt on every single row of a per-row-
+                     LSF run, even between adjacent rows of the same exposure,
+                     because its cache key matched lsf_sigma on exact bytes
+                     (found via SkySubDev2.py -delta 1000 timing: 14/14 sampled
+                     rows rebuilt). First fix attempt -- round lsf_sigma to 1e-3
+                     A before keying -- did not help: real per-row LSF arrays
+                     carry per-pixel measurement noise whose median/p99 are
+                     statistically indistinguishable between adjacent rows and
+                     rows from two different exposures (~2e-5 / ~1e-3 A either
+                     way, measured), so a handful of noisy pixels still broke
+                     the rounded-array match every time. Replaced the hashed key
+                     with a direct np.allclose(atol=0.02, rtol=0) comparison
+                     against the cached lsf_sigma array: max(|diff|) DOES
+                     separate the two cases (adjacent rows measured 0.005-0.013
+                     A; different exposures mostly 0.03-0.18 A, one outlier
+                     pair at 0.015 A where the two exposures' true LSF happened
+                     to coincide anyway), so 0.02 A sits in the gap.
 '''
 
 import sys
@@ -218,18 +235,40 @@ _ORC_COEF_COL = {
 # Cached SkyDecomp instance (rebuilt only if wave or LSF changes)
 # ──────────────────────────────────────────────────────────────
 
-_decomposer     = None
-_decomposer_key = None   # (wave bytes, lsf_sigma bytes, base_dir str, n_spline_knots)
+_decomposer            = None
+_decomposer_wave       = None
+_decomposer_lsf        = None
+_decomposer_base_dir   = None
+_decomposer_n_knots    = None
+
+# Per-pixel max-|diff| tolerance (Angstrom) for treating two LSF arrays as
+# "the same" and reusing the cached decomposer.  Real per-row LSF arrays
+# (SummarizeCframe.py's make_med_spec output) always carry some per-pixel
+# measurement noise -- median and p99 |diff| are indistinguishable between
+# genuinely-adjacent rows of the same exposure and rows from two different
+# exposures (~2e-5 / ~1e-3 A either way, measured), so neither is useful for
+# telling them apart.  max(|diff|) does separate them: adjacent rows measured
+# 0.005-0.013 A, different exposures mostly 0.03-0.18 A (one pair overlapped
+# at 0.015 A -- the two exposures' true LSF happened to be very close that
+# time, so treating them as "the same" there costs no real accuracy either).
+# 0.02 A sits in the gap: comfortably above every measured adjacent-row case,
+# comfortably below all but the one overlapping different-exposure case.
+_LSF_ATOL = 0.02
 
 
 def _get_decomposer(wave, lsf_sigma, base_dir=DEFAULT_BASE_DIR, n_spline_knots=25):
-    global _decomposer, _decomposer_key
+    global _decomposer, _decomposer_wave, _decomposer_lsf, _decomposer_base_dir, _decomposer_n_knots
 
     wave      = np.asarray(wave, float)
     lsf_sigma = np.asarray(lsf_sigma, float)
-    key = (wave.tobytes(), lsf_sigma.tobytes(), str(base_dir), n_spline_knots)
 
-    if _decomposer is None or key != _decomposer_key:
+    same_wave = (_decomposer_wave is not None and wave.shape == _decomposer_wave.shape
+                and np.array_equal(wave, _decomposer_wave))
+    same_lsf  = (_decomposer_lsf is not None and lsf_sigma.shape == _decomposer_lsf.shape
+                and np.allclose(lsf_sigma, _decomposer_lsf, atol=_LSF_ATOL, rtol=0, equal_nan=True))
+    same_cfg  = (base_dir == _decomposer_base_dir and n_spline_knots == _decomposer_n_knots)
+
+    if _decomposer is None or not (same_wave and same_lsf and same_cfg):
         print('Building PALACE decomposer (this may take ~10-30 s)...')
         _decomposer = SkyDecomp(
             wave,
@@ -237,7 +276,10 @@ def _get_decomposer(wave, lsf_sigma, base_dir=DEFAULT_BASE_DIR, n_spline_knots=2
             n_spline_knots=n_spline_knots,
             base_dir=base_dir,
         )
-        _decomposer_key = key
+        _decomposer_wave     = wave
+        _decomposer_lsf      = lsf_sigma
+        _decomposer_base_dir = base_dir
+        _decomposer_n_knots  = n_spline_knots
         print('Done.')
 
     return _decomposer

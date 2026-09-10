@@ -26,12 +26,21 @@ The tools in lvm_ksl allow you to:
   RunSky.py)
 - Run alternative sky subtraction using ESO's SkyCorr tool, a polynomial or
   B-spline continuum fit (SkySubOrig/SkySubDev1), a PALACE decomposition
-  (SkySubDev2), the lvmdrp routine directly (SkySubDrp), or the ESO Sky
-  Model itself (SkySepESO)
+  (SkySubDev2), a SkyDecomp continuum with nebular-line masking
+  (SkySubDev3), the lvmdrp routine directly (SkySubDrp), or the ESO Sky
+  Model itself (SkySepESO) — dispatched uniformly through ``SkySubRun.py``
+  so a run/evaluate workflow doesn't need to remember which routine's own
+  CLI to call
 - Generate theoretical sky models for comparison
 - Visualize sky residuals and identify problems, including separately
   evaluating sky *line* subtraction quality and continuum *separation*
   quality (SkySub_eval.py)
+- Test whether the SKY_EAST/SKY_WEST telescopes themselves leak real
+  nebular-line flux (an assumption every method above depends on), and
+  compare how well each SkySub* method recovers known nebular-line ratios
+  on the science fiber itself (``DecomposeCleanSky.py``,
+  ``sky_nebular_leak_eval.py``, ``SkySubNebEval.py`` — see "Nebular-Line-
+  Based Method Evaluation" below)
 
 
 Evaluating Sky Subtraction
@@ -991,6 +1000,9 @@ carries a QA_FLAGS column recording per-row quality issues.
 0x04    POORFIT     Continuum fit is poorly conditioned (SkySubOrig, SkySubDev1).
 0x04    MODELFAIL   ESO sky model (local SM-01 binary + SkyCalc web-service
                     fallback) both failed for this row (SkySepESO only).
+0x04    NOTSOLVED   At least one of the three per-row SkyDecomp fits
+                    reported a status other than Solved/AlmostSolved
+                    (SkySubDev3 only).
 0x08    FAILED      Row raised an exception; spectrum filled with NaN.
 ======  ==========  ===========================================================
 
@@ -1341,6 +1353,177 @@ actually used), and the primary header gains ``LSFSRC`` recording which of
 the three LSF sources was used for the whole run.
 
 **See Also:** :doc:`api/SkySubDev2/index`
+
+
+SkySubDev3.py
+^^^^^^^^^^^^^
+
+Perform per-spectrum sky subtraction using
+``sky_decomp.lsf_surface_iterative.SkyDecompLSFSurfaceIterative`` (the
+same physically-motivated, per-row-LSF-refined decomposition
+``DecomposeCleanSky.py`` uses — see "Nebular-Line-Based Method
+Evaluation" below) for the continuum/line separation, with the near/far
+recipe and bisection scale search otherwise identical to SkySubDev1.py.
+
+**Usage**::
+
+    SkySubDev3.py [-method METHOD] [-delta N] [-v VEL] [-lmc] [-smc]
+                  [-out ROOT] [-lvmsky_skysub PATH] filename
+
+**Arguments:**
+
+filename
+    XCframe FITS file to process.
+
+**Options:**
+
+-method METHOD
+    ``nearest`` | ``farlines_nearcont`` (default).
+
+-delta N
+    Process every N-th row (default: 1).
+
+-v VEL / -lmc / -smc
+    Nebular systemic velocity (km/s) used to Doppler-shift the exclusion
+    windows masked out of every spectrum's continuum/line fit (default:
+    0). Same convention as ``sky_gaussfit.py``/``DecomposeCleanSky.py``.
+
+-out ROOT
+    Output filename root. Default: ``<stem>_dev3_<method>``.
+
+-lvmsky_skysub PATH
+    Path to the ``lvmsky`` repo's ``skysub/`` directory, which supplies
+    the ``sky_decomp`` package this script imports (default:
+    ``~/SDSS/lvmsky/skysub``). Unlike SkySubDev1/Dev2, no ``-mask``
+    argument exists — ``SkyDecomp`` fits its own OH/atomic-line families
+    directly against the data, needing no external palace_mask file.
+
+**Description:**
+
+The ``SkyDecompLSFSurfaceIterative`` instance is built once (from the
+full wavelength grid) and reused for every row, via
+``DecomposeCleanSky.build_decomp`` (imported directly, not duplicated).
+For each row:
+
+1. Science and sky spectra are read; near/far sky is identified from
+   RA/Dec separations (identical to SkySubDev1.py).
+2. Each of the three spectra (science, near sky, far sky) is fit with
+   SkyDecomp, with ``sky_gaussfit.resolve_nebular_lines()``'s windows
+   (Doppler-shifted by ``-v``/``-lmc``/``-smc``) excluded from the fit
+   via ``ivar=0`` — the same mask-and-wrap approach
+   ``DecomposeCleanSky.py`` uses. This matters specifically for the two
+   sky-telescope spectra: the nebular-leak validation work below found
+   real nebular-line leak in SKY_WEST on at least one tested exposure,
+   so masking it out of the *continuum* fit (rather than assuming, as
+   SkySubDev1/Dev2/Drp implicitly do, that the sky telescopes are
+   nebula-free) keeps that leak from biasing the fitted continuum.
+   ``cont = bestfit_lsf - (oh+atom+orc+o2)``; ``lines = spectrum - cont``
+   (the same "lines = observed - continuum" definition SkySubDev1.py
+   uses, kept identical so the two are comparable apples-to-apples).
+3. A global line scale factor *r* is found by ``ksl_bisection`` (from
+   SkySubOrig.py), exactly as in SkySubDev1.py.
+4. The sky model is assembled and subtracted::
+
+       farlines_nearcont:  sky = cont_near + r × lines_far
+       nearest:            sky = cont_near + r × lines_near
+
+**Output:**
+
+A FITS file ``<ROOT>.fits`` with extensions WAVE, FLUX (sky-subtracted),
+SKY, and DRP_ALL — the same layout as SkySubOrig/Drp/Dev1/Dev2.py, so
+SkySub_eval.py and SkySubNebEval.py both read it exactly like those, with
+no changes needed there. QA_FLAGS reuses 0x01/NANDATA and 0x02/ZEROSKY,
+adds a new 0x04/NOTSOLVED (at least one of the three per-row SkyDecomp
+fits reported a status other than Solved/AlmostSolved), and 0x08/FAILED.
+
+**See Also:** :doc:`api/SkySubDev3/index`
+
+
+SkySubRun.py
+^^^^^^^^^^^^
+
+Dispatcher for the SkySub* family (SkySubDrp.py, SkySubOrig.py,
+SkySubDev1.py, SkySubDev2.py, SkySubDev3.py): runs one named routine on
+an XCframe file by calling its ``do_all()`` directly (no subprocess),
+writes its output into a routine-specific subdirectory so different
+routines — or repeated runs of the same routine with a different variant
+— never collide on a filename, and optionally chains ``SkySub_eval.py``
+on the result afterward. This is the recommended entry point for running
+and comparing the five methods, rather than calling each script's own
+CLI directly: it removes the bookkeeping of tracking which routine
+produced which file, and its own naming convention
+(``DIR/<routine>/<input_stem>_<routine>_<variant>.fits``) is what
+SkySubNebEval.py/PlotSkySubNebEval.py's own multi-file comparisons
+below expect.
+
+**Usage**::
+
+    SkySubRun.py -routine {drp,orig,dev1,dev2,dev3} [-variant NAME]
+                 [-delta N] [-mask FILE] [-kstep N]
+                 [-fwhm_lsf F] [-lsf_boost F]
+                 [-v VEL] [-lmc] [-smc] [-lvmsky_skysub PATH]
+                 [-outdir DIR] [-eval] [-eval_out ROOT]
+                 filename
+
+**Arguments:**
+
+filename
+    XCframe FITS file to process.
+
+**Options:**
+
+-routine NAME
+    Which SkySub* routine to run — ``drp`` | ``orig`` | ``dev1`` |
+    ``dev2`` | ``dev3`` (required; no default, so a run always names its
+    own routine explicitly).
+
+-variant NAME
+    The sky-construction variant passed as that routine's own
+    ``-method`` (default: that routine's own default variant).
+
+-delta N
+    Process every N-th row (default: 1).
+
+-mask FILE / -kstep N
+    Passed through to SkySubDev1.py only.
+
+-fwhm_lsf F / -lsf_boost F
+    Passed through to SkySubDev2.py only (defaults 1.3 / 1.0).
+
+-v VEL / -lmc / -smc / -lvmsky_skysub PATH
+    Passed through to SkySubDev3.py only.
+
+-outdir DIR
+    Top-level directory under which each routine gets its own
+    subdirectory, ``DIR/<routine>/`` (default: ``sky_runs``).
+
+-eval
+    After the routine finishes, also run ``SkySub_eval.plot_eval()`` on
+    its output (a convenience — running ``SkySub_eval.py`` by hand on the
+    written file afterward gives identical results).
+
+-eval_out ROOT
+    Output root for the ``-eval`` HTML (default: the routine's own
+    output stem + ``"_eval"``, in the same subdirectory).
+
+**Description:**
+
+Each routine's module is imported lazily (only once ``-routine``
+selects it), so running e.g. ``-routine drp`` never pays the cost of
+importing dev3's ``lvmsky`` dependency or dev1/dev2's GetSkyCont/PALACE
+machinery. Calls each routine's ``do_all()`` directly within this
+process (not via subprocess) — faster, and errors surface as normal
+Python tracebacks rather than being swallowed into a subprocess return
+code.
+
+**Example**::
+
+    SkySubRun.py -routine dev3 -lmc -eval XCframe_file.fits
+
+    # writes sky_runs/dev3/XCframe_file_dev3_farlines_nearcont.fits
+    # and    sky_runs/dev3/XCframe_file_dev3_farlines_nearcont_eval.html
+
+**See Also:** :doc:`api/SkySubRun/index`
 
 
 SkySepESO.py
@@ -1809,35 +1992,45 @@ Subtracted-row statistics above; no backup is created.
 Comparing Sky Subtraction Methods
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-A typical workflow for running all five methods on a single XCframe file
-and comparing the results::
+A typical workflow for running the XCframe methods on a single file and
+comparing the results::
 
     # 1. Build the sky-line mask (if not already present)
     palace_make_mask.py XCframe_file.fits
 
-    # 2. Run the five subtraction methods
-    SkySubOrig.py  XCframe_file.fits
-    SkySubDrp.py   XCframe_file.fits
-    SkySubDev1.py  XCframe_file.fits -mask sky_mask.fits
-    SkySubDev2.py  XCframe_file.fits
-    SkySepESO.py   XCframe_file.fits -delta 50   # slow; use -delta for a quick look
+    # 2. Run the subtraction methods (SkySubRun.py avoids tracking each
+    #    routine's own output-naming convention by hand)
+    SkySubRun.py -routine orig  XCframe_file.fits
+    SkySubRun.py -routine drp   XCframe_file.fits
+    SkySubRun.py -routine dev1  XCframe_file.fits -mask sky_mask.fits
+    SkySubRun.py -routine dev2  XCframe_file.fits
+    SkySubRun.py -routine dev3  XCframe_file.fits
+    SkySepESO.py XCframe_file.fits -delta 50   # slow; use -delta for a quick look
 
     # 3. Evaluate and compare in a single HTML file
     SkySub_eval.py -out compare \
-        XCframe_file_orig_farlines_nearcont.fits \
-        XCframe_file_drp_farlines_nearcont.fits \
-        XCframe_file_dev1_farlines_nearcont.fits \
-        XCframe_file_dev2_scilines_nearcont.fits \
+        sky_runs/orig/XCframe_file_orig_farlines_nearcont.fits \
+        sky_runs/drp/XCframe_file_drp_farlines_nearcont.fits \
+        sky_runs/dev1/XCframe_file_dev1_farlines_nearcont.fits \
+        sky_runs/dev2/XCframe_file_dev2_scilines_nearcont.fits \
+        sky_runs/dev3/XCframe_file_dev3_farlines_nearcont.fits \
         XCframe_file_eso_farlines_nearcont.fits
 
 Open ``compare_eval.html`` in a browser.  Figure 1 overlays the median
-spectra for all five methods; Figure 4 (Sky Line Subtraction section) shows
+spectra for all methods; Figure 4 (Sky Line Subtraction section) shows
 the per-spectrum HF RMS ratio for each diagnostic window; Figures 5/6
 (Continuum Separation section) show per-arm continuum-fit quality for the
-three methods that record it (SkySubOrig, SkySubDev1, SkySepESO) — together
-these make it straightforward to identify which method best suppresses
-sky lines *and* which best separates continuum from lines for the
-observation.
+methods that record it (SkySubOrig, SkySubDev1, SkySubDev2, SkySepESO) —
+together these make it straightforward to identify which method best
+suppresses sky lines *and* which best separates continuum from lines for
+the observation.
+
+This tells you how well a method suppresses *airglow* residuals, but
+nothing about whether it also distorts or destroys real *nebular* signal
+on the science fiber — a method that oversubtracts is invisible to a
+generic sky-residual metric, since the airglow residual it's built from
+looks equally good either way.  For that question, see "Nebular-Line-
+Based Method Evaluation" below.
 
 sky_residual_eval.py
 ^^^^^^^^^^^^^^^^^^^^
@@ -1963,6 +2156,468 @@ against ``data/sky_mask.fits`` in parallel across 8 worker processes.
 ``analyze_sky_residual``/``analyze_sky_residuals`` are also directly
 importable for use outside the command line -- see the API reference
 for their full parameter and return-value documentation.
+
+
+Nebular-Line-Based Method Evaluation
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+Every generic sky-residual metric above (``SkySub_eval.py``,
+``sky_residual_eval.py``) measures how well *airglow* is suppressed. None
+of them can tell you whether a method also distorts real *nebular*
+emission on the science fiber — an oversubtracting method looks just as
+good by those metrics as one that doesn't, since both are judged purely
+on leftover airglow residual. This group of tools instead measures
+recovery of known nebular-line physics directly: fixed atomic-physics
+line ratios ([SIII] 9531/9069 = 2.44, [NII] 6583/6548 = 3.0), a
+reddening-bounded ratio (Hβ/Hα ≤ 0.350, Case B no-reddening ceiling), and
+scatter across repeat observations of the same tile — the same
+philosophy as ``sky_residual_eval.py``'s method-agnostic design
+(``[[feedback_method_agnostic_eval]]``), applied to line ratios instead
+of residual shape. It also directly tests the lvmdrp assumption that
+SKY_EAST/SKY_WEST themselves carry no nebular-line flux, an assumption
+every method above (this evaluation family included, for the far/near
+sky-line component) implicitly depends on.
+
+The tools split into two lines of investigation sharing a common line
+catalog and velocity convention:
+
+- **Does the sky itself leak nebular flux?** (``DecomposeCleanSky.py`` →
+  ``sky_nebular_leak_eval.py`` → ``PlotNebularLeak.py``) — fits a
+  nebula-free "clean sky" model to FLUX/SKY_EAST/SKY_WEST by masking out
+  nebular-line windows before the fit, then measures whether real flux
+  still leaked into those windows anyway.
+- **Which SkySub* method best recovers real nebular flux?**
+  (``SkySubRun.py`` → ``SkySubNebEval.py`` → ``PlotSkySubNebEval.py``) —
+  fits the same nebular-line catalog directly on each method's
+  sky-*subtracted* output and compares the measured ratios/repeat
+  scatter across methods.
+
+Both share ``sky_gaussfit.NEBULAR_LINES``/``resolve_nebular_lines()``
+(see :doc:`spectral_fitting_local`) for the line catalog and Doppler-shift
+convention, and ``sky_nebular_leak_eval.resolve_velocity()``/``LMC_VEL``/
+``SMC_VEL`` for turning ``-v``/``-lmc``/``-smc`` (or, in
+``SkySubNebEval.py``/``PlotSkySubNebEval.py``, a per-row DRP_ALL
+``Redshift`` lookup — see below) into a systemic velocity::
+
+    SummarizeCframe.py -by fiber
+            |
+            v
+    XCframe summary FITS (WAVE, FLUX, SKY_EAST, SKY_WEST, DRP_ALL[, LSF])
+            |
+            +---------------------------------+
+            |                                 |
+            v                                 v
+    DecomposeCleanSky.py                SkySubRun.py -routine
+    (py_dev/ -- mask nebular lines,      {drp,orig,dev1,dev2,dev3}
+     fit clean-sky continuum with              |
+     SkyDecompLSFSurfaceIterative)              v
+            |                            <routine> output FITS
+            v                            (WAVE, FLUX, SKY, DRP_ALL)
+    CleanSky_<expnum>.fits                     |
+            |                                  v
+            v                            SkySubNebEval.py
+    sky_nebular_leak_eval.py              (fit NEBULAR_LINES on FLUX,
+     (Gaussian-on-residual fit             DOUBLETS ratio checks,
+      at each nebular-line window)         repeat_scatter across tileid)
+            |                                  |
+            v                                  v
+    PlotNebularLeak.py                  PlotSkySubNebEval.py
+     (per-line before/after,             (pointing table, spectrum
+      shared-systematic template          overview, ratio summary
+      correction panels)                  table, per-line-group panels
+                                           -- one column per method)
+
+DRP_ALL's own ``Survey``/``Redshift`` columns (``SummarizeCframe.py``'s
+RA/Dec-based LMC/SMC/Plane/HighLat classification, 262/146/0/0 km/s) are
+the per-row systemic-velocity default for ``SkySubNebEval.py``/
+``PlotSkySubNebEval.py`` — important because a single file/run routinely
+mixes rows from different surveys (e.g. a repeat-observation test set
+spanning HighLat and SMC tiles together), so one global ``-v``/``-lmc``/
+``-smc`` assumed for an entire run is wrong for whichever rows don't
+match it. Getting this wrong silently mis-locates every nebular-line fit
+window by the missed velocity's Doppler shift (comparable to or larger
+than the fit window itself for LMC/SMC fields), which reads as "no
+nebular signal detected" rather than "fit at the wrong wavelength" —
+found on a real LMC exposure where every doublet ratio came back
+SNR-gated as an apparent non-detection under the wrong assumed velocity.
+Passing ``-v``/``-lmc``/``-smc`` explicitly still overrides the per-row
+lookup, for the case where every row in a run is known to share one
+real target velocity.
+
+
+DecomposeCleanSky.py
+^^^^^^^^^^^^^^^^^^^^
+
+Decomposes one or more of FLUX (science fiber), SKY_EAST, and SKY_WEST
+from an XCframe summary file into a nebula-free "clean sky" model, using
+``sky_decomp.lsf_surface_iterative.SkyDecompLSFSurfaceIterative`` with the
+known nebular emission lines excluded from the fit ("mask-and-wrap").
+Lives in ``py_dev/`` (not Sphinx-API-documented — see :doc:`sky_model_landscape`
+for that tier's conventions) since it live-imports the ``lvmsky`` repo's
+``skysub`` package, the same pattern as ``py_dev/PredictSky.py``.
+
+**Usage**::
+
+    DecomposeCleanSky.py [-lvmsky_skysub PATH] [-py_progs_dir PATH]
+                         [-row N | -expnum N] [-ext LIST]
+                         [-v VEL] [-lmc] [-smc] [-output PATH]
+                         fits_file
+
+**Arguments:**
+
+fits_file
+    XCframe summary FITS file (WAVE, FLUX, SKY_EAST, SKY_WEST, DRP_ALL).
+
+**Options:**
+
+-row N / -expnum N
+    Select the exposure by row index (default 0) or DRP_ALL ``expnum``
+    (overrides ``-row``).
+
+-ext LIST
+    Comma-separated extensions to decompose (default:
+    ``FLUX,SKY_EAST,SKY_WEST`` — FLUX is included by default too, as a
+    same-exposure comparison point for how much nebular flux the sky
+    telescopes see relative to the science fiber).
+
+-v VEL / -lmc / -smc
+    Nebular systemic velocity (km/s), same convention as
+    ``sky_gaussfit.py`` (default: 0).
+
+-output PATH
+    Output FITS path (default: ``CleanSky_<expnum>.fits``).
+
+-lvmsky_skysub PATH / -py_progs_dir PATH
+    Paths to the ``lvmsky`` repo's ``skysub/`` directory and the
+    ``lvm_ksl`` repo's ``py_progs/`` directory (defaults
+    ``~/SDSS/lvmsky/skysub`` / ``~/SDSS/lvm_ksl/py_progs``).
+
+**Description:**
+
+For each requested extension: builds the nebular exclusion mask from
+``sky_gaussfit.NEBULAR_LINES``, each window Doppler-shifted by the same
+``zz = 1 + vel/3e5`` convention ``sky_gaussfit.py`` itself uses; zeroes
+IVAR inside those windows (and at any non-finite flux pixel) before
+fitting, so the fit engine's own
+``good = isfinite(flux) & isfinite(ivar) & (ivar>0)`` never sees the
+nebular pixels and none of its continuum/sky-line families can absorb
+nebular flux; reconstructs the clean-sky model (``bestfit_lsf``) and the
+full-array residual (observed − clean sky, including *inside* the
+excluded windows — that residual there is exactly the nebular-leak
+signal ``sky_nebular_leak_eval.py`` measures).
+
+This is the "mask-and-wrap" half of the continuum/sky-line/nebular-line
+separation effort; a later, more ambitious native nebular family solved
+jointly inside SkyDecomp's own design matrix would slot in as a different
+model-building step without changing the leak-detection tooling
+downstream (which only ever needs a ``(wave, flux, model)`` triple).
+
+**Output:**
+
+A FITS file with, per requested extension: observed ``<EXT>``,
+``<EXT>_BESTFIT`` (clean-sky model), ``<EXT>_RESID``, ``<EXT>_NEBMASK``
+(the boolean mask actually used), and one extension per fit component.
+
+
+sky_nebular_leak_eval.py
+^^^^^^^^^^^^^^^^^^^^^^^^
+
+Measures how much flux leaks into each nebular emission-line window in a
+``DecomposeCleanSky.py`` output's residual — a direct, per-line,
+per-extension test of whether SKY_EAST/SKY_WEST actually contain no
+nebular-line flux, as the DRP's own sky subtraction assumes.
+
+**Usage**::
+
+    sky_nebular_leak_eval.py [-ext LIST] [-v VEL] [-lmc] [-smc]
+                             [-sigma S] [-thresh T] [-out ROOT]
+                             [-template_ext EXT] [-template_band LO,HI]
+                             fits_file [fits_file ...]
+
+**Arguments:**
+
+fits_file
+    One or more ``DecomposeCleanSky.py`` output files.
+
+**Options:**
+
+-ext LIST
+    Comma-separated extensions to evaluate (default: ``SKY_EAST,SKY_WEST``
+    — must match what ``DecomposeCleanSky.py`` was run with).
+
+-v VEL / -lmc / -smc
+    Nebular systemic velocity — must match what ``DecomposeCleanSky.py``
+    was run with, or the fit window is centered on the wrong wavelength.
+
+-sigma S
+    Initial Gaussian sigma guess in Angstrom (default 1.0).
+
+-thresh T
+    ``|amplitude/amplitude_error|`` above which a line is flagged as a
+    candidate leak in the printed summary (default 3.0); does not affect
+    what's written to the output table.
+
+-out ROOT
+    Output table filename root (default: ``nebular_leak``).
+
+-template_ext EXT / -template_band LO,HI
+    Optional shared-systematic template correction: an extension whose
+    RESID is used to correct every other requested extension's residual
+    inside ``-template_band`` (default: off; band default 9000,9600 Å if
+    used). Confirmed at r~0.95-0.98 between FLUX/SKY_EAST/SKY_WEST
+    *within one exposure*, but only r~0.5-0.6 *across different
+    exposures*, so a template never transfers across files. Useful when
+    the band is dominated by a shared instrumental systematic (e.g. an
+    OH-line/LSF template mismatch in the Z channel) rather than photon
+    noise — an extension confirmed to carry little real signal (e.g. one
+    that fails a known-fixed-ratio check) can serve as that exposure's own
+    correction template for the others.
+
+**Description:**
+
+Fits a Gaussian plus constant background directly to the RESID array
+(observed − model) at each of ``sky_gaussfit.resolve_nebular_lines()``'s
+Doppler-shifted rest wavelengths — deliberately not anchored to a
+model-fit shape the way ``sky_residual_eval.py``'s airglow-line fitting
+is, since a nebular line has ~no flux in a ``DecomposeCleanSky.py`` model
+by construction (its window was excluded from the fit): there is no
+model peak to anchor on, so the line's own catalog wavelength is the
+prior instead. A significant nonzero fitted amplitude at a nebular line's
+position in SKY_EAST/SKY_WEST is direct evidence of nebular contamination
+the mask-and-wrap decomposition — and by extension the DRP's own sky
+subtraction — did not remove.
+
+Only ever needs ``(wave, flux_observed, flux_model)`` per extension, so
+it works unchanged against a future native-nebular-family SkyDecomp
+output too, not just ``DecomposeCleanSky.py``'s mask-and-wrap models.
+
+**Output:**
+
+``<ROOT>_lines.fits`` — one row per (file, extension, line) with the
+fitted flux/error/SNR/center/width and (if ``-template_ext`` was used)
+both the raw and template-corrected values.
+
+**See Also:** :doc:`api/sky_nebular_leak_eval/index`
+
+
+PlotNebularLeak.py
+^^^^^^^^^^^^^^^^^^
+
+Interactive Plotly visualization of the ``DecomposeCleanSky.py``/
+``sky_nebular_leak_eval.py`` workflow for one exposure: the
+shared-systematic residual pattern across FLUX/SKY_EAST/SKY_WEST in a
+chosen wavelength band, plus zoomed before/after panels at each requested
+nebular line showing the raw residual, the scaled template being
+subtracted, the corrected residual, and the fitted Gaussian.
+
+**Usage**::
+
+    PlotNebularLeak.py [-lines LIST] [-targets LIST]
+                       [-template_ext EXT] [-template_band LO,HI]
+                       [-leak_file PATH] [-title TITLE] [-outfile PATH]
+                       decomp_file
+
+**Arguments:**
+
+decomp_file
+    A ``DecomposeCleanSky.py`` output FITS file.
+
+**Options:**
+
+-lines LIST
+    Comma-separated ``NEBULAR_LINES`` names to show zoomed panels for
+    (default: ``siii_a,siii_b``).
+
+-targets LIST
+    Comma-separated extensions to show zoom panels for (default:
+    ``FLUX,SKY_WEST``).
+
+-template_ext EXT / -template_band LO,HI
+    Same convention as ``sky_nebular_leak_eval.py`` (default template
+    extension: ``SKY_EAST``; band: 9000,9600). Recomputed locally with
+    ``fit_template_scale``, not read from ``-leak_file``, so this plot
+    works even without one.
+
+-leak_file PATH
+    ``sky_nebular_leak_eval.py`` output (``<root>_lines.fits``). If given,
+    the fitted Gaussian curves are drawn from its own fitted columns
+    (matching that table's numbers exactly); otherwise this script fits
+    them itself with the same ``fit_leak_line`` routine.
+
+-title TITLE / -outfile PATH
+    Plot title (default: input filename) / output HTML path (default:
+    ``Overview_Plot/<stem>.nebleak.html``).
+
+**Description:**
+
+Top panel: ``<EXT>_RESID`` for every extension present, overlaid over the
+template band, sharing one y-axis — shows the shared-systematic
+correlation directly (same shape, different amplitude, across
+extensions within one exposure). One row of zoom panels per ``-lines``
+entry, one column per ``-targets`` entry, each showing the raw residual,
+scaled template, corrected residual, and fitted Gaussian.
+
+**See Also:** :doc:`api/PlotNebularLeak/index`
+
+
+SkySubNebEval.py
+^^^^^^^^^^^^^^^^
+
+Science-specific evaluator for the SkySub* method family: fits
+``sky_gaussfit.NEBULAR_LINES`` directly on each method's sky-subtracted
+FLUX, checks fixed-ratio doublets against their known atomic-physics
+value, and measures flux/ratio scatter across repeated observations of
+the same tile.
+
+**Usage**::
+
+    SkySubNebEval.py [-v VEL] [-lmc] [-smc] [-sigma S] [-mjd_close DAYS]
+                     [-snr_min S] [-out ROOT] fits_file [fits_file ...]
+
+**Arguments:**
+
+fits_file
+    One or more SkySub*.py output FITS files (WAVE, FLUX, SKY, DRP_ALL —
+    the layout every SkySubDrp/Orig/Dev1/Dev2/Dev3.py output shares).
+    Each file's primary header ``TITLE``/``METHOD`` keywords label its
+    rows.
+
+**Options:**
+
+-v VEL / -lmc / -smc
+    Nebular systemic velocity, applied to EVERY row regardless of target
+    if given. Default: none — each row's velocity is instead looked up
+    from that row's own DRP_ALL ``Redshift`` (see "Nebular-Line-Based
+    Method Evaluation" above). Only pass these to force one velocity
+    across an entire run.
+
+-sigma S
+    Initial Gaussian sigma guess in Angstrom (default 1.0).
+
+-mjd_close DAYS
+    A tileid group's repeat exposures are tagged "closely spaced" when
+    their MJD span is below this (default 7.0 days).
+
+-snr_min S
+    Minimum per-line SNR (both lines of a doublet) required to report
+    that row's ratio (default 5.0) — verified necessary: an unfiltered
+    median [SIII] ratio across a real 140-row sample was ~2.98-3.00,
+    nowhere near the true 2.44 (most fibers in an arbitrary sample aren't
+    pointed at a real emission-line target); restricting to SNR>5 on both
+    lines dropped it to 2.41.
+
+-out ROOT
+    Output filename root (default: ``nebeval``).
+
+**Description:**
+
+Two-stage evaluation:
+
+1. ``fit_nebular_row`` fits every ``NEBULAR_LINES`` entry (Gaussian +
+   local constant background via ``sky_nebular_leak_eval.fit_leak_line``,
+   with a joint double-Gaussian fit for the blended [OII] 3726/3729 pair
+   via ``lvm_gaussfit.fit_double_gaussian_to_spectrum``) directly on the
+   sky-*subtracted* FLUX. ``DOUBLETS`` then computes each ratio pair's
+   measured value, propagated error, and deviation from the true ratio.
+   Three kinds of ground truth: ``fixed`` ([SIII] 9531/9069 = 2.44, [NII]
+   6583/6548 = 3.0, [OIII] 5007/4959 = 2.98 literature-only/lower
+   confidence), ``bounded_above`` (Hβ/Hα ≤ 0.350 — reddening can only push
+   this down, never up), and ``free`` ([SII] 6731/6716, [OII] 3729/3726 —
+   density-dependent, no fixed value, useful only through repeat-scatter
+   consistency). [OI] 6364/6300 is deliberately excluded — dominated by
+   sky-subtraction residual (the same airglow doublet as
+   sky6300/sky6363), not real nebular signal.
+2. ``repeat_scatter`` groups rows by DRP_ALL ``tileid`` (excluding
+   tileid 11111, a confirmed grab-bag placeholder spanning unrelated
+   targets, not a genuine repeat pointing), checks each group's RA/Dec is
+   tightly clustered, and computes robust (MAD) flux/ratio scatter per
+   group, tagging groups CLOSE when their MJD span is below
+   ``-mjd_close``.
+
+**Output:**
+
+``<ROOT>_lines.fits`` — one row per spectrum (FILE, ROUTINE, VARIANT,
+ROW, TILEID, MJD, EXPNUM, SCI_RA, SCI_DEC, SURVEY, VEL, then per-line
+FLUX/FLUX_ERR/SNR and per-doublet RATIO/RATIO_ERR/DEV_SIGMA).
+
+``<ROOT>_repeats.fits`` — one row per (ROUTINE, VARIANT, TILEID) group
+with ≥2 rows, plus a printed head-to-head table of median scatter per
+doublet per method, restricted to CLOSE groups by default.
+
+**See Also:** :doc:`api/SkySubNebEval/index`
+
+
+PlotSkySubNebEval.py
+^^^^^^^^^^^^^^^^^^^^
+
+Interactive Plotly visualization of ``SkySubNebEval.py``'s per-line/
+doublet fits for ONE exposure across one or more SkySub*.py output files
+(methods) — the picture behind that tool's numbers, one exposure at a
+time; the primary day-to-day diagnostic for "is this method doing
+something sensible here."
+
+**Usage**::
+
+    PlotSkySubNebEval.py [-row N | -expnum N] [-v VEL] [-lmc] [-smc]
+                         [-sigma S] [-title TITLE] [-outfile PATH]
+                         fits_file [fits_file ...]
+
+**Arguments:**
+
+fits_file
+    One or more SkySub*.py output files, all for the same exposure (e.g.
+    the same expnum run through ``SkySubRun.py -routine`` drp/orig/dev1/
+    dev2/dev3). Each file's column is labeled from its primary header
+    ``TITLE``/``METHOD``.
+
+**Options:**
+
+-row N / -expnum N
+    Row index (default 0) or DRP_ALL ``expnum`` (overrides ``-row``).
+
+-v VEL / -lmc / -smc
+    Explicit velocity override — same per-row DRP_ALL ``Redshift``
+    default as ``SkySubNebEval.py`` above.
+
+-sigma S / -title TITLE / -outfile PATH
+    Initial Gaussian sigma guess (default 1.0); plot title (default: the
+    exposure's expnum); output HTML path (default:
+    ``Overview_Plot/nebeval_<expnum>.html``).
+
+**Description:**
+
+**Row 1** — a pointing/Moon/Sun geometry table: Target
+(Science/SkyE/SkyW/Moon/Sun), RA, Dec., PA, angular distance from the
+science field, altitude, Moon illumination (%), astrometry source, shadow
+height. Same column layout as :doc:`data_quality`'s ``QualSFrame.py``
+pointing table, read from the equivalent DRP_ALL columns (already
+computed once by ``SummarizeCframe.py``) rather than recomputed.
+
+**Row 2** — the full sky-subtracted spectrum, all methods overlaid, log
+y-axis with a fixed range so every exposure's overview is directly
+comparable at a glance. Each trace is median-filtered (11 pixels, not raw
+per-pixel flux) so inter-method differences aren't swamped by per-pixel
+noise; a color key and a compact exposure-ID line (expnum, tileid, MJD,
+Survey, the velocity actually used) sit inside the panel itself, not the
+figure margin.
+
+**Row 3** — a summary table, one row per method, one column per
+``SkySubNebEval.DOUBLETS`` entry (ordered by increasing rest wavelength),
+with the true/bound value in the column header and a warning marker on
+any deviant ratio.
+
+**Rows 4+** — one row of panels per line group (OII, Hβ, [OIII] a/b,
+[NII]+Hα, [SII], [SIII] a/b), one column per method, each row sharing one
+y-axis range across its columns. That shared range is bounded by the
+2nd/98th percentile of observed flux pooled across all columns (not
+literal min/max) plus the fitted curves' true min/max — a single noisy
+method's occasional extreme pixel otherwise sets a shared range wide
+enough to flatten every *other*, well-behaved method's panel into a
+near-flat line, which reads as "this method's fit is bad" when it's
+really just the shared axis being dominated by a different column's
+outlier.
+
+**See Also:** :doc:`api/PlotSkySubNebEval/index`
 
 
 Science-Fiber-Based Sky Estimation
@@ -2209,6 +2864,38 @@ Fitting and Evaluating the Sky Continuum
 
        GetSkyCont_eval.py skycont_Sky_WHAM_south_08.fits
 
+Comparing Methods by Nebular-Line Recovery
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+1. Run all five methods through the dispatcher::
+
+       SkySubRun.py -routine orig  XCframe_file.fits
+       SkySubRun.py -routine drp   XCframe_file.fits
+       SkySubRun.py -routine dev1  XCframe_file.fits -mask sky_mask.fits
+       SkySubRun.py -routine dev2  XCframe_file.fits
+       SkySubRun.py -routine dev3  XCframe_file.fits
+
+2. Look at one exposure across all five methods side by side::
+
+       PlotSkySubNebEval.py -expnum 12226 \
+           sky_runs/orig/XCframe_file_orig_farlines_nearcont.fits \
+           sky_runs/drp/XCframe_file_drp_farlines_nearcont.fits \
+           sky_runs/dev1/XCframe_file_dev1_farlines_nearcont.fits \
+           sky_runs/dev2/XCframe_file_dev2_scilines_nearcont.fits \
+           sky_runs/dev3/XCframe_file_dev3_farlines_nearcont.fits
+
+3. For a batch statistic across many exposures/repeat groups instead of
+   one exposure, run ``SkySubNebEval.py`` on the same file list and
+   inspect its printed doublet-scatter comparison (or the ``_repeats.fits``
+   table directly)
+
+4. To check whether SKY_EAST/SKY_WEST leak nebular flux in the first
+   place (an assumption every method above depends on)::
+
+       DecomposeCleanSky.py -ext SKY_EAST,SKY_WEST XCframe_file.fits
+       sky_nebular_leak_eval.py CleanSky_<expnum>.fits
+       PlotNebularLeak.py CleanSky_<expnum>.fits
+
 
 Notes
 -----
@@ -2220,6 +2907,11 @@ Notes
   than simple scaling methods
 - Theoretical sky models are useful for identifying instrumental
   artifacts vs. real sky features
+- A method's generic sky-residual quality (SkySub_eval.py,
+  sky_residual_eval.py) and its nebular-line recovery quality
+  (SkySubNebEval.py) are independent axes -- a method can suppress
+  airglow well while still distorting real nebular signal, or vice versa;
+  check both before trusting a single "which method is better" answer
 
 
 See Also
@@ -2244,9 +2936,18 @@ See Also
 - :doc:`api/SkySubDrp/index` - API documentation
 - :doc:`api/SkySubDev1/index` - API documentation
 - :doc:`api/SkySubDev2/index` - API documentation
+- :doc:`api/SkySubDev3/index` - API documentation
+- :doc:`api/SkySubRun/index` - API documentation
 - :doc:`api/SkySepESO/index` - API documentation
 - :doc:`api/SkySepPalace/index` - API documentation
 - :doc:`api/SkySub_eval/index` - API documentation
+- :doc:`api/sky_residual_eval/index` - API documentation
+- :doc:`api/sky_nebular_leak_eval/index` - API documentation
+- :doc:`api/PlotNebularLeak/index` - API documentation
+- :doc:`api/SkySubNebEval/index` - API documentation
+- :doc:`api/PlotSkySubNebEval/index` - API documentation
 - :doc:`api/SkySubSci/index` - API documentation
 - :doc:`api/SummarizeSciSky/index` - API documentation
 - :doc:`summarize` - SummarizeCframe.py, whose drpall selection logic SummarizeSciSky.py mirrors
+- :doc:`spectral_fitting_local` - ``sky_gaussfit.py``'s NEBULAR_LINES/resolve_nebular_lines, shared by the nebular-line evaluation tools above
+- :doc:`data_quality` - ``QualSFrame.py``'s pointing table, reused by PlotSkySubNebEval.py

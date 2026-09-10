@@ -335,6 +335,9 @@ Nebular lines — wavelengths are shifted by the supplied velocity:
 =========  ===========  ==========
 Line       Wavelength   Column tag
 =========  ===========  ==========
+[OII]      3726.092 A   oii_a
+[OII]      3729.875 A   oii_b
+Hb         4861.325 A   hb
 [OIII]     4958.911 A   oiii_a
 [OIII]     5006.843 A   oiii_b
 [OI]       6300.309 A   oi_a
@@ -344,7 +347,29 @@ Ha         6562.80  A   ha
 [NII]      6583.46  A   nii_b
 [SII]      6716.440 A   sii_a
 [SII]      6730.815 A   sii_b
+[SIII]     9068.6   A   siii_a
+[SIII]     9530.6   A   siii_b
 =========  ===========  ==========
+
+[OII] 3726/3729 are only 3.8 A apart — too close for two independent
+single-Gaussian fits to separate reliably; consumers needing a real
+[OII] doublet ratio should use ``fit_double_gaussian_to_spectrum``'s
+joint fit instead (see ``SkySubNebEval.fit_oii_doublet`` in
+:doc:`sky_subtraction` for the pattern).
+
+``resolve_nebular_lines(vel=0., coincidence_tol=3.0)`` splits this list
+into the subset safe to treat as genuinely nebular at a given systemic
+velocity and the subset that isn't: oi_a/oi_b sit at essentially the same
+rest wavelength as the airglow lines sky6300/sky6363 (both are the same
+[OI] 6300/6364 transition, one geocoronal, one nebular), so at low
+velocity what looks like "nebular OI" is predominantly sky airglow.
+Judged by center-to-center proximity (not fit-window overlap, which would
+also wrongly flag lines like ha/nii_a/nii_b just for sharing the same
+crowded red OH-forest region as a real, resolvable sky line) — see the
+function's own docstring for the full reasoning. Used by the sky/nebular-
+line separation tools in :doc:`sky_subtraction`'s "Nebular-Line-Based
+Method Evaluation" section, which share this line catalog and velocity
+convention throughout.
 
 Airglow lines — fitted at fixed, unshifted wavelengths (ESO UVES atlas):
 

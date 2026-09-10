@@ -40,6 +40,8 @@ single Gaussians to the following lines:
         [NII]  6583.46   (nii_b)
         [SII]  6716.440  (sii_a)
         [SII]  6730.815  (sii_b)
+        [SIII] 9068.6    (siii_a)
+        [SIII] 9530.6    (siii_b)
 
     Airglow lines (fitted at fixed, unshifted wavelengths):
         sky5577   5577.34 A
@@ -98,6 +100,9 @@ History:
 260516 ksl Correct oi_a/oi_b: use ESO wavelengths (6300.309, 6363.783) with velocity shift
 260516 ksl Add oiii_a (4958.911) and oiii_b (5006.843); refactor to NEBULAR_LINES/SKY_LINES constants; pre-trim and pre-compute per-line indices in do_all
 260709 ksl Corrected sky6553 wavelength from 6553.0 to 6553.617 A; widened its window from 6549-6556 to 6549-6558 A to keep it centered. The old value gave a 0.61 A fitted centroid shift on real data (lvm_line_profile.py, independent Gaussian fit to raw sky spectra); 6553.617 reproduces the fitted centroid (6553.614 A) to within 0.003 A
+260909 ksl Added resolve_nebular_lines(): drops NEBULAR_LINES entries (oi_a/oi_b at low velocity) whose shifted window overlaps a SKY_LINES window, for callers (DecomposeCleanSky.py, sky_nebular_leak_eval.py) that need a single nebular-vs-sky answer per line rather than do_one's fit-both-and-compare
+260909 ksl Added siii_a (9068.6) and siii_b (9530.6) to NEBULAR_LINES, matching lvm_gaussfit.py's do_one() wavelengths/windows -- confirmed correct over data/dap_lines.txt's 9069.00/9531.10, which that file's own header already flags as not matching Mappings/Cloudy
+260909 ksl Added oii_a (3726.092), oii_b (3729.875), and hb (4861.325) to NEBULAR_LINES, matching lvm_gaussfit.py's wavelengths/windows (same already-validated source as siii_a/siii_b). oii_a/oii_b are only 3.8 A apart -- narrower than a single-Gaussian independent fit can reliably deblend, unlike lvm_gaussfit.py's own joint double-Gaussian fit for this pair; see the inline NEBULAR_LINES comment. This also extends do_one()'s own per-fiber fit output with these three lines for free, since it already iterates NEBULAR_LINES directly.
 
 '''
 
@@ -136,7 +141,25 @@ def _usage_from_doc(doc):
 
 # Nebular emission lines: (name, rest_wavelength, window_min, window_max) in Angstroms.
 # All values are multiplied by zz = 1 + vel/c at runtime to apply the radial velocity.
+# oii_a/oii_b, hb wavelengths/windows match lvm_gaussfit.py's do_one() (same
+# already-validated-in-this-project source used for siii_a/siii_b). NOTE:
+# oii_a/oii_b are only 3.8 A apart (well inside LVM's LSF width), so unlike
+# every other pair here a single-Gaussian independent fit of each window
+# (sky_nebular_leak_eval.fit_leak_line's approach, used throughout this
+# family) will not cleanly deblend them the way lvm_gaussfit.py's own
+# fit_double_gaussian_to_spectrum does for this same pair -- treat oii_a/
+# oii_b amplitudes/ratio as approximate until/unless a joint double-Gaussian
+# fit is used instead. Both share lvm_gaussfit.py's own combined window
+# (3717-3737) rather than a narrower split: fit_leak_line always uses a
+# SYMMETRIC window sized to max(center-wmin, wmax-center), so an attempted
+# asymmetric split at the pair's midpoint does not actually separate them
+# (the wider side reaches past the midpoint into the other line's territory
+# regardless) -- there is no window choice that avoids the blend here, only
+# a joint fit would, so a narrower split just adds false precision.
 NEBULAR_LINES = [
+    ('oii_a',  3726.092,      3717.,  3737.),
+    ('oii_b',  3729.875,      3717.,  3737.),
+    ('hb',     4861.325,      4855.,  4870.),
     ('oiii_a', 4958.911,     4953.,  4964.),
     ('oiii_b', 5006.843,     5001.,  5012.),
     ('oi_a',   6300.308594,  6295.,  6305.),
@@ -146,6 +169,8 @@ NEBULAR_LINES = [
     ('nii_b',  6583.46,      6578.,  6593.),
     ('sii_a',  6716.440,     6706.,  6726.),
     ('sii_b',  6730.815,     6721.,  6741.),
+    ('siii_a', 9068.6,       9055.,  9090.),
+    ('siii_b', 9530.6,       9525.,  9545.),
 ]
 
 # Airglow lines: (name, center_wavelength, window_min, window_max) in Angstroms.
@@ -170,6 +195,70 @@ SKY_LINES = [
     ('sky9552', 9552.546875, 9547.,  9557.),
     ('sky9719', 9719.838867, 9714.,  9724.),
 ]
+
+
+def resolve_nebular_lines(vel=0., coincidence_tol=3.0):
+    '''
+    Split NEBULAR_LINES into the subset that is safe to treat as genuinely
+    nebular at the given systemic velocity, and the subset that is not.
+
+    oi_a/oi_b sit at essentially the same rest wavelength as the sky
+    airglow lines sky6300/sky6363 (both are the same [OI] 6300/6364
+    transition -- one geocoronal/airglow, one nebular): at low velocity
+    what looks like "nebular OI" there is predominantly sky airglow.
+    do_one() sidesteps this by fitting both explicitly (nebular at the
+    shifted wavelength, sky at the fixed one) and letting the caller
+    compare; callers that need a single answer -- e.g. deciding which
+    pixels are safe to exclude as "nebular" from a sky-continuum fit --
+    should drop lines that coincide with a sky line's rest wavelength
+    instead of assuming every entry in NEBULAR_LINES is unambiguously
+    nebular.
+
+    Coincidence is judged by CENTER-to-center proximity (within
+    coincidence_tol, default 3 A -- comfortably above the 0.0 A
+    separation for oi_a/sky6300 and oi_b/sky6363, comfortably below the
+    >=5.5 A separation from every other NEBULAR_LINES entry to its
+    nearest SKY_LINES center), not by the two lines' fit-WINDOW overlap:
+    those windows are ~10-20 A wide for robust Gaussian+background
+    fitting, much wider than LVM's resolution, so window overlap alone
+    would also flag lines like ha/nii_a/nii_b as "sky" purely because
+    they sit in the same crowded red OH-forest region as sky6553/
+    sky6577 -- a real, resolvable, different transition, not a
+    coincidence.
+
+    This generalizes past oi_a/oi_b: it will keep a line once (or if) the
+    systemic velocity shifts its center clear of any sky line's center
+    (a real redshift, not just Galactic/LMC/SMC-scale velocities, which
+    shift oi_a/oi_b by only a few A -- far less than coincidence_tol).
+
+    Parameters
+    ----------
+    vel : float
+        Systemic velocity (km/s); centers are shifted by zz = 1 + vel/3e5,
+        same convention as do_one().
+    coincidence_tol : float
+        Center-to-center separation (Angstrom) below which a nebular line
+        is treated as sky, not nebular. Default 3.0.
+
+    Returns
+    -------
+    resolved : list of (name, center, wmin, wmax)
+        NEBULAR_LINES entries whose shifted center is not within
+        coincidence_tol of any SKY_LINES center.
+    dropped : list of str
+        Names of NEBULAR_LINES entries excluded as sky-coincident.
+    '''
+    zz = 1.0 + vel / 3e5
+    sky_centers = [center for _, center, _, _ in SKY_LINES]
+    resolved, dropped = [], []
+    for name, center, wmin, wmax in NEBULAR_LINES:
+        shifted_center = zz * center
+        coincides = any(abs(shifted_center - sc) <= coincidence_tol for sc in sky_centers)
+        if coincides:
+            dropped.append(name)
+        else:
+            resolved.append((name, center, wmin, wmax))
+    return resolved, dropped
 
 
 def do_one(spectrum_table, vel=0., xplot=False):

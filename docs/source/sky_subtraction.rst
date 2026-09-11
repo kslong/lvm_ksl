@@ -2638,7 +2638,7 @@ diagnostic above was always meant to be followed by.
 
     PlotSkySubNebRun.py [-lines_file PATH] [-v VEL] [-lmc] [-smc]
                         [-sigma S] [-snr_min S] [-mjd_close DAYS]
-                        [-title TITLE] [-outfile PATH]
+                        [-mask PATH] [-title TITLE] [-outfile PATH]
                         [fits_file ...]
 
 **Arguments:**
@@ -2646,19 +2646,23 @@ diagnostic above was always meant to be followed by.
 fits_file
     One or more SkySub*.py output files, the same contract
     ``SkySubNebEval.py``'s own CLI takes. Ignored if ``-lines_file`` is
-    given.
+    given. Required (not ignorable) for the Continuum Residual section
+    below, which needs the raw WAVE/FLUX/SKY arrays — that section is
+    silently skipped in ``-lines_file`` mode.
 
 **Options:**
 
 -lines_file PATH
     An existing ``SkySubNebEval.py`` run's ``<root>_lines.fits`` output —
     skips the (currently unparallelized) per-row Gaussian refit, useful
-    for iterating on the report against a large sample without redoing
-    it every time. Exactly one of ``fits_file``/``-lines_file`` is
-    required. ``repeat_scatter``'s own grouping/MAD summary is always
-    recomputed from whichever row table is in hand either way — that
-    step is cheap (aggregation only, no curve fitting), so there is no
-    separate ``-repeats_file`` fast path.
+    for iterating on the emission-line sections against a large sample
+    without redoing it every time. Exactly one of ``fits_file``/
+    ``-lines_file`` is required. ``repeat_scatter``'s own grouping/MAD
+    summary is always recomputed from whichever row table is in hand
+    either way — that step is cheap (aggregation only, no curve
+    fitting), so there is no separate ``-repeats_file`` fast path. The
+    Continuum Residual section needs the raw spectra, so it is skipped
+    entirely in this mode (a printed note says so).
 
 -v VEL / -lmc / -smc
     Nebular systemic velocity override, same precedence/default (per-row
@@ -2667,6 +2671,12 @@ fits_file
 
 -sigma S / -snr_min S / -mjd_close DAYS
     Same meaning as the equivalent ``SkySubNebEval.py`` options.
+
+-mask PATH
+    Clean-pixel mask (WAVE/MASK extensions, a ``palace_make_mask.py``-
+    style file) for the Continuum Residual section — default
+    ``data/sky_mask.fits``, the project-wide standard also used by
+    ``SkySubOrig.py`` and ``sky_residual_eval.py``.
 
 -title TITLE / -outfile PATH
     Report title (default: ``SkySubNebRun``) / output HTML path
@@ -2677,12 +2687,13 @@ fits_file
 
 The report is a real HTML document — actual ``<h1>``/``<h2>``/``<h3>``
 headings with CSS margins around several small, focused Plotly figures
-(``build_figures()``), **not** one giant multi-row Plotly canvas with
-hand-tuned pixel margins standing in for section breaks. That approach
-was tried first and kept needing another manually-tuned margin/spacer-row
-fix every time a new section was added; normal HTML block flow reserves
-space between sections automatically and cannot overlap, which a
-Plotly-internal annotation used as a section divider cannot guarantee.
+(``build_figures()``/``build_continuum_figures()``), **not** one giant
+multi-row Plotly canvas with hand-tuned pixel margins standing in for
+section breaks. That approach was tried first and kept needing another
+manually-tuned margin/spacer-row fix every time a new section was added;
+normal HTML block flow reserves space between sections automatically and
+cannot overlap, which a Plotly-internal annotation used as a section
+divider cannot guarantee.
 
 Every scatter section uses the same grid convention as
 ``PlotSkySubNebEval.py``: one row per metric, one **column per method**
@@ -2690,36 +2701,62 @@ Every scatter section uses the same grid convention as
 points in a single panel is fine at the tens-of-points scale of a small
 test set, but stops being legible at real survey scale (hundreds to
 thousands of rows), whereas a single-method panel stays readable
-regardless of how large the run is::
+regardless of how large the run is. Each row's method-name labels are
+shown once, above the first row of the whole grid, rather than repeated
+above every row, and the vertical gap between rows is held to a fixed
+~90 pixels regardless of how many rows a given figure has — both a fixed
+fraction of figure height and repeated per-row labels looked fine on a
+tall (6-row) grid but visibly collided on a short (3-row) one::
 
     <h1>title</h1>
     [run-summary table: rows fit, SNR-pass count/fraction per doublet]
     <h2>Line Ratios</h2>
     <h3>Ratio vs. Line Flux</h3>
-    [one row per doublet, one column per method; x = mean flux of its
+    [one row per doublet, one column per method; x = total flux of its
      two lines (log), y = the ratio, one point per SNR-passing row,
      pooled across the whole run]
     <h3>Repeat-Group Scatter (MAD) vs. Median Flux</h3>
-    [same grid; x = a repeat group's median flux, y = that group's ratio
-     MAD, one point per repeat group, CLOSE groups only]
+    [same grid; x = a repeat group's median total line flux (log,
+     the SAME x-range _ratio_vs_flux_figure computed from the full
+     sample, forced rather than recomputed from this panel's own much
+     smaller repeat-group sample), y = that group's ratio MAD, one
+     point per repeat group, CLOSE groups only]
     <h2>Repeat-Observation Flux Consistency</h2>
+    <h3>Repeat-Group Fractional Scatter vs. Median Flux</h3>
     [one row per FLUX_METRICS entry (total flux for OII, OIII_b, NII_b,
      SII_a+SII_b, SIII_b — chosen to use only lines whose partner is a
      fixed multiple, or sum both when neither dominates), one column per
-     method; x = a repeat group's median flux, y = EACH individual
-     exposure's own measured flux in that group (all sharing that
-     group's x position) — the actual measurements, not a collapsed
-     dispersion number]
+     method; x = the SAME shared total-line-flux x as above, y = that
+     group's fractional MAD (robust MAD / median) of the flux total
+     across the group's repeat exposures]
     <h3>Summary</h3>
     [interactive table: median-across-groups absolute MAD for ratios,
-     median-across-groups fractional STD (std/median) for flux totals]
+     median-across-groups fractional MAD for flux totals]
+    <h2>Continuum Residual (B/R/Z)</h2>
+    <h3>Post-Subtraction Continuum Level (All Exposures)</h3>
+    [one row per spectrograph arm, one column per method; EVERY
+     exposure, not just repeat groups; x = that exposure's own
+     pre-subtraction continuum median (log), y = its post-subtraction
+     continuum median (linear, unclipped) with a dashed red line at
+     zero -- a physical continuum flux cannot go negative]
+    [percent-negative summary table]
+    <h3>Post-Subtraction Continuum Level Consistency</h3>
+    [repeat groups only; x = a repeat group's PRE-subtraction continuum
+     median in that arm (shared across methods), y = that group's
+     fractional MAD of the POST-subtraction continuum median, divided
+     by the group's PRE-subtraction brightness (log y)]
+    <h3>Post-Subtraction Continuum RMS Consistency</h3>
+    [same grid; y = fractional MAD of the POST-subtraction continuum
+     RMS/NMAD, divided by its own median instead]
+    <h3>Summary</h3>
+    [interactive fractional-MAD table, level and RMS, one column per arm]
 
-Both scatter designs replace an earlier pooled-box-plot version: pooling
-every row (or every repeat group) into one box per method hid the
-dependence of ratio/flux scatter on how bright the line actually was in
-a given fiber — plotting against flux directly controls for that
-confound instead of comparing methods across an uncontrolled mix of
-bright and faint measurements.
+Both nebular-line scatter designs replace an earlier pooled-box-plot
+version: pooling every row (or every repeat group) into one box per
+method hid the dependence of ratio/flux scatter on how bright the line
+actually was in a given fiber — plotting against flux directly controls
+for that confound instead of comparing methods across an uncontrolled
+mix of bright and faint measurements.
 
 Axis/table labels are kept short: a flux total is labeled with the bare
 line name (``OII``, not ``OII_FLUX``); a ratio is labeled with its actual
@@ -2732,13 +2769,72 @@ sensitive ratios can and do vary; the low-density limit is just the value
 observed at most average sky positions) are drawn wherever
 ``SkySubNebEval.DOUBLETS`` gives one for a ``'free'`` entry (OII ≈ 1.42,
 SII ≈ 1.5), the same visual treatment as the ``'fixed'``/``'bounded_above'``
-truth lines for OIII/NII/SIII/Hβ:Hα.
+truth lines for OIII/NII/SIII/Hβ:Hα. Every method's x-axis brightness
+proxy for a given line is the SAME total-doublet-flux value everywhere
+that line appears (ratio-vs-flux, repeat-group MAD, and flux-consistency
+panels alike) — an earlier version mixed a mean-of-two-members proxy in
+the ratio panels with a different per-metric total in the flux panel,
+which put the same line at a visibly different x-position/scale
+depending which panel you looked at.
+
+The **Continuum Residual (B/R/Z)** section is a different, independent
+test: not a per-line measurement but the leftover *continuum* level in
+each spectrograph arm (``GetSkyCont.ARM_EVAL_RANGES`` — B: 3650–5775 Å,
+R: 5800–7520 Å, Z: 7570–9600 Å, with arm-overlap zones and outer edges
+already excluded — the same canonical definition ``SkySubOrig.py`` uses,
+distinct from two other, unrelated arm-range definitions elsewhere in the
+repo used for different purposes). One function,
+``GetSkyCont.arm_continuum_stats``, is run directly on raw flux with no
+local continuum fit — ``data/sky_mask.fits`` (built from an actual
+PALACE sky-emission model, not a crude window list) already excludes
+every sky-line-dominated pixel, so the median of what remains in an arm
+already is a continuum-brightness estimate and its NMAD already is a
+scatter estimate. The SAME call is used both on the *pre*-subtraction
+CFrame flux (reconstructed as ``FLUX+SKY``, identical across all 5
+methods since they share one input CFrame — SkySub*.py's own convention
+is that ``FLUX`` is already sky-subtracted and ``SKY`` is the model
+subtracted from it) and on each method's own *post*-subtraction
+``FLUX``, so the two are directly comparable — deliberately NOT the
+pre-subtraction ``SCI_MED_B``/etc. columns some of the SkySub*.py scripts
+already write, which are a continuum-FIT-quality diagnostic (raw flux
+minus a locally-fit polynomial), not a brightness measurement, and are
+never computed post-subtraction by any of the 5 methods.
+
+The first subsection (**Post-Subtraction Continuum Level (All
+Exposures)**) needs no repeat observation at all: a physical continuum
+cannot be negative, so a per-exposure check for that requires nothing
+more than one exposure. It therefore runs on every exposure in the run,
+not just the repeat-tileid groups the other two continuum subsections
+are restricted to (via ``SkySubNebEval.group_repeat_exposures`` —
+``repeat_scatter``'s own tileid-exclusion/position-clustering/CLOSE-flag
+grouping logic, factored out so this differently-shaped per-arm table
+can reuse it without needing NEBULAR_LINES/DOUBLETS columns it doesn't
+have).
+
+The two repeat-only continuum subsections normalize their fractional MAD
+differently, and deliberately so. The RMS subsection divides by the
+group's own median NMAD — safe, since a noise floor is never near zero.
+The LEVEL subsection instead divides by the group's *pre*-subtraction
+brightness (the same value on the x-axis), not by its own post-
+subtraction median: a post-subtraction continuum level is *expected* to
+sit near zero for a good method, so dividing by its own magnitude is
+unstable and can invert the ranking entirely — a near-perfect, near-zero
+group can score far worse than a badly, but consistently, biased one
+purely because of a near-zero denominator (confirmed on real per-group
+numbers: the single worst-looking point under the naive metric had a
+median residual of order 1e-17 — essentially perfect — while the single
+best-looking point had the largest systematic residual in the whole
+set). The level subsection's y-axis is log-scale for this reason too —
+once normalized against a stable denominator, the fractional values
+genuinely span about two decades, worth a log axis the same way every
+flux axis elsewhere in this report is.
 
 Column order (which method is which column) is the order the input
 files/rows were actually given/created in (``_ordered_routines`` — first
 occurrence in the row table), not an alphabetical sort, and is identical
 across every section by construction (all figures are built from the
-same ``_common_setup()`` result).
+same ``_common_setup()`` result; the continuum section reuses that same
+routine/label/color ordering rather than recomputing it).
 
 **Output:** one HTML file, never one file per exposure — the
 per-exposure picture is ``PlotSkySubNebEval.py``'s job; this one is the

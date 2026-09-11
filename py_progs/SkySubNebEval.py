@@ -163,6 +163,17 @@ History::
                  panels -- 'free' kind is unaffected by this (dev_sigma
                  stays NaN regardless of value), so no spurious ⚠
                  warning appears anywhere from setting it.
+    260911  ksl  repeat_scatter()'s tileid-exclusion/position-
+                 clustering/CLOSE-flag grouping factored out into a new
+                 group_repeat_exposures(), with repeat_scatter now a
+                 thin wrapper adding its own line/doublet MED/MAD on
+                 top (behavior/output unchanged, verified same
+                 iteration order so results are identical). Done so
+                 PlotSkySubNebRun.py's new continuum-residual repeat
+                 test -- a differently-shaped row_table (per-arm B/R/Z
+                 stats, not per-line fluxes) -- can reuse the exact
+                 same grouping logic without KeyError-ing on
+                 NEBULAR_LINES/DOUBLETS columns that table doesn't have.
 
 '''
 
@@ -480,6 +491,78 @@ def fit_file(fits_file, vel=None, lmc=False, smc=False, sigma_guess=1.0, snr_min
     return Table(rows=rows)
 
 
+def group_repeat_exposures(row_table, mjd_close=7.0):
+    '''
+    Group row_table by (ROUTINE, VARIANT, TILEID), excluding the
+    PLACEHOLDER_TILEID grab-bag and any group whose RA/Dec isn't
+    tightly clustered (MAX_GROUP_POS_SCATTER_DEG) -- the reusable core
+    of repeat_scatter's grouping, factored out (260911) so a caller
+    with a differently-shaped row_table (not NEBULAR_LINES/DOUBLETS
+    columns -- e.g. PlotSkySubNebRun.py's continuum-residual repeat
+    test, which groups a table of per-arm B/R/Z stats instead of
+    per-line fluxes) can reuse the exact tileid-exclusion/position-
+    clustering/CLOSE-flag logic without repeat_scatter's own line-
+    specific MED/MAD aggregation below, which requires those columns
+    to exist and would KeyError on anything else.
+
+    Parameters
+    ----------
+    row_table : astropy.table.Table
+        Must have ROUTINE, VARIANT, TILEID, MJD, SCI_RA, SCI_DEC
+        columns; any other columns are carried through untouched.
+    mjd_close : float
+        MJD span (days) below which a group is tagged CLOSE.
+
+    Returns
+    -------
+    list of dict
+        One dict per surviving group (>=2 rows): ROUTINE, VARIANT,
+        TILEID, N_REPEATS, MJD_SPAN, CLOSE, POS_SCATTER_DEG. Order
+        matches group_rows' insertion order below.
+    dict
+        {(routine, variant, tileid): astropy.table.Table} -- the
+        surviving rows (every column) for each group above.
+    '''
+    # Group by row INDEX, not by collecting Row objects: row_table's
+    # float columns are masked (NaN entries read back from FITS become
+    # masked, not plain NaN), and Table(rows=<list of Row objects>)
+    # silently replaces masked entries with the column's fill_value
+    # (0.0) instead of preserving them -- found via direct inspection
+    # when a group's recomputed MAD (0.0, from 12 corrupted zeros) didn't
+    # match this function's own already-correct MAD (NaN, from 12
+    # genuinely all-non-detection rows) for the identical group. Indexing
+    # the table directly (row_table[idxs]) is a native, mask-safe Table
+    # operation and avoids the round-trip through Row objects entirely.
+    groups = {}
+    for i, row in enumerate(row_table):
+        if row['TILEID'] == PLACEHOLDER_TILEID:
+            continue
+        key = (row['ROUTINE'], row['VARIANT'], row['TILEID'])
+        groups.setdefault(key, []).append(i)
+
+    meta_rows = []
+    group_rows = {}
+    for (routine, variant, tileid), idxs in groups.items():
+        if len(idxs) < 2:
+            continue
+        sub = row_table[idxs]
+        ra = np.asarray(sub['SCI_RA'], dtype=float)
+        dec = np.asarray(sub['SCI_DEC'], dtype=float)
+        pos_scatter = float(np.nanmax([np.nanstd(ra), np.nanstd(dec)])) if len(sub) > 1 else 0.0
+        if pos_scatter > MAX_GROUP_POS_SCATTER_DEG:
+            continue
+
+        mjd = np.asarray(sub['MJD'], dtype=float)
+        mjd_span = float(np.nanmax(mjd) - np.nanmin(mjd)) if np.isfinite(mjd).any() else np.nan
+
+        meta_rows.append(dict(ROUTINE=routine, VARIANT=variant, TILEID=tileid, N_REPEATS=len(sub),
+                              MJD_SPAN=mjd_span, CLOSE=bool(np.isfinite(mjd_span) and mjd_span < mjd_close),
+                              POS_SCATTER_DEG=pos_scatter))
+        group_rows[(routine, variant, tileid)] = sub
+
+    return meta_rows, group_rows
+
+
 def repeat_scatter(row_table, mjd_close=7.0, return_rows=False):
     '''
     Group row_table by TILEID (excluding PLACEHOLDER_TILEID) and compute
@@ -517,41 +600,13 @@ def repeat_scatter(row_table, mjd_close=7.0, return_rows=False):
     line_names = [n for n, *_ in NEBULAR_LINES]
     doublet_names = [d.upper() for d, *_ in DOUBLETS]
 
-    # Group by row INDEX, not by collecting Row objects: row_table's
-    # float columns are masked (NaN entries read back from FITS become
-    # masked, not plain NaN), and Table(rows=<list of Row objects>)
-    # silently replaces masked entries with the column's fill_value
-    # (0.0) instead of preserving them -- found via direct inspection
-    # when a group's recomputed MAD (0.0, from 12 corrupted zeros) didn't
-    # match this function's own already-correct MAD (NaN, from 12
-    # genuinely all-non-detection rows) for the identical group. Indexing
-    # the table directly (row_table[idxs]) is a native, mask-safe Table
-    # operation and avoids the round-trip through Row objects entirely.
-    groups = {}
-    for i, row in enumerate(row_table):
-        if row['TILEID'] == PLACEHOLDER_TILEID:
-            continue
-        key = (row['ROUTINE'], row['VARIANT'], row['TILEID'])
-        groups.setdefault(key, []).append(i)
+    meta_rows, group_rows = group_repeat_exposures(row_table, mjd_close=mjd_close)
 
     out_rows = []
-    group_rows = {}
-    for (routine, variant, tileid), idxs in groups.items():
-        if len(idxs) < 2:
-            continue
-        sub = row_table[idxs]
-        ra = np.asarray(sub['SCI_RA'], dtype=float)
-        dec = np.asarray(sub['SCI_DEC'], dtype=float)
-        pos_scatter = float(np.nanmax([np.nanstd(ra), np.nanstd(dec)])) if len(sub) > 1 else 0.0
-        if pos_scatter > MAX_GROUP_POS_SCATTER_DEG:
-            continue
-
-        mjd = np.asarray(sub['MJD'], dtype=float)
-        mjd_span = float(np.nanmax(mjd) - np.nanmin(mjd)) if np.isfinite(mjd).any() else np.nan
-
-        out = dict(ROUTINE=routine, VARIANT=variant, TILEID=tileid, N_REPEATS=len(sub),
-                  MJD_SPAN=mjd_span, CLOSE=bool(np.isfinite(mjd_span) and mjd_span < mjd_close),
-                  POS_SCATTER_DEG=pos_scatter)
+    for meta in meta_rows:
+        key = (meta['ROUTINE'], meta['VARIANT'], meta['TILEID'])
+        sub = group_rows[key]
+        out = dict(meta)
         for name in line_names:
             vals = np.asarray(sub[f'{name}_FLUX'], dtype=float)
             finite = vals[np.isfinite(vals)]
@@ -565,7 +620,6 @@ def repeat_scatter(row_table, mjd_close=7.0, return_rows=False):
             out[f'{dname}_MAD'] = (float(1.4826 * np.median(np.abs(finite - np.median(finite))))
                                    if len(finite) > 1 else np.nan)
         out_rows.append(out)
-        group_rows[(routine, variant, tileid)] = sub
 
     summary = Table(rows=out_rows) if out_rows else Table()
     if return_rows:

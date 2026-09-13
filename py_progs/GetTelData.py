@@ -33,6 +33,8 @@ Command line usage (if any):
                       <stem>_<TELESCOPE>.fits)
         -fiberid N    restrict to a single fiberid (must belong to the
                       requested telescope)
+        -sky          also include the SKY_EAST/SKY_WEST broadcast arrays
+                      (Sci telescope only; see Notes)
 
 Description:
 
@@ -62,13 +64,12 @@ Notes:
     shared import, so this can be used independently while those other
     routines are still on their existing, separate implementations.
 
-    Does NOT return the SKY_EAST/SKY_WEST broadcast extensions (the
-    sky-model spectra repeated across every Sci fiber row) -- those
-    belong to a Sci-fiber selection conceptually, not to SkyE/SkyW's own
-    fibers, and were left out so that asking for one telescope can never
-    silently return another's data. SummarizeCframe.py's get_med_spec()/
-    get_fiber_spec() and QualCFrame.py/QualSFrame.py still read those
-    extensions themselves for this reason.
+    The SKY_EAST/SKY_WEST broadcast extensions (the sky-model spectra
+    repeated across every Sci fiber row) are NOT returned by default --
+    they belong to a Sci-fiber selection conceptually, not to SkyE/SkyW's
+    own fibers, so returning them unconditionally would mean asking for
+    one telescope could silently hand back another's data. Pass
+    include_sky=True (Sci selection only) to opt in.
 
 History::
 
@@ -79,8 +80,11 @@ History::
         kslmap.py/quick_map.py/line_map.py, and others. Near/Far are
         resolved from the DRP's own SCI_SKYE_SEP/SCI_SKYW_SEP header
         keywords rather than recomputed. Asking for one telescope never
-        returns another's data -- SKY_EAST/SKY_WEST broadcast support is
-        deliberately not yet included (see Notes).
+        returns another's data.
+    260913 ksl Added include_sky (-sky) to get_tel_data(): opt-in
+        SKY_EAST/SKY_WEST/SKY_EAST_IVAR/SKY_WEST_IVAR broadcast arrays
+        for the Sci selection, needed by SummarizeCframe.py's
+        get_med_spec()/get_fiber_spec() and QualCFrame.py/QualSFrame.py.
 '''
 
 import sys
@@ -119,11 +123,11 @@ def _select_fibers(xtab, telescope):
     return ztab[ztab['telescope'] == telescope]
 
 
-def get_tel_data(filename, telescope='Sci', fiberid=None):
+def get_tel_data(filename, telescope='Sci', fiberid=None, include_sky=False):
     '''
     Read one raw lvmCFrame (or lvmSFrame, transparently swapped to the
     matching CFrame) and return FLUX/IVAR/MASK/LSF/SLITMAP for exactly
-    the requested telescope -- nothing else.
+    the requested telescope -- nothing else, unless include_sky is set.
 
     Parameters:
         filename: str
@@ -135,6 +139,13 @@ def get_tel_data(filename, telescope='Sci', fiberid=None):
         fiberid: int or None
             If given, restrict to this one fiberid (must belong to the
             requested telescope, or the result has zero rows).
+        include_sky: bool
+            If True, also return the SKY_EAST/SKY_WEST broadcast arrays
+            (skye_flux, skye_ivar, skyw_flux, skyw_ivar) -- the sky-model
+            spectra the DRP repeats across every Sci fiber row. Only
+            valid when telescope resolves to 'Sci'; otherwise an error is
+            printed and None is returned, since those arrays don't mean
+            anything relative to SkyE/SkyW's own fibers.
 
     Returns::
 
@@ -150,6 +161,8 @@ def get_tel_data(filename, telescope='Sci', fiberid=None):
                              header keywords are not present
             sep_e, sep_w   : float (deg), or None
             header         : the file's PRIMARY header (for provenance)
+            skye_flux, skye_ivar, skyw_flux, skyw_ivar : 2-D arrays,
+                             only present if include_sky was True
     '''
     if filename.count('SFrame'):
         filename = filename.replace('SFrame', 'CFrame')
@@ -187,6 +200,12 @@ def get_tel_data(filename, telescope='Sci', fiberid=None):
               'Sci, SkyE, SkyW, Near, Far (got %s)' % telescope)
         return None
 
+    if include_sky and resolved != 'Sci':
+        print('get_tel_data: include_sky is only valid for the Sci '
+              'selection (got telescope=%s, resolved to %s)'
+              % (telescope, resolved))
+        return None
+
     xtab = Table(x['SLITMAP'].data)
     rows = _select_fibers(xtab, resolved)
     if fiberid is not None:
@@ -199,7 +218,7 @@ def get_tel_data(filename, telescope='Sci', fiberid=None):
 
     idx = np.asarray(rows['fiberid']) - 1
 
-    return {
+    result = {
         'wave': x['WAVE'].data,
         'flux': x['FLUX'].data[idx],
         'ivar': x['IVAR'].data[idx],
@@ -214,6 +233,14 @@ def get_tel_data(filename, telescope='Sci', fiberid=None):
         'sep_w': sep_w,
         'header': hdr,
     }
+
+    if include_sky:
+        result['skye_flux'] = x['SKY_EAST'].data[idx]
+        result['skye_ivar'] = x['SKY_EAST_IVAR'].data[idx]
+        result['skyw_flux'] = x['SKY_WEST'].data[idx]
+        result['skyw_ivar'] = x['SKY_WEST_IVAR'].data[idx]
+
+    return result
 
 
 def write_tel_data(data, filename, outfile=None):
@@ -257,6 +284,11 @@ def write_tel_data(data, filename, outfile=None):
         fits.ImageHDU(data=data['lsf'], name='LSF'),
         fits.BinTableHDU(data=data['slitmap'], name='SLITMAP'),
     ])
+    if 'skye_flux' in data:
+        hdus.append(fits.ImageHDU(data=data['skye_flux'], name='SKY_EAST'))
+        hdus.append(fits.ImageHDU(data=data['skye_ivar'], name='SKY_EAST_IVAR'))
+        hdus.append(fits.ImageHDU(data=data['skyw_flux'], name='SKY_WEST'))
+        hdus.append(fits.ImageHDU(data=data['skyw_ivar'], name='SKY_WEST_IVAR'))
     hdus.writeto(outfile, overwrite=True)
     print('Wrote %s (%d fibers)' % (outfile, len(data['slitmap'])))
     return outfile
@@ -267,6 +299,7 @@ def steer(argv):
     filename = ''
     outfile = ''
     fiberid = None
+    include_sky = False
 
     i = 1
     while i < len(argv):
@@ -279,6 +312,8 @@ def steer(argv):
         elif argv[i] == '-fiberid':
             i += 1
             fiberid = int(argv[i])
+        elif argv[i] == '-sky':
+            include_sky = True
         elif argv[i][0] == '-':
             print('Error: cannot parse command line:', argv)
             return
@@ -295,7 +330,8 @@ def steer(argv):
         print(_USAGE)
         return
 
-    data = get_tel_data(filename, telescope=telescope, fiberid=fiberid)
+    data = get_tel_data(filename, telescope=telescope, fiberid=fiberid,
+                         include_sky=include_sky)
     if data is None:
         return
 

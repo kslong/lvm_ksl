@@ -178,9 +178,10 @@ def doit(filename,wrange=[6560,6566], out_label='',
     targettype=slittab['targettype']
     spectrograph=slittab['spectrographid']
     telescope=slittab['telescope']
-    
-    
-    selsci=(telescope=='Sci')
+    fibstatus=slittab['fibstatus']
+
+
+    selsci=(telescope=='Sci') & (fibstatus==0)
     x=slittab['xpmm'][selsci]
     y=slittab['ypmm'][selsci]
     fibid=slittab['fiberid'][selsci]

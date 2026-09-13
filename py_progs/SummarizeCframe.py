@@ -73,6 +73,7 @@ import warnings
 from astropy.stats import sigma_clipped_stats
 from astropy.utils.exceptions import AstropyWarning
 from GetSkyCont import load_mask, _interp_mask_to_wave
+from GetTelData import get_tel_data
 
 
 from astropy.coordinates import SkyCoord,  Galactocentric
@@ -268,27 +269,17 @@ def _robust_mean(flux_window, sigma=3.0, maxiters=5):
 
 def get_med_spec(filename= '/Users/long/Projects/lvm_data/sas/sdsswork/lvm/spectro/redux/1.1.0/0011XX/11111/60192/lvmSFrame-00004336.fits',percentile=50):
 
-    if filename.count('SFrame'):
-        filename=filename.replace('SFrame','CFrame')
-
-    try:
-        x=fits.open(filename)
-    except:
-        print('gets_spec: Could not open %s' % filename)
+    sci_data = get_tel_data(filename, 'Sci', include_sky=True)
+    if sci_data is None:
+        print('get_med_spec: could not retrieve Sci data from %s' % filename)
         return
 
-    xtab=Table(x['SLITMAP'].data)
-
-    science_fibers=scifib(xtab,select='science',telescope='Sci')
-    # skye_fibers=scifib(xtab,select='SKY',telescope='SkyE')
-    # skyw_fibers=scifib(xtab,select='SKY',telescope='SkyW')
-
-    wav=x['WAVE'].data
-    sci_flux=x['FLUX'].data[science_fibers['fiberid']-1]
-    sky_e_flux=x['SKY_EAST'].data[science_fibers['fiberid']-1]
-    sky_w_flux=x['SKY_WEST'].data[science_fibers['fiberid']-1]
-    sci_lsf=x['LSF'].data[science_fibers['fiberid']-1]
-    sci_mask=x['MASK'].data[science_fibers['fiberid']-1]
+    wav = sci_data['wave']
+    sci_flux = sci_data['flux']
+    sky_e_flux = sci_data['skye_flux']
+    sky_w_flux = sci_data['skyw_flux']
+    sci_lsf = sci_data['lsf']
+    sci_mask = sci_data['mask']
     sci_flux=np.ma.masked_array(sci_flux,sci_mask)
     sky_e_flux=np.ma.masked_array(sky_e_flux,sci_mask)
     sky_w_flux=np.ma.masked_array(sky_w_flux,sci_mask)
@@ -332,79 +323,71 @@ def get_fiber_spec(filename, percent=50, navg=10, sigma=3.0, maxiters=5,
     Returns (wav, sci_flux, sky_e_flux, sky_w_flux, sci_lsf, meta), or
     None if the file could not be processed.
     '''
-    if filename.count('SFrame'):
-        filename = filename.replace('SFrame', 'CFrame')
-
-    try:
-        x = fits.open(filename)
-    except Exception:
-        print('get_fiber_spec: Could not open %s' % filename)
+    sci_data = get_tel_data(filename, 'Sci', include_sky=True)
+    if sci_data is None:
+        print('get_fiber_spec: could not retrieve Sci data from %s' % filename)
         return None
 
-    try:
-        xtab = Table(x['SLITMAP'].data)
-        sci = scifib(xtab, select='science', telescope='Sci')
-        if len(sci) < 10:
-            print('get_fiber_spec: only %d science fibers found in %s, skipping.'
-                 % (len(sci), filename))
-            return None
+    sci = sci_data['slitmap']
+    if len(sci) < 10:
+        print('get_fiber_spec: only %d science fibers found in %s, skipping.'
+             % (len(sci), filename))
+        return None
 
-        wav = x['WAVE'].data.astype(np.float64)
-        sci_flux = x['FLUX'].data[sci['fiberid'] - 1].astype(np.float64)
-        sky_e_flux = x['SKY_EAST'].data[sci['fiberid'] - 1].astype(np.float64)
-        sky_w_flux = x['SKY_WEST'].data[sci['fiberid'] - 1].astype(np.float64)
-        sci_lsf = x['LSF'].data[sci['fiberid'] - 1].astype(np.float64)
-        bad = x['MASK'].data[sci['fiberid'] - 1] != 0
-        sci_flux[bad] = np.nan
-        sky_e_flux[bad] = np.nan
-        sky_w_flux[bad] = np.nan
-        sci_lsf[bad] = np.nan
+    wav = sci_data['wave'].astype(np.float64)
+    sci_flux = sci_data['flux'].astype(np.float64)
+    sky_e_flux = sci_data['skye_flux'].astype(np.float64)
+    sky_w_flux = sci_data['skyw_flux'].astype(np.float64)
+    sci_lsf = sci_data['lsf'].astype(np.float64)
+    bad = sci_data['mask'] != 0
+    sci_flux[bad] = np.nan
+    sky_e_flux[bad] = np.nan
+    sky_w_flux[bad] = np.nan
+    sci_lsf[bad] = np.nan
 
-        clean = _interp_mask_to_wave(mask_wave, mask_bool, wav)
-        if stat == 'mean':
-            cont = np.nanmean(sci_flux[:, clean], axis=1)
-        else:
-            cont = np.nanmedian(sci_flux[:, clean], axis=1)
+    clean = _interp_mask_to_wave(mask_wave, mask_bool, wav)
+    if stat == 'mean':
+        cont = np.nanmean(sci_flux[:, clean], axis=1)
+    else:
+        cont = np.nanmedian(sci_flux[:, clean], axis=1)
 
-        good = np.isfinite(cont)
-        if good.sum() < 10:
-            print('get_fiber_spec: too few fibers with valid continuum flux in %s, skipping.'
-                 % filename)
-            return None
-        sci_tab    = sci[good]
-        cont       = cont[good]
-        sci_flux   = sci_flux[good]
-        sky_e_flux = sky_e_flux[good]
-        sky_w_flux = sky_w_flux[good]
-        sci_lsf    = sci_lsf[good]
+    good = np.isfinite(cont)
+    if good.sum() < 10:
+        print('get_fiber_spec: too few fibers with valid continuum flux in %s, skipping.'
+             % filename)
+        return None
+    sci_tab    = sci[good]
+    cont       = cont[good]
+    sci_flux   = sci_flux[good]
+    sky_e_flux = sky_e_flux[good]
+    sky_w_flux = sky_w_flux[good]
+    sci_lsf    = sci_lsf[good]
 
-        order    = np.argsort(cont)
-        n        = len(order)
-        i_target = int(round(percent / 100.0 * (n - 1)))
-        win      = _rank_window(order, i_target, navg)
+    order    = np.argsort(cont)
+    n        = len(order)
+    i_target = int(round(percent / 100.0 * (n - 1)))
+    win      = _rank_window(order, i_target, navg)
 
-        sci_flux_out   = _robust_mean(sci_flux[win],   sigma=sigma, maxiters=maxiters)
-        sky_e_flux_out = _robust_mean(sky_e_flux[win], sigma=sigma, maxiters=maxiters)
-        sky_w_flux_out = _robust_mean(sky_w_flux[win], sigma=sigma, maxiters=maxiters)
-        sci_lsf_out    = _robust_mean(sci_lsf[win],    sigma=sigma, maxiters=maxiters)
+    sci_flux_out   = _robust_mean(sci_flux[win],   sigma=sigma, maxiters=maxiters)
+    sky_e_flux_out = _robust_mean(sky_e_flux[win], sigma=sigma, maxiters=maxiters)
+    sky_w_flux_out = _robust_mean(sky_w_flux[win], sigma=sigma, maxiters=maxiters)
+    sci_lsf_out    = _robust_mean(sci_lsf[win],    sigma=sigma, maxiters=maxiters)
 
-        def _mode_int(arr):
-            arr = np.asarray(arr, int)
-            return int(np.bincount(arr).argmax())
+    def _mode_int(arr):
+        arr = np.asarray(arr, int)
+        return int(np.bincount(arr).argmax())
 
-        meta = dict(
-            n_sci_fibers         = n,
-            n_avg                = len(win),
-            fiberid_list         = ','.join(str(v) for v in sci_tab['fiberid'][win]),
-            ra_fiber             = float(np.mean(sci_tab['ra'][win])),
-            dec_fiber            = float(np.mean(sci_tab['dec'][win])),
-            spectrographid_fiber = _mode_int(sci_tab['spectrographid'][win]),
-            contflux_fiber       = float(np.mean(cont[win])),
-        )
+    meta = dict(
+        n_sci_fibers         = n,
+        n_avg                = len(win),
+        fiberid_list         = ','.join(str(v) for v in sci_tab['fiberid'][win]),
+        ra_fiber             = float(np.mean(sci_tab['ra'][win])),
+        dec_fiber            = float(np.mean(sci_tab['dec'][win])),
+        spectrographid_fiber = _mode_int(sci_tab['spectrographid'][win]),
+        contflux_fiber       = float(np.mean(cont[win])),
+    )
 
-        return wav, sci_flux_out, sky_e_flux_out, sky_w_flux_out, sci_lsf_out, meta
-    finally:
-        x.close()
+    return wav, sci_flux_out, sky_e_flux_out, sky_w_flux_out, sci_lsf_out, meta
 
 
 def make_med_spec(xtab,data_dir,outfile='',percentile=50,exp_start=None,

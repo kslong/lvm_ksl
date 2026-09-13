@@ -114,6 +114,7 @@ import xhtml
 from lvm_ksl import QualSFrame
 from lvm_ksl import eval_standard
 from lvmdrp.core.fluxcal import GaiaXPSpectra
+from GetTelData import get_tel_data
 
 
 def _usage_from_doc(doc):
@@ -419,12 +420,13 @@ def eval_sky_comparison(filename, outroot=''):
     explaining a caveat about the data, not a failure -- figname is
     None only if the file couldn't be read.
     '''
-    try:
-        x = fits.open(filename)
-    except Exception as e:
-        return None, 'Could not open %s (%s)' % (filename, e)
+    sci_data = get_tel_data(filename, 'Sci', include_sky=True)
+    skye_data = get_tel_data(filename, 'SkyE')
+    skyw_data = get_tel_data(filename, 'SkyW')
+    if sci_data is None or skye_data is None or skyw_data is None:
+        return None, 'Could not open %s' % filename
 
-    hdr = x['PRIMARY'].header
+    hdr = sci_data['header']
     ra = QualSFrame.get_header_value(hdr, 'SCIRA')
     dec = QualSFrame.get_header_value(hdr, 'SCIDEC')
     ra_sky_e = QualSFrame.get_header_value(hdr, 'SKYERA')
@@ -438,16 +440,11 @@ def eval_sky_comparison(filename, outroot=''):
     sky_ew = QualSFrame.get_header_value(hdr, 'SKYEW')
     sky_ww = QualSFrame.get_header_value(hdr, 'SKYWW')
 
-    xtab = Table(x['SLITMAP'].data)
-    sci_fibers = QualSFrame.scifib(xtab, select='science', telescope='Sci')
-    skye_fibers = QualSFrame.scifib(xtab, select='SKY', telescope='SkyE')
-    skyw_fibers = QualSFrame.scifib(xtab, select='SKY', telescope='SkyW')
+    wav = sci_data['wave']
+    mask = sci_data['mask'].astype(bool)
 
-    wav = x['WAVE'].data
-    mask = x['MASK'].data[sci_fibers['fiberid'] - 1].astype(bool)
-
-    sky_e = np.ma.masked_array(x['SKY_EAST'].data[sci_fibers['fiberid'] - 1], mask)
-    sky_w = np.ma.masked_array(x['SKY_WEST'].data[sci_fibers['fiberid'] - 1], mask)
+    sky_e = np.ma.masked_array(sci_data['skye_flux'], mask)
+    sky_w = np.ma.masked_array(sci_data['skyw_flux'], mask)
 
     sky_e_med = np.nanmedian(np.ma.filled(sky_e, np.nan), axis=0)
     sky_w_med = np.nanmedian(np.ma.filled(sky_w, np.nan), axis=0)
@@ -461,10 +458,10 @@ def eval_sky_comparison(filename, outroot=''):
     # are identical to each other and disconnected from either telescope's
     # own data) -- the model comparison above would show no disagreement at
     # all in that case even if one telescope's raw sky is badly contaminated.
-    skye_mask = x['MASK'].data[skye_fibers['fiberid'] - 1].astype(bool)
-    skyw_mask = x['MASK'].data[skyw_fibers['fiberid'] - 1].astype(bool)
-    skye_flux = np.ma.masked_array(x['FLUX'].data[skye_fibers['fiberid'] - 1], skye_mask)
-    skyw_flux = np.ma.masked_array(x['FLUX'].data[skyw_fibers['fiberid'] - 1], skyw_mask)
+    skye_mask = skye_data['mask'].astype(bool)
+    skyw_mask = skyw_data['mask'].astype(bool)
+    skye_flux = np.ma.masked_array(skye_data['flux'], skye_mask)
+    skyw_flux = np.ma.masked_array(skyw_data['flux'], skyw_mask)
     skye_flux_med = np.nanmedian(np.ma.filled(skye_flux, np.nan), axis=0)
     skyw_flux_med = np.nanmedian(np.ma.filled(skyw_flux, np.nan), axis=0)
 
@@ -594,12 +591,11 @@ def eval_field_vs_sky_lines(filename, outroot=''):
 
     Returns (figname, note).
     '''
-    try:
-        x = fits.open(filename)
-    except Exception as e:
-        return None, 'Could not open %s (%s)' % (filename, e)
+    sci_data = get_tel_data(filename, 'Sci', include_sky=True)
+    if sci_data is None:
+        return None, 'Could not open %s' % filename
 
-    hdr = x['PRIMARY'].header
+    hdr = sci_data['header']
     ra = QualSFrame.get_header_value(hdr, 'SCIRA')
     dec = QualSFrame.get_header_value(hdr, 'SCIDEC')
     ra_sky_e = QualSFrame.get_header_value(hdr, 'SKYERA')
@@ -611,14 +607,11 @@ def eval_field_vs_sky_lines(filename, outroot=''):
     e_tag = 'near' if distance_sky_e < distance_sky_w else 'far'
     w_tag = 'far' if distance_sky_e < distance_sky_w else 'near'
 
-    xtab = Table(x['SLITMAP'].data)
-    sci_fibers = QualSFrame.scifib(xtab, select='science', telescope='Sci')
-
-    wav = x['WAVE'].data
-    fmask = x['MASK'].data[sci_fibers['fiberid'] - 1].astype(bool)
-    flux = np.ma.masked_array(x['FLUX'].data[sci_fibers['fiberid'] - 1], fmask)
-    sky_e = np.ma.masked_array(x['SKY_EAST'].data[sci_fibers['fiberid'] - 1], fmask)
-    sky_w = np.ma.masked_array(x['SKY_WEST'].data[sci_fibers['fiberid'] - 1], fmask)
+    wav = sci_data['wave']
+    fmask = sci_data['mask'].astype(bool)
+    flux = np.ma.masked_array(sci_data['flux'], fmask)
+    sky_e = np.ma.masked_array(sci_data['skye_flux'], fmask)
+    sky_w = np.ma.masked_array(sci_data['skyw_flux'], fmask)
 
     nrows, ncols = 2, 3
     fig, axs = plt.subplots(nrows, ncols, figsize=(16, 9))

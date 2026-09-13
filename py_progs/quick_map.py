@@ -47,6 +47,12 @@ History::
         overlapping by construction (rspaxel matches the fiber pitch),
         so "nearest fiber center, if within rspaxel" is equivalent to
         the old fill order.
+    260913 ksl Sci-fiber selection (telescope=='Sci' & fibstatus==0)
+        now goes through GetTelData.get_tel_data() instead of indexing
+        SLITMAP/FLUX/MASK directly; make_wcs() keeps its own slittab =
+        rss['SLITMAP'].data since it needs the full, unfiltered table.
+        Verified identical x/y/fibid/flux/mask arrays and full
+        end-to-end run first.
 
 '''
 

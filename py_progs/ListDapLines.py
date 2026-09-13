@@ -68,7 +68,9 @@ Notes:
 History::
 
     260822 ksl Coding begun
-
+    260913 ksl Added the missing -h/-out Options list and an Arguments
+        entry for dapfile (steer() already handled both; the docstring
+        never documented them).
 '''
 
 import os

@@ -391,6 +391,8 @@ History::
                      copy in the next ~260px-wide column) to 'Pre-sub
                      continuum' (18 characters, matching every other
                      x-axis title's length in this module).
+        260913  ksl  chmod +x -- had a shebang and __main__ block but
+                     was missing the executable bit.
 
 '''
 

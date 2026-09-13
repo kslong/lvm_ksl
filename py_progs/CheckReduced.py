@@ -47,6 +47,10 @@ Notes:
 History::
 
     251224 ksl Coding begun
+    260913 ksl Fixed -h crash (print(__doc_) -- missing underscore,
+        should have been __doc__/_USAGE); adopted the standard
+        _usage_from_doc()/_USAGE pattern and documented -d/-l/-h in a
+        proper Options list.
 '''
 
 import os

@@ -43,6 +43,11 @@ Notes:
     This routine is related to XSnap which ksl created for use with the DECam images
     of the SMC and SMC.
 
+History::
+
+    260913 ksl Added the missing -h/-size/-type/-min/-max/-out Options
+        list above (steer() already handled all of them; the docstring
+        never documented -h specifically).
 '''
 
 # # Create  routine to prodces a Summary Overview of SNRS in MCELS

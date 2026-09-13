@@ -30,10 +30,15 @@ Primary routines:
 
 Notes:
                                        
-History:
+History::
 
-240328 ksl Coding begun
-
+    240328 ksl Coding begun
+    260913 ksl Prep4SkyCorrMean() now gets its Sci/SkyE/SkyW FLUX/IVAR
+        via GetTelData.get_tel_data() instead of reimplementing the
+        SLITMAP telescope selection directly; dropped a dead fallback
+        to an old 'Error' extension name in the process. The separate
+        SKY/SKY_EAST/SKY_WEST broadcast block is unaffected. Verified
+        byte-for-byte identical output first.
 '''
 
 

@@ -100,6 +100,15 @@ History::
     260907 ksl Updated all references for QuickLook.py's rename to
         QualSFrame.py (import, QuickLook.* call sites, and the prose
         above) -- no functional change.
+    260913 ksl eval_sky_comparison() and eval_field_vs_sky_lines() now
+        get their Sci/SkyE/SkyW FLUX/MASK/SKY_EAST/SKY_WEST via
+        GetTelData.get_tel_data() instead of opening the file and
+        indexing SLITMAP/QualSFrame.scifib() directly -- neither
+        function needs its own fits.open() any more. Verified
+        pixel-identical PNG output first. eval_calibration_spectra()
+        still uses QualSFrame.scifib() directly (its flux/mask arrays
+        are used for many other fiberids beyond the Sci selection, not
+        a clean match for get_tel_data()).
 
 '''
 

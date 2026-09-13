@@ -27,11 +27,14 @@ Notes:
 
     This version creates images with the standard orientation for ds9
                                        
-History:
+History::
 
-231216 ksl Coding begun
-240303 ksl Added redshift corrections if RA and DEC are near the LMC or SMC
-
+    231216 ksl Coding begun
+    240303 ksl Added redshift corrections if RA and DEC are near the LMC or SMC
+    260913 ksl Sci-fiber selection (telescope=='Sci' & fibstatus==0)
+        now goes through GetTelData.get_tel_data() instead of indexing
+        SLITMAP/FLUX/MASK directly; verified identical x/y/fibid/flux/
+        mask arrays and full end-to-end run first.
 '''
 
 

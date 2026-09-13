@@ -57,6 +57,9 @@ History::
 
     260628  ksl  Written.
     260629  ksl  Added Lines panel between Residual and Continuum.
+    260913  ksl  Replaced the hand-maintained _USAGE string (missing -h,
+                 and the usage line itself never showed [-h]) with
+                 _usage_from_doc(__doc__).
 '''
 
 import sys

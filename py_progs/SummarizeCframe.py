@@ -54,10 +54,14 @@ Primary routines:
 
 Notes:
                                        
-History:
+History::
 
-240726 ksl Coding begun
-
+    240726 ksl Coding begun
+    260913 ksl get_med_spec()/get_fiber_spec() now read their Sci
+        FLUX/IVAR/MASK/LSF and SKY_EAST/SKY_WEST via
+        GetTelData.get_tel_data(filename, 'Sci', include_sky=True)
+        instead of opening the file and indexing SLITMAP/scifib()
+        directly; verified byte-for-byte identical output first.
 '''
 
 import sys

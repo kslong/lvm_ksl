@@ -84,6 +84,8 @@ History::
                  continuum-fit quality (against the raw, pre-subtraction
                  science and sky spectra) in their own DRP_ALL, without
                  duplicating the arm-band definitions or the stats math.
+    260913  ksl  Replaced the hand-maintained _USAGE string (missing -h)
+                 with _usage_from_doc(__doc__).
 '''
 
 import sys

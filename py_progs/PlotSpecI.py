@@ -131,6 +131,8 @@ History::
                 _add_line_overlay(color, show_labels=...) so both lists
                 share one implementation instead of two near-duplicate
                 blocks.
+    260913 ksl Added the missing -h line above the panel-layout flags
+        (steer() already handled -h; the docstring just never said so).
 
 '''
 

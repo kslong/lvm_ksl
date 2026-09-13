@@ -134,6 +134,9 @@ History::
     260706  ksl  DRP_ALL['mjd'] now recomputed precisely from 'obstime' via
                  SkySubOrig.obstime_to_mjd(), instead of the truncated
                  integer carried through from the master drpall table.
+    260913  ksl  Replaced the hand-maintained _USAGE string (missing -h)
+                 with _usage_from_doc(__doc__); added -h to the Options
+                 list.
 
 '''
 

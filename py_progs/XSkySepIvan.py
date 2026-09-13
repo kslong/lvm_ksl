@@ -172,6 +172,9 @@ History::
                      A; different exposures mostly 0.03-0.18 A, one outlier
                      pair at 0.015 A where the two exposures' true LSF happened
                      to coincide anyway), so 0.02 A sits in the gap.
+        260913  ksl  Replaced the hand-maintained _USAGE string (missing
+                     -h, and the usage lines never showed [-h]) with
+                     _usage_from_doc(__doc__).
 '''
 
 import sys

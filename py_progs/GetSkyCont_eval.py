@@ -102,6 +102,10 @@ History::
     260628  ksl  Redesigned to four panels: Flux, Total Cont, Components, Residual.
     260629  ksl  Added per-arm residual histogram figure (Figure 2).
     260629  ksl  Added per-spectrum fit-quality figure (Figure 3) and DRP_ALL update.
+    260913  ksl  Replaced the hand-maintained _USAGE string (out of
+                 sync with -h's own docstring, missing -h itself) with
+                 _usage_from_doc(__doc__); marked History:: (was :)
+                 since it now has multiple entries.
 '''
 
 import sys

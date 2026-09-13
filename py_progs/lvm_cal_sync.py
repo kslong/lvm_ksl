@@ -61,6 +61,8 @@ History::
     os.makedirs()'s SAS_BASE_DIR on import, which previously crashed
     even -h with a raw traceback if e.g. an external drive backing
     SAS_BASE_DIR wasn't mounted (encountered while travelling).
+    260913 ksl Added the missing -h line to the Options list above
+        (steer() already handled -h; the docstring just never said so).
 '''
 
 import sys

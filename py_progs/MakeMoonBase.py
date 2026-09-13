@@ -95,6 +95,10 @@ History::
         than 'auto' since this script's whole point is running one
         specific, known model install, not silently falling back to a
         different engine if the local one isn't set up.
+    260913 ksl Replaced the hand-maintained _USAGE string (missing -h)
+        with _usage_from_doc(__doc__); added -h to the Options list.
+        Also made the script executable (chmod +x -- it has a shebang
+        and __main__ block but was missing the executable bit).
 
 '''
 

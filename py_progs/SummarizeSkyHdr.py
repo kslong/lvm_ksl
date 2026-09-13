@@ -114,6 +114,11 @@ History::
         has no companion-file dependency when deployed to Utah --
         SkyPosKeywords.txt is not part of this repo.  -keywords can still
         point at an external table if one is needed.
+    260913 ksl Replaced the hand-maintained _USAGE string (missing -h)
+        with _usage_from_doc(__doc__); added -h to the Options list;
+        also fixed a pre-existing RST "Unexpected indentation" issue in
+        this History section (was "History:" with wrapped continuation
+        lines at inconsistent indentation).
 '''
 
 import sys

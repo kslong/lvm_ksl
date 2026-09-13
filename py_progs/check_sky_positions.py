@@ -133,6 +133,8 @@ History::
         aggregate (check_positions) still lumps both into
         n_unexplained, since that split isn't meaningful per-name the
         same way.
+    260913 ksl Added the missing -h line to the Options list above
+        (steer() already handled -h; the docstring just never said so).
 '''
 
 import sys

@@ -299,6 +299,8 @@ History::
                 fig6.add_trace() calls). Removed the now-unused
                 all_arm_sci/all_arm_sky/all_arm_resid accumulators that only
                 existed to feed the old adaptive range.
+    260913 ksl Replaced the hand-maintained _USAGE string (missing -h)
+        with _usage_from_doc(__doc__); added -h to the Options list.
 
 '''
 

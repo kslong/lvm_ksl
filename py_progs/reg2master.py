@@ -50,6 +50,9 @@ History::
     260812 ksl Vendored into lvm_ksl/py_progs from the author's personal
         py_xray utilities (unchanged apart from this History entry and
         docstring RST formatting).
+    260913 ksl Added [-h] to the usage line and an Options list entry
+        (steer() already handled -h; the docstring never documented it
+        at all).
 
 '''
 

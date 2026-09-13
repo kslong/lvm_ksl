@@ -174,6 +174,8 @@ History::
                  stats, not per-line fluxes) -- can reuse the exact
                  same grouping logic without KeyError-ing on
                  NEBULAR_LINES/DOUBLETS columns that table doesn't have.
+    260913  ksl  chmod +x -- had a shebang and __main__ block but was
+                 missing the executable bit.
 
 '''
 

@@ -46,6 +46,7 @@ import matplotlib.pyplot as plt
 from astropy.table import Table
 from glob import glob
 
+from GetTelData import get_tel_data
 
 import re
 
@@ -225,23 +226,20 @@ def Prep4SkyCorrMean(filename='data/lvmCFrame-00006661.nosky_sub.fits'):
         xroot='%s_s' % xroot
     
     # determine which telescope we are discussing
-    slitmap=Table(x['SLITMAP'].data)     
-    
-    good_fibers=slitmap[slitmap['fibstatus']==0]
-    
-    sci=good_fibers[good_fibers['telescope']=='Sci']
-    sky_e=good_fibers[good_fibers['telescope']=='SkyE']
-    sky_w=good_fibers[good_fibers['telescope']=='SkyW']
-    
-    print(len(sci),len(sky_e),len(sky_w))
-    
-    # This is the science data
-    xsci=x['FLUX'].data[sci['fiberid']-1]
+    sci_data = get_tel_data(filename, 'Sci')
+    skye_data = get_tel_data(filename, 'SkyE')
+    skyw_data = get_tel_data(filename, 'SkyW')
+    if sci_data is None or skye_data is None or skyw_data is None:
+        print('Error: could not retrieve Sci/SkyE/SkyW data from %s' % filename)
+        return []
 
-    try:
-        esci=np.sqrt(1./x['IVAR'].data[sci['fiberid']-1])
-    except:
-        esci=x['Error'].data[sci['fiberid']-1]
+    sci, sky_e, sky_w = sci_data['slitmap'], skye_data['slitmap'], skyw_data['slitmap']
+
+    print(len(sci),len(sky_e),len(sky_w))
+
+    # This is the science data
+    xsci = sci_data['flux']
+    esci = np.sqrt(1. / sci_data['ivar'])
 
     # This is the supersky sky teleescope
     try:
@@ -270,21 +268,13 @@ def Prep4SkyCorrMean(filename='data/lvmCFrame-00006661.nosky_sub.fits'):
 
 
     
-    # This is the fluxed SkyE 
-    xsky_e=x['FLUX'].data[sky_e['fiberid']-1]
+    # This is the fluxed SkyE
+    xsky_e = skye_data['flux']
+    esky_e = np.sqrt(1. / skye_data['ivar'])
 
-    try:
-        esky_e=np.sqrt(1./x['IVAR'].data[sky_e['fiberid']-1])
-    except:
-        esky_e=x['Error'].data[sky_e['fiberid']-1]
-    
     # This is the fluxed SkyW
-    xsky_w=x['FLUX'].data[sky_w['fiberid']-1]
-
-    try:
-        esky_w=np.sqrt(1./x['IVAR'].data[sky_w['fiberid']-1])    
-    except:
-        esky_w=x['Error'].data[sky_w['fiberid']-1]    
+    xsky_w = skyw_data['flux']
+    esky_w = np.sqrt(1. / skyw_data['ivar'])
 
     # This finishes the Sky telescope
 

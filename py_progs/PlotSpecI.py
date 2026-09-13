@@ -35,6 +35,8 @@ Command line usage (if any):
         background spectrum.  The background FLUX is subtracted from the
         source FLUX before plotting.
 
+    -h       print this help and exit
+
     Panel layout (defaults match PlotSpec.py: 3600-9559 AA in 750 AA panels,
     i.e. 8 panels):
     -wmin    overall lower wavelength bound (default 3600)

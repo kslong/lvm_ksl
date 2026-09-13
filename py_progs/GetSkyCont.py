@@ -24,8 +24,9 @@ Command line usage (if any):
     ext            FITS extension for the spectrum (FLUX, SKY_EAST, SKY_WEST, ...).
     row_no         zero or more 0-based row indices; if omitted all rows are processed (subject to -delta).
 
-    Options:
+    Options::
 
+    -h             print this help and exit
     -mask file     (required) palace_mask FITS file from palace_make_mask.py (MASK extension: 1=clean 0=line-affected).
     -delta N       process every N-th row (0, N, 2N, ...) instead of all; ignored when explicit row numbers are given.
     -kstep N       B-spline knot spacing in Angstroms (default 100).
@@ -86,6 +87,7 @@ History::
 '''
 
 import sys
+import re
 import numpy as np
 from pathlib import Path
 from astropy.io import fits
@@ -98,22 +100,22 @@ from scipy.optimize import nnls
 DEFAULT_SOLAR_FILE = (Path(__file__).resolve().parent.parent / 'data' / 'palace_ref' /
                       'Spectre_HR_LATMOS_Meftah_V1_350_1000nm.txt')
 
-_USAGE = '''Usage:
-  GetSkyCont.py sky_file.fits -mask mask.fits [row_no ...] [-delta N]
-  GetSkyCont.py xframe.fits ext -mask mask.fits [row_no ...] [-delta N]
 
-Arguments:
-  sky_file.fits  Sky_<name>.fits from GetSky_from_CFrame_sum.py
-  xframe.fits    XCframe or XSFrame summary FITS file
-  ext            FITS extension (FLUX, SKY_EAST, SKY_WEST, ...)
-  row_no         0-based row indices (default: all rows)
+def _usage_from_doc(doc):
+    '''
+    __doc__ truncated just before a line consisting of "History:" (or
+    "History::"/"Version History" -- whitespace/colon-insensitive), so
+    -h stays short even as that section grows -- without hand-
+    duplicating the Synopsis/Options text in a second string.  Anchored
+    to a whole line (not a bare substring search) so it can't misfire on
+    "History:" appearing mid-sentence, and returns doc unchanged if no
+    such line is present.
+    '''
+    m = re.search(r'^\s*(?:Version\s+)?History:{0,2}\s*$', doc, re.MULTILINE)
+    return doc[:m.start()].rstrip() + '\n' if m else doc
 
-Options:
-  -mask file   (required) palace_mask FITS file from palace_make_mask.py
-  -delta N     process every N-th row instead of all
-  -kstep N     B-spline knot spacing in Angstroms (default 100)
-  -out ROOT    output filename root
-'''
+
+_USAGE = _usage_from_doc(__doc__)
 
 _sky_fits_cache = {}
 _xcframe_fits   = None

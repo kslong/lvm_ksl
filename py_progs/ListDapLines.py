@@ -15,6 +15,15 @@ Command line usage (if any):
 
     usage: ListDapLines.py [-h] [-out dap_lines.txt] dapfile
 
+    Arguments::
+
+        dapfile   a DAP output FITS file to read the fitted line set from
+
+    Options::
+
+        -h        print this help and exit
+        -out FILE output table path (default: dap_lines.txt)
+
 Description:
 
     The DAP's input yaml configuration controls which emission lines it

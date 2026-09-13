@@ -15,7 +15,15 @@ Command line usage (if any):
 
     usage: CheckReduced.py [-h] [-d whatever] [-l whatever]
 
-Description:  
+    Options::
+
+        -h          print this help and exit
+        -d whatever directory where the reduced SFrame files are located
+                    (default: data)
+        -l whatever directory where the Reduce.py log files are located
+                    (default: xlog)
+
+Description:
 
     The routine is intended to be used in conjunction with Reduce.py
     which normally copies reduced files to a subdirectory data,
@@ -23,10 +31,7 @@ Description:
 
     With none of the optional switches the routine assumes processed
     data files are in the data directory, and the log files are
-    in the xlog. Options: -d whatever specifies where the SFrame files
-    to be looked at exist; -l whatever specifies an alternative directory
-    for the log files created with Reduce.py; -h prints this documentation
-    and quits.
+    in the xlog.
 
     The results are written to the screen but also stored for reference
     in commits.txt for the commit information and problems.txt for the errors.
@@ -39,10 +44,9 @@ Notes:
 
     Unlike most other routines, this one is normally run witout arguments.
                                        
-History:
+History::
 
-251224 ksl Coding begun
-
+    251224 ksl Coding begun
 '''
 
 import os
@@ -52,6 +56,23 @@ import numpy as np
 from glob import glob
 from astropy.table import Table
 import re
+
+
+def _usage_from_doc(doc):
+    '''
+    __doc__ truncated just before a line consisting of "History:" (or
+    "History::"/"Version History" -- whitespace/colon-insensitive), so
+    -h stays short even as that section grows -- without hand-
+    duplicating the Synopsis/Options text in a second string.  Anchored
+    to a whole line (not a bare substring search) so it can't misfire on
+    "History:" appearing mid-sentence, and returns doc unchanged if no
+    such line is present.
+    '''
+    m = re.search(r'^\s*(?:Version\s+)?History:{0,2}\s*$', doc, re.MULTILINE)
+    return doc[:m.start()].rstrip() + '\n' if m else doc
+
+
+_USAGE = _usage_from_doc(__doc__)
 
 
 
@@ -176,7 +197,7 @@ def steer(argv):
     i=1
     while i<len(argv):
         if argv[i][:2]=='-h':
-            print(__doc_)
+            print(_USAGE)
             return
         elif argv[i][:2]=='-d':
             i+=1

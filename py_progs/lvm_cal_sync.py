@@ -13,6 +13,7 @@ Usage::
 
 Options::
 
+    -h          print this help and exit
     -out FILE   name of the generated command file (default:
                 SyncCalCommands.<YYMMDD>.txt)
 

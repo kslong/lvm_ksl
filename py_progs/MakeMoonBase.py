@@ -18,6 +18,7 @@ Command line usage (if any):
 
 Options::
 
+    -h             print this help and exit
     -ra RA         reference right ascension in degrees (default: a
                    fixed, moderate-airmass, moderate-phase test case)
     -dec DEC       reference declination in degrees
@@ -99,6 +100,7 @@ History::
 
 import os
 import sys
+import re
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
@@ -108,15 +110,22 @@ from astropy.table import Table
 
 import EsoSkyObs
 
-_USAGE = '''Usage:
-  MakeMoonBase.py [-ra RA] [-dec DEC] [-obstime TIME] [-out FILE]
 
-Options:
-  -ra RA         reference right ascension in degrees
-  -dec DEC       reference declination in degrees
-  -obstime TIME  reference UTC time
-  -out FILE      output file path (default: data/moon_base_spectrum.dat)
-'''
+def _usage_from_doc(doc):
+    '''
+    __doc__ truncated just before a line consisting of "History:" (or
+    "History::"/"Version History" -- whitespace/colon-insensitive), so
+    -h stays short even as that section grows -- without hand-
+    duplicating the Synopsis/Options text in a second string.  Anchored
+    to a whole line (not a bare substring search) so it can't misfire on
+    "History:" appearing mid-sentence, and returns doc unchanged if no
+    such line is present.
+    '''
+    m = re.search(r'^\s*(?:Version\s+)?History:{0,2}\s*$', doc, re.MULTILINE)
+    return doc[:m.start()].rstrip() + '\n' if m else doc
+
+
+_USAGE = _usage_from_doc(__doc__)
 
 # A fixed reference geometry with moderate airmass for both target and
 # Moon (source alt ~67 deg, Moon alt ~83 deg) and a moderate phase angle

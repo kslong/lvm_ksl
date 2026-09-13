@@ -22,6 +22,7 @@ Command line usage (if any):
 
     Options::
 
+        -h          print this help and exit
         -low PCT    percentile rank (0-100) of the faint/sky-like fiber
                     (default 10)
         -high PCT   percentile rank (0-100) of the bright/science-like fiber
@@ -136,27 +137,21 @@ from SummarizeCframe import scifib, _rank_window, _robust_mean
 from GetSkyCont import load_mask, _interp_mask_to_wave
 from SkySubOrig import obstime_to_mjd
 
-_USAGE = '''Usage:
-  SkySubSci.py [-low PCT] [-high PCT] [-navg N] [-sigma S] [-maxiters K]
-              [-mask FILE] [-stat median|mean] [-out ROOT]
-              filename [filename ...]
+def _usage_from_doc(doc):
+    '''
+    __doc__ truncated just before a line consisting of "History:" (or
+    "History::"/"Version History" -- whitespace/colon-insensitive), so
+    -h stays short even as that section grows -- without hand-
+    duplicating the Synopsis/Options text in a second string.  Anchored
+    to a whole line (not a bare substring search) so it can't misfire on
+    "History:" appearing mid-sentence, and returns doc unchanged if no
+    such line is present.
+    '''
+    m = re.search(r'^\s*(?:Version\s+)?History:{0,2}\s*$', doc, re.MULTILINE)
+    return doc[:m.start()].rstrip() + '\n' if m else doc
 
-Arguments:
-  filename    one or more lvmCFrame FITS files (one output row per file)
 
-Options:
-  -low PCT    percentile rank of the sky-like fiber (default 10)
-  -high PCT   percentile rank of the science-like fiber (default 90)
-  -navg N     number of nearest-rank fibers to combine per percentile,
-              via a sigma-clipped mean (default 10; use 1 for the
-              original single-fiber behaviour)
-  -sigma S    sigma-clipping threshold for the robust mean (default 3.0)
-  -maxiters K sigma-clipping iteration limit (default 5)
-  -mask FILE  palace_mask FITS file (default: sky_mask.fits searched in
-              cwd then data/)
-  -stat STAT  median (default) or mean, ranking statistic
-  -out ROOT   output filename root (default: SkySubSci_<first>_<last>)
-'''
+_USAGE = _usage_from_doc(__doc__)
 
 _EXPNUM_RE = re.compile(r'(\d+)')
 

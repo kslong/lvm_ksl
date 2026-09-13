@@ -11,7 +11,7 @@ Synopsis:
 
 Command line usage (if any):
 
-    usage: XSkySepIvan_eval.py palace_file.fits [wmin wmax] [-num N] [-out outroot]
+    usage: XSkySepIvan_eval.py [-h] palace_file.fits [wmin wmax] [-num N] [-out outroot]
 
     Arguments:
 
@@ -19,8 +19,9 @@ Command line usage (if any):
     wmin              minimum wavelength in Angstroms (default 3600).
     wmax              maximum wavelength in Angstroms (default 9800).
 
-    Options:
+    Options::
 
+    -h                print this help and exit
     -num N            overlay N randomly-selected individual spectra on the band (default 20; 0 = band only).
     -out outroot      output filename root; default is <stem>_<wmin>_<wmax>.
 
@@ -52,13 +53,14 @@ Notes:
     Wavelength window defaults to the full LVM range (3600-9800 A) when
     wmin and wmax are not given.
 
-History:
+History::
 
     260628  ksl  Written.
     260629  ksl  Added Lines panel between Residual and Continuum.
 '''
 
 import sys
+import re
 import numpy as np
 from pathlib import Path
 from astropy.io import fits
@@ -66,17 +68,21 @@ import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 
 
-_USAGE = '''Usage: XSkySepIvan_eval.py palace_file.fits [wmin wmax] [-num N] [-out outroot]
+def _usage_from_doc(doc):
+    '''
+    __doc__ truncated just before a line consisting of "History:" (or
+    "History::"/"Version History" -- whitespace/colon-insensitive), so
+    -h stays short even as that section grows -- without hand-
+    duplicating the Synopsis/Options text in a second string.  Anchored
+    to a whole line (not a bare substring search) so it can't misfire on
+    "History:" appearing mid-sentence, and returns doc unchanged if no
+    such line is present.
+    '''
+    m = re.search(r'^\s*(?:Version\s+)?History:{0,2}\s*$', doc, re.MULTILINE)
+    return doc[:m.start()].rstrip() + '\n' if m else doc
 
-Arguments:
-  palace_file.fits  FITS file from XSkySepIvan.py
-  wmin              minimum wavelength in Angstroms (default 3600)
-  wmax              maximum wavelength in Angstroms (default 9800)
 
-Options:
-  -num N        number of individual spectra to overlay (default 20; 0 = band only)
-  -out outroot  output filename root (default: <stem>_<wmin>_<wmax>)
-'''
+_USAGE = _usage_from_doc(__doc__)
 
 
 def _band_traces(wave, arr, name, color_band, color_med, show_band_legend, legend_ref='legend'):

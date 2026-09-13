@@ -29,8 +29,9 @@ Command line usage (if any):
     wmin             minimum wavelength in Angstroms (default 3600).
     wmax             maximum wavelength in Angstroms (default 9800).
 
-    Options:
+    Options::
 
+    -h               print this help and exit
     -num N           overlay N randomly-selected individual spectra (default 20).
     -out outroot     combine all files into one HTML (default: per-file <stem>_eval.html).
 
@@ -303,6 +304,7 @@ History::
 
 import sys
 import os
+import re
 import warnings
 import numpy as np
 from pathlib import Path
@@ -370,18 +372,21 @@ _FILE_COLORS = [
     ('rgb(23,190,207)',  'rgba(23,190,207,0.20)'),
 ]
 
-_USAGE = '''Usage: SkySub_eval.py [wmin wmax] [-num N] [-out outroot] filename [filename ...]
+def _usage_from_doc(doc):
+    '''
+    __doc__ truncated just before a line consisting of "History:" (or
+    "History::"/"Version History" -- whitespace/colon-insensitive), so
+    -h stays short even as that section grows -- without hand-
+    duplicating the Synopsis/Options text in a second string.  Anchored
+    to a whole line (not a bare substring search) so it can't misfire on
+    "History:" appearing mid-sentence, and returns doc unchanged if no
+    such line is present.
+    '''
+    m = re.search(r'^\s*(?:Version\s+)?History:{0,2}\s*$', doc, re.MULTILINE)
+    return doc[:m.start()].rstrip() + '\n' if m else doc
 
-Arguments:
-  filename   one or more SkySub FITS files (SkySubOrig/Drp/Dev1/Dev2 output)
-  wmin       spectral overview minimum wavelength in Angstroms (default 3600)
-  wmax       spectral overview maximum wavelength in Angstroms (default 9800)
 
-Options:
-  -num N        number of individual spectra to overlay (default 20; 0 = band only)
-  -out outroot  overlay all files into one HTML with this output root;
-                without -out, each file produces its own <stem>_eval.html
-'''
+_USAGE = _usage_from_doc(__doc__)
 
 
 # ──────────────────────────────────────────────────────────────

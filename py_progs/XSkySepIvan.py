@@ -15,10 +15,10 @@ Synopsis:
 Command line usage (if any):
 
     # Sky-file mode (auto-detected from file content):
-    usage: XSkySepIvan.py sky_file.fits [row_no ...]
+    usage: XSkySepIvan.py [-h] sky_file.fits [row_no ...]
 
     # XCframe / XSFrame summary file mode:
-    usage: XSkySepIvan.py xframe.fits ext [row_no ...] [-delta N]
+    usage: XSkySepIvan.py [-h] xframe.fits ext [row_no ...] [-delta N]
 
     Arguments:
 
@@ -27,8 +27,9 @@ Command line usage (if any):
     ext             FITS extension (FLUX, SKY_EAST, SKY_WEST, ...).
     row_no          zero or more 0-based row indices; if omitted all rows are processed (subject to -delta).
 
-    Options:
+    Options::
 
+    -h              print this help and exit
     -delta N        process every N-th row (0, N, 2N, ...) instead of all; ignored when explicit row numbers are given.
     -out outroot    set the output filename root.
     -lsf FWHM       fixed LSF FWHM in Angstroms (default 1.3 A).
@@ -175,6 +176,7 @@ History::
 
 import sys
 import os
+import re
 from pathlib import Path
 
 from astropy.table import Table, join
@@ -200,22 +202,21 @@ DEFAULT_BASE_DIR = Path(__file__).resolve().parent.parent / 'data' / 'palace_ref
 
 _CAP_WAVE = 5.0   # Å extra margin on each side when selecting PMD lines
 
-_USAGE = '''Usage:
-  XSkySepIvan.py sky_file.fits [row_no ...]               (Sky-file mode)
-  XSkySepIvan.py xframe.fits ext [row_no ...] [-delta N]  (XCframe mode)
+def _usage_from_doc(doc):
+    '''
+    __doc__ truncated just before a line consisting of "History:" (or
+    "History::"/"Version History" -- whitespace/colon-insensitive), so
+    -h stays short even as that section grows -- without hand-
+    duplicating the Synopsis/Options text in a second string.  Anchored
+    to a whole line (not a bare substring search) so it can't misfire on
+    "History:" appearing mid-sentence, and returns doc unchanged if no
+    such line is present.
+    '''
+    m = re.search(r'^\s*(?:Version\s+)?History:{0,2}\s*$', doc, re.MULTILINE)
+    return doc[:m.start()].rstrip() + '\n' if m else doc
 
-Arguments:
-  sky_file.fits  Sky_<name>.fits from GetSky_from_CFrame_sum.py
-  xframe.fits    XCframe or XSFrame summary FITS file
-  ext            FITS extension (FLUX, SKY_EAST, SKY_WEST, ...)
-  row_no         0-based row indices (default: all rows)
 
-Options:
-  -delta N    process every N-th row instead of all
-  -lsf FWHM   LSF FWHM in Angstroms (default 1.3)
-  -refits N   number of iterative LSF kernel refits (default 0)
-  -out ROOT   output filename root (default: <stem>_ivan or <stem>_<ext>_ivan)
-'''
+_USAGE = _usage_from_doc(__doc__)
 
 # Maps PALACE internal atom/ORC names to spectroscopic FITS column names
 _ATOM_COEF_COL = {

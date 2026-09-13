@@ -34,6 +34,7 @@ Command line usage (if any):
 
     Options::
 
+        -h             print this help and exit
         -emin N        minimum exposure time to include (default 900)
         -ver VER       DRP version, used to locate drpall-VER.fits (default 1.2.1)
         -drp_all FILE  explicit drpall table to read instead of drpall-VER.fits
@@ -102,48 +103,42 @@ Notes:
     with one of those later once the sky position/name diagnosis is
     further along.
 
-History:
+History::
 
-260713 ksl Coding begun, to diagnose the skye/skyw position-vs-name
-    mismatches found by check_sky_positions.py from the drpall side --
-    these reported/commanded/adopted-position keywords let that mismatch
-    be traced to a specific stage of DRP processing.
-260713 ksl Hardwired _KEYWORD_DEFS directly into this script instead of
-    reading it from SkyPosKeywords.txt at runtime, so this script has no
-    companion-file dependency when deployed to Utah -- SkyPosKeywords.txt
-    is not part of this repo.  -keywords can still point at an external
-    table if one is needed.
-
+    260713 ksl Coding begun, to diagnose the skye/skyw position-vs-name
+        mismatches found by check_sky_positions.py from the drpall side --
+        these reported/commanded/adopted-position keywords let that
+        mismatch be traced to a specific stage of DRP processing.
+    260713 ksl Hardwired _KEYWORD_DEFS directly into this script instead
+        of reading it from SkyPosKeywords.txt at runtime, so this script
+        has no companion-file dependency when deployed to Utah --
+        SkyPosKeywords.txt is not part of this repo.  -keywords can still
+        point at an external table if one is needed.
 '''
 
 import sys
 import os
+import re
 import numpy as np
 from astropy.io import fits, ascii as apy_ascii
 from astropy.table import Table
 
 
-_USAGE = '''Usage:
-  SummarizeSkyHdr.py [-emin 900] [-ver 1.2.1] [-drp_all FILE]
-                     [-keywords FILE] [-data_dir DIR] [-out ROOT]
-                     exp_start exp_stop [delta]
+def _usage_from_doc(doc):
+    '''
+    __doc__ truncated just before a line consisting of "History:" (or
+    "History::"/"Version History" -- whitespace/colon-insensitive), so
+    -h stays short even as that section grows -- without hand-
+    duplicating the Synopsis/Options text in a second string.  Anchored
+    to a whole line (not a bare substring search) so it can't misfire on
+    "History:" appearing mid-sentence, and returns doc unchanged if no
+    such line is present.
+    '''
+    m = re.search(r'^\s*(?:Version\s+)?History:{0,2}\s*$', doc, re.MULTILINE)
+    return doc[:m.start()].rstrip() + '\n' if m else doc
 
-Arguments:
-  exp_start   starting exposure number
-  exp_stop    stopping exposure number
-  delta       process every delta-th exposure in range (default 1)
 
-Options:
-  -emin N        minimum exposure time to include (default 900)
-  -ver VER       DRP version, used to locate drpall-VER.fits (default 1.2.1)
-  -drp_all FILE  explicit drpall table to read instead of drpall-VER.fits
-  -keywords FILE optional (keyword, definition) table, overriding the
-                 hardwired list built into this script
-  -data_dir DIR  flat local cache to check for CFrame files before the
-                 standard xtop/location tree layout
-  -out ROOT      output filename root (default:
-                 SummarizeSkyHdr_<ver>_<exp_start>_<exp_stop>_<delta>)
-'''
+_USAGE = _usage_from_doc(__doc__)
 
 
 # ──────────────────────────────────────────────────────────────

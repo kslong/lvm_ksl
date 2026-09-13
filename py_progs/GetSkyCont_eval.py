@@ -21,8 +21,9 @@ Command line usage (if any):
     wmin               minimum wavelength in Angstroms (default 3600).
     wmax               maximum wavelength in Angstroms (default 9800).
 
-    Options:
+    Options::
 
+    -h                 print this help and exit
     -num N             overlay N randomly-selected individual spectra on the band (default 20; 0 = band only).
     -out outroot       output filename root; default is <stem>_<wmin>_<wmax>.
 
@@ -95,7 +96,7 @@ Notes:
     wmin and wmax are not given.
     The input FITS file is updated in place; a backup is not created.
 
-History:
+History::
 
     260628  ksl  Written.
     260628  ksl  Redesigned to four panels: Flux, Total Cont, Components, Residual.
@@ -104,6 +105,7 @@ History:
 '''
 
 import sys
+import re
 import numpy as np
 from pathlib import Path
 from astropy.io import fits
@@ -117,17 +119,22 @@ ARM_DEFS = [
     ('NIR',  7600.0, 9800.0, 'rgba(44,160,44,0.6)'),
 ]
 
-_USAGE = '''Usage: GetSkyCont_eval.py skycont_file.fits [wmin wmax] [-num N] [-out outroot]
 
-Arguments:
-  skycont_file.fits  FITS file from GetSkyCont.py
-  wmin               minimum wavelength in Angstroms (default 3600)
-  wmax               maximum wavelength in Angstroms (default 9800)
+def _usage_from_doc(doc):
+    '''
+    __doc__ truncated just before a line consisting of "History:" (or
+    "History::"/"Version History" -- whitespace/colon-insensitive), so
+    -h stays short even as that section grows -- without hand-
+    duplicating the Synopsis/Options text in a second string.  Anchored
+    to a whole line (not a bare substring search) so it can't misfire on
+    "History:" appearing mid-sentence, and returns doc unchanged if no
+    such line is present.
+    '''
+    m = re.search(r'^\s*(?:Version\s+)?History:{0,2}\s*$', doc, re.MULTILINE)
+    return doc[:m.start()].rstrip() + '\n' if m else doc
 
-Options:
-  -num N        number of individual spectra to overlay (default 20; 0 = band only)
-  -out outroot  output filename root (default: <stem>_<wmin>_<wmax>)
-'''
+
+_USAGE = _usage_from_doc(__doc__)
 
 _ARM_SOLID = {
     'Blue': 'rgb(31,119,180)',

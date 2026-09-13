@@ -7,7 +7,16 @@ a masterfile
 
 Usage:
 
-    LSnap.py [-size 10] [-type ha] [-min -1] [-max 20] [-out outroot] image.fits  mastertable
+    LSnap.py [-h] [-size 10] [-type ha] [-min -1] [-max 20] [-out outroot] image.fits  mastertable
+
+    Options::
+
+        -h            print this help and exit
+        -size N       cutout size in arcmin (default: no cutouts, overlay plot)
+        -type T       label used to help name the plots (default: ha)
+        -min VAL      lower autoscale override
+        -max VAL      upper autoscale override
+        -out FILE     output plot filename (single-image mode only)
 
     where image.fits is a fitsfile with the data in the PRIMARY header, and mastertable
     is a masterfile with positions and sizes of objects in a standard format.

@@ -10,7 +10,11 @@ Description:
 
     Usage:
 
-    reg2master.py regionfile  [masterfile]
+    reg2master.py [-h] regionfile  [masterfile]
+
+    Options::
+
+        -h    print this help and exit
 
     The program requires 1 parameters:
 

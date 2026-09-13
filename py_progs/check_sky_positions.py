@@ -20,6 +20,7 @@ Arguments::
 
 Options::
 
+    -h             print this help and exit
     -csv FILE      sky tile position catalog (default: final_sky_tiles.csv)
     -tol DEG       agreement tolerance in degrees (default: 0.1)
     -out FILE      output table, ascii.fixed_width_two_line format

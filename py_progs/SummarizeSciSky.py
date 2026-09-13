@@ -27,6 +27,7 @@ Command line usage (if any):
 
     Options::
 
+        -h            print this help and exit
         -emin N       minimum exposure time to include (default 900)
         -ver VER      DRP version, used to locate drpall-VER.fits (default 1.2.1)
         -drp_all FILE explicit drpall table to read instead of drpall-VER.fits
@@ -138,6 +139,7 @@ History::
 
 import sys
 import os
+import re
 
 # ensure py_progs siblings are importable when running directly
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -151,34 +153,21 @@ from SummarizeCframe import scifib, _rank_window, _robust_mean
 from GetSkyCont import load_mask, _interp_mask_to_wave
 from SkySubOrig import obstime_to_mjd
 
-_USAGE = '''Usage:
-  SummarizeSciSky.py [-emin N] [-ver VER] [-drp_all FILE] [-low PCT]
-                     [-high PCT] [-navg N] [-sigma S] [-maxiters K]
-                     [-mask FILE] [-stat median|mean] [-out ROOT]
-                     exp_start exp_stop [delta]
+def _usage_from_doc(doc):
+    '''
+    __doc__ truncated just before a line consisting of "History:" (or
+    "History::"/"Version History" -- whitespace/colon-insensitive), so
+    -h stays short even as that section grows -- without hand-
+    duplicating the Synopsis/Options text in a second string.  Anchored
+    to a whole line (not a bare substring search) so it can't misfire on
+    "History:" appearing mid-sentence, and returns doc unchanged if no
+    such line is present.
+    '''
+    m = re.search(r'^\s*(?:Version\s+)?History:{0,2}\s*$', doc, re.MULTILINE)
+    return doc[:m.start()].rstrip() + '\n' if m else doc
 
-Arguments:
-  exp_start   starting exposure number
-  exp_stop    stopping exposure number
-  delta       process every delta-th exposure in range (default 1)
 
-Options:
-  -emin N       minimum exposure time to include (default 900)
-  -ver VER      DRP version, used to locate drpall-VER.fits (default 1.2.1)
-  -drp_all FILE explicit drpall table (FITS or ascii) instead of
-                drpall-VER.fits
-  -low PCT      percentile rank of the sky-like fiber window (default 10)
-  -high PCT     percentile rank of the science-like fiber window (default 90)
-  -navg N       number of nearest-rank fibers to combine per percentile,
-                via a sigma-clipped mean (default 10)
-  -sigma S      sigma-clipping threshold for the robust mean (default 3.0)
-  -maxiters K   sigma-clipping iteration limit (default 5)
-  -mask FILE    palace_mask FITS file (default: sky_mask.fits searched in
-                cwd then data/)
-  -stat STAT    median (default) or mean, ranking statistic
-  -out ROOT     output filename root (default:
-                SummarizeSciSky_<ver>_<exp_start>_<exp_stop>_<delta>)
-'''
+_USAGE = _usage_from_doc(__doc__)
 
 
 # ──────────────────────────────────────────────────────────────

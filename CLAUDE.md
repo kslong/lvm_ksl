@@ -85,7 +85,35 @@ Other docstring RST gotchas:
 
 ## Code Style
 
-- Docstrings with Synopsis, Description, Notes, History sections
-- Version dates in YYMMDD format
-- argparse for command-line parsing
-- Heavy use of astropy Table operations
+- Docstrings with Synopsis, Command line usage (if any), Description, Primary routines, Notes, History sections.
+- Version dates in YYMMDD format.
+- Heavy use of astropy Table operations.
+- Standard header: `#!/usr/bin/env python` then `# coding: utf-8`, before the module docstring.
+- MASK convention: 0=good, nonzero=bad (the DRP's own convention) on any FLUX/SKY_EAST/SKY_WEST/etc. MASK column -- filter with `MASK==0` for good pixels/fibers, `MASK!=0` for bad. This is the opposite sense from some FITS-mask-*file* helpers (e.g. `GetSkyCont.load_mask()`, which returns True/1=clean for the mask file itself, not a data MASK column) -- don't assume the two share a sign convention.
+- Error handling: a recoverable failure (bad file, no matching fibers/rows, bad argument) is reported with `print('<something>: ...')` and the function returns `None` (or otherwise degrades gracefully) -- not a raised exception. Exceptions are reserved for genuinely unrecoverable states, not the default for "file not found"-style problems.
+- FITS/table writes default to `overwrite=True` -- these are derived/regenerable products, not sources of truth, so a script silently refusing to clobber an existing output file is not the convention here.
+
+### CLI convention (verified 260913 against py_progs/*.py: ~80/95 scripts follow this; argparse is a rare exception, not the standard -- do not default to argparse for a new script)
+
+- Hand-rolled parsing via a `steer(argv)` function that walks `sys.argv` itself (`i = 1; while i < len(argv): ...`), not `argparse`. Required inputs are positional; optional inputs are single-dash flags (`-out`, never `--out` or a required `-flag`). Flags/positionals may appear in any order, since `steer()` classifies each token itself rather than relying on fixed position.
+- Every script with a CLI defines its own local copy of this helper (deliberately duplicated per-file, not imported, so each script stays self-contained -- copy it verbatim from an existing script such as `PlotSpec.py`):
+
+    ```python
+    def _usage_from_doc(doc):
+        m = re.search(r'^\s*(?:Version\s+)?History:{0,2}\s*$', doc, re.MULTILINE)
+        return doc[:m.start()].rstrip() + '\n' if m else doc
+
+    _USAGE = _usage_from_doc(__doc__)
+    ```
+
+  This truncates the module docstring just before `History:`/`History::`, so `-h` shows the full Synopsis/Command line usage/Description text without hand-duplicating it in a second string.
+- The docstring's "Command line usage (if any):" section must list every flag `steer()` actually accepts, under a nested `Options::` sub-list (RST literal block -- see the RST gotchas below), with `-h` always listed first as `print this help and exit`. A script whose `-h` output doesn't mention `-h` itself is a sign the docstring and `steer()` have drifted apart -- check both when adding or renaming a flag.
+- Standard entry point:
+
+    ```python
+    if __name__ == '__main__':
+        if len(sys.argv) > 1:
+            steer(sys.argv)
+        else:
+            print(_USAGE)
+    ```

@@ -63,6 +63,7 @@ from scipy.interpolate import griddata
 from scipy.spatial import cKDTree
 from lvm_ksl import fib2radec
 from astropy.coordinates import SkyCoord
+from GetTelData import get_tel_data
 
 
 import re
@@ -191,19 +192,17 @@ def doit(filename,out_label='',wrange=[6560,6566],
     posang = rss['PRIMARY'].header['SCIPA']
     
     # Read fibermap and get x,y coordinates of fibers
-    slittab = rss['SLITMAP'].data
-    targettype=slittab['targettype']
-    spectrograph=slittab['spectrographid']
-    telescope=slittab['telescope']
-    fibstatus=slittab['fibstatus']
+    slittab = rss['SLITMAP'].data  # kept for make_wcs(), which uses the full table
 
-
-    selsci=(telescope=='Sci') & (fibstatus==0)
-    x=slittab['xpmm'][selsci]
-    y=slittab['ypmm'][selsci]
-    fibid=slittab['fiberid'][selsci]
-    sciflux = rss['FLUX'].data[selsci]
-    scimask = rss['MASK'].data[selsci]
+    sci_data = get_tel_data(filename, 'Sci')
+    if sci_data is None:
+        print('Error: could not retrieve Sci data from %s' % filename)
+        return
+    x = sci_data['slitmap']['xpmm']
+    y = sci_data['slitmap']['ypmm']
+    fibid = sci_data['slitmap']['fiberid']
+    sciflux = sci_data['flux']
+    scimask = sci_data['mask']
     # print('Selected',sciflux.shape[0],'science fibers')
     
     

@@ -393,6 +393,27 @@ History::
                      x-axis title's length in this module).
         260913  ksl  chmod +x -- had a shebang and __main__ block but
                      was missing the executable bit.
+        260913  ksl  Added _binned_percentile_traces(): replaces the
+                     raw point-cloud scatter in _ratio_vs_flux_figure
+                     and _continuum_level_all_figure with a log-binned
+                     10th/50th/90th percentile band+median line --
+                     needed once a delta=1-resolution run (tens of
+                     thousands of points per panel) turned those two
+                     panels into an unreadable solid smear. Bins are
+                     computed over x's 1st-99th percentile range, not
+                     literal min/max (found by direct inspection: a
+                     handful of outlier points otherwise stretch most
+                     bins into the sparse tails, leaving only 4-7 of 20
+                     bins populated despite thousands of points; matches
+                     _shared_row_range's own 1st/99th convention).
+                     Verified against a real delta=1 run
+                     (sky_runs_delta1 in lvm_sky2609/test_sep): report
+                     size dropped 11.7MB -> 1.2MB with the same
+                     underlying stats, and the binned continuum panel
+                     correctly reproduces the known Dev2 Z-arm ~80%
+                     over-subtraction finding. The existing summary
+                     table (SNR-pass counts per method/doublet) was
+                     judged sufficient -- no per-bin count table added.
 
 '''
 
@@ -698,6 +719,85 @@ def _hline(fig, row_i, col_j, xrange, value, color='grey'):
                   row=row_i, col=col_j)
 
 
+_MIN_PER_BIN = 5  # a bin with fewer points than this is omitted rather than
+                  # plotted -- a gap is a truer signal than a median built
+                  # from a handful of points
+
+
+def _binned_percentile_traces(x, y, color, n_bins=20, min_per_bin=_MIN_PER_BIN):
+    '''
+    Replace a raw (x, y) point cloud with a binned-percentile trend: log-
+    spaced bins in x, each drawn as its own 10th/50th/90th percentile of
+    y, a shaded band plus a median line -- added 260913 because a run at
+    delta=1 resolution (tens of thousands of points per panel) turns a
+    raw scatter into an unreadable solid smear that hides exactly the
+    per-method trend/bias these panels exist to show. Bins with fewer
+    than min_per_bin points are dropped entirely (not shown with a wide,
+    misleading percentile) -- the resulting gap in the line is itself
+    the more honest signal.
+
+    Parameters:
+        x: ndarray
+            Values to bin, assumed already filtered to finite and > 0
+            (this axis is always plotted log).
+        y: ndarray
+            Row-aligned values to summarize per bin.
+        color: str
+            Trace color (CSS name or hex) for both the band and line.
+        n_bins: int
+            Number of log-spaced bins across x's own 1st-99th
+            percentile range (NOT literal min/max -- real flux
+            distributions are heavily peaked with a long tail, and a
+            handful of outlier points at either end otherwise stretch
+            most bins into the sparse tails, starving the bulk of the
+            data of resolution -- found by direct inspection: literal
+            min/max left most panels with only 4-7 surviving bins
+            despite thousands of points. Matches _shared_row_range's
+            own 1st/99th convention, so bins line up with the range
+            that ends up visible anyway).
+        min_per_bin: int
+            Minimum points required to plot a bin.
+
+    Returns:
+        list of go.Scatter traces (empty if x has no points): a
+        zero-width-line filled band (10th-90th percentile) followed by
+        the median line+markers on top.
+    '''
+    if x.size == 0:
+        return []
+    log_x = np.log10(x)
+    lo_x, hi_x = np.percentile(log_x, [1, 99])
+    if lo_x >= hi_x:
+        lo_x, hi_x = log_x.min(), log_x.max()
+    if lo_x >= hi_x:
+        return []
+    edges = np.linspace(lo_x, hi_x, n_bins + 1)
+    idx = np.digitize(log_x, edges[1:-1])
+    centers, lo, med, hi = [], [], [], []
+    for b in range(n_bins):
+        sel = idx == b
+        if sel.sum() < min_per_bin:
+            continue
+        yb = y[sel]
+        centers.append(10 ** (0.5 * (edges[b] + edges[b + 1])))
+        p10, p50, p90 = np.percentile(yb, [10, 50, 90])
+        lo.append(p10)
+        med.append(p50)
+        hi.append(p90)
+    if not centers:
+        return []
+    centers, lo, med, hi = (np.asarray(a) for a in (centers, lo, med, hi))
+    band = go.Scatter(x=np.concatenate([centers, centers[::-1]]),
+                      y=np.concatenate([hi, lo[::-1]]),
+                      fill='toself', fillcolor=color, opacity=0.2,
+                      line=dict(width=0), hoverinfo='skip', showlegend=False)
+    line = go.Scatter(x=centers, y=med, mode='lines+markers',
+                      line=dict(color=color, width=2),
+                      marker=dict(color=color, size=4),
+                      showlegend=False, hoverinfo='skip')
+    return [band, line]
+
+
 def _shared_row_range(fig, n_cols, row_i, all_x, all_y, forced_xr=None, log_y=False):
     '''Pool x/y across every method-column in one metric row and apply
     one shared range to all of them (1st/99th percentile, not literal
@@ -978,10 +1078,11 @@ def _finish_grid_figure(fig, row_heights, n_cols):
 
 def _ratio_vs_flux_figure(row_table, setup, snr_min):
     '''One row per doublet, one column per method: x = total flux of its
-    two lines (log), y = the ratio, one point per SNR-passing row,
-    pooled across the whole run (not restricted to repeat groups).
-    Returns (fig, x_ranges) -- x_ranges maps each metric's proxy_names
-    to the (lo, hi) linear-flux range computed here (the full-sample
+    two lines (log), y = the ratio, binned-percentile trend (see
+    _binned_percentile_traces) over every SNR-passing row, pooled
+    across the whole run (not restricted to repeat groups). Returns
+    (fig, x_ranges) -- x_ranges maps each metric's proxy_names to the
+    (lo, hi) linear-flux range computed here (the full-sample
     percentile, by far the most stable of the three panels since it
     pools thousands of rows rather than a few dozen repeat-group
     points), so _ratio_mad_figure/_flux_mad_figure can force the exact
@@ -999,10 +1100,8 @@ def _ratio_vs_flux_figure(row_table, setup, snr_min):
         for col_j, (label, (r, v)) in enumerate(zip(labels, routines), start=1):
             sel = (row_table['ROUTINE'] == r) & (row_table['VARIANT'] == v)
             flux_proxy, ratio = _metric_arrays(row_table[sel], m, snr_min)
-            fig.add_trace(go.Scatter(x=flux_proxy, y=ratio, mode='markers',
-                                     marker=dict(color=colors[label], size=5, opacity=0.6),
-                                     showlegend=False),
-                          row=row_i, col=col_j)
+            for trace in _binned_percentile_traces(flux_proxy, ratio, colors[label]):
+                fig.add_trace(trace, row=row_i, col=col_j)
             # exponentformat='e': flux values here are ~1e-14 to 1e-17 --
             # Plotly's default SI-prefix abbreviation renders these as
             # "10f"/"100p" (femto/pico) instead of scientific notation,
@@ -1288,10 +1387,15 @@ def _continuum_level_all_figure(cont_table, setup):
     its POST-subtraction continuum median -- LINEAR, and deliberately
     NOT clipped to positive values the way every flux axis elsewhere
     in this module is, because the point of this panel is exactly
-    whether y goes negative. A negative post-subtraction continuum is
+    whether y goes negative. Plotted as a binned-percentile trend (see
+    _binned_percentile_traces), not a raw scatter -- one point per
+    exposure would be tens of thousands of overlapping points at
+    delta=1 resolution. A negative post-subtraction continuum is
     not physically possible for a correct subtraction (continuum flux
     cannot be negative; a negative value means too much sky was
-    removed) -- a dashed red line at y=0 marks the boundary directly.
+    removed) -- a dashed red line at y=0 marks the boundary directly,
+    and frac_neg (below, computed from every raw point regardless of
+    binning) is the actual scalar readout for that question.
 
     Unlike every other panel in this section, this uses EVERY exposure
     in cont_table, not just repeat groups: over-subtraction is visible
@@ -1320,13 +1424,11 @@ def _continuum_level_all_figure(cont_table, setup):
             y = np.asarray(cont_table[f'POST_MED_{arm}'], dtype=float)[sel]
             ok = np.isfinite(x) & (x > 0) & np.isfinite(y)
             x, y = x[ok], y[ok]
-            fig.add_trace(go.Scatter(x=x, y=y, mode='markers',
-                                     marker=dict(color=colors[label], size=4, opacity=0.35),
-                                     showlegend=False),
-                          row=row_i, col=col_j)
+            frac_neg[label][arm] = float(np.mean(y < 0)) if y.size else np.nan
+            for trace in _binned_percentile_traces(x, y, colors[label]):
+                fig.add_trace(trace, row=row_i, col=col_j)
             fig.update_xaxes(type='log', exponentformat='e', tickangle=45, row=row_i, col=col_j)
             fig.update_yaxes(exponentformat='e', row=row_i, col=col_j)
-            frac_neg[label][arm] = float(np.mean(y < 0)) if y.size else np.nan
             if x.size:
                 all_x.append(x)
                 all_y.append(y)

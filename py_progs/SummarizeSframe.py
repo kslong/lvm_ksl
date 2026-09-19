@@ -68,6 +68,16 @@ History::
         matching SumCframe.py/SummarizeSciSky.py/SummarizeSkyHdr.py.
         Removed get_med_spec()'s hardcoded example-file default; filename
         is now a required argument.
+    260919 ksl get_med_spec()/get_fiber_spec() now call
+        SummarizeCframe.combine_pixel()/combine_fiber() for the actual
+        percentile/fiber-ranked combination math, instead of duplicating
+        it locally; this file still does its own SFrame-native fetch
+        (fits.open()/scifib()) since GetTelData.get_tel_data() always
+        redirects to the CFrame counterpart and can't serve SFrame's own
+        sky-subtracted FLUX/SKY/IVAR. The "* n_fibers * 0.63694"
+        inverse-variance-of-the-median correction in get_med_spec()
+        remains local, applied after combine_pixel(). Verified against
+        the original inline algorithm with synthetic fiber arrays.
 
 '''
 
@@ -81,7 +91,7 @@ import shutil
 from datetime import datetime
 from astropy.wcs import WCS
 from GetSkyCont import load_mask, _interp_mask_to_wave
-from SummarizeCframe import _rank_window, _robust_mean
+from SummarizeCframe import _rank_window, _robust_mean, combine_pixel, combine_fiber
 
 
 from astropy.coordinates import SkyCoord,  Galactocentric
@@ -252,61 +262,25 @@ def get_med_spec(filename, percentile=50):
     xtab=Table(x['SLITMAP'].data)
 
     science_fibers=scifib(xtab,select='science',telescope='Sci')
-    # skye_fibers=scifib(xtab,select='SKY',telescope='SkyE')
-    # skyw_fibers=scifib(xtab,select='SKY',telescope='SkyW')
 
     wav=x['WAVE'].data
-    sci_flux=x['FLUX'].data[science_fibers['fiberid']-1]
-    sci_sky=x['SKY'].data[science_fibers['fiberid']-1]
-    sci_var=x['IVAR'].data[science_fibers['fiberid']-1]
-    sci_lsf=x['LSF'].data[science_fibers['fiberid']-1]
-
     sci_mask=x['MASK'].data[science_fibers['fiberid']-1]
-    sci_flux=np.ma.masked_array(sci_flux,sci_mask)
-    sci_sky=np.ma.masked_array(sci_sky,sci_mask)
-    sci_var=np.ma.masked_array(sci_var,sci_mask)
-    sci_lsf=np.ma.masked_array(sci_lsf,sci_mask)
+    arrays = {
+        'flux': x['FLUX'].data[science_fibers['fiberid']-1],
+        'sky':  x['SKY'].data[science_fibers['fiberid']-1],
+        'lsf':  x['LSF'].data[science_fibers['fiberid']-1],
+    }
+    combined = combine_pixel(arrays, sci_mask, percentile=percentile)
 
-    # foo=np.ma.median(sci_sky,axis=0)
-    # print(foo.shape)
-    # print(foo)
-    if percentile==50:
-        # print('using median')
-        sci_flux_med=np.ma.median(sci_flux,axis=0)
-        sci_sky_med=np.ma.median(sci_sky,axis=0)
-        sci_lsf_med=np.ma.median(sci_lsf,axis=0)
-    else:
-        # print('Using percentile %d' % percentile)
-        sci_flux = np.ma.filled(sci_flux, np.nan)
-        sci_sky  = np.ma.filled(sci_sky, np.nan)
-        sci_lsf  = np.ma.filled(sci_lsf, np.nan)
-        sci_flux_med=np.nanpercentile(sci_flux,percentile,axis=0)
-        sci_sky_med=np.nanpercentile(sci_sky,percentile,axis=0)
-        sci_lsf_med=np.nanpercentile(sci_lsf,percentile,axis=0)
-        # print(sci_flux_med.shape)
-        # print(sci_flux_med)
-
-    # The inverse variance has to be multipled by the number of science fibers/(1.253)**2 to get the 
-    # inverse variance of the mediane
+    # The inverse variance has to be multipled by the number of science
+    # fibers/(1.253)**2 to get the inverse variance of the mediane -- this
+    # correction only applies to IVAR and always uses the median (unlike
+    # -percent for the other arrays), so it's applied here rather than in
+    # combine_pixel().
+    sci_var=np.ma.masked_array(x['IVAR'].data[science_fibers['fiberid']-1],sci_mask)
     sci_var_med=np.ma.median(sci_var,axis=0)*len(science_fibers['fiberid'])*0.63694
 
-
-    # skye_flux= x['FLUX'].data[skye_fibers['fiberid']-1]
-    # skye_sky=x['SKY'].data[skye_fibers['fiberid']-1]
-    # skye_mask=x['MASK'].data[skye_fibers['fiberid']-1]
-    # skye_flux=np.ma.masked_array(skye_flux,skye_mask)
-    # skye_sky=np.ma.masked_array(skye_sky,skye_mask)
-    # skye_flux_med=np.ma.median(skye_flux,axis=0)
-    # skye_sky_med=np.ma.median(skye_sky,axis=0)
-
-    # skyw_flux= x['FLUX'].data[skyw_fibers['fiberid']-1]
-    # skyw_sky=x['SKY'].data[skyw_fibers['fiberid']-1]
-    # skyw_mask=x['MASK'].data[skyw_fibers['fiberid']-1]
-    # skyw_flux=np.ma.masked_array(skyw_flux,skyw_mask)
-    # skyw_sky=np.ma.masked_array(skyw_sky,skyw_mask)
-    # skyw_flux_med=np.ma.median(skyw_flux,axis=0)
-    # skyw_sky_med=np.ma.median(skyw_sky,axis=0)
-    return wav, sci_flux_med, sci_sky_med, sci_var_med, sci_lsf_med
+    return wav, combined['flux'], combined['sky'], sci_var_med, combined['lsf']
 
 
 def get_fiber_spec(filename, percent=50, navg=10, sigma=3.0, maxiters=5,
@@ -317,9 +291,10 @@ def get_fiber_spec(filename, percent=50, navg=10, sigma=3.0, maxiters=5,
     fibers nearest the target percentile rank via a sigma-clipped mean.
 
     Same ranking metric and combination method as SummarizeCframe.py's
-    get_fiber_spec(), but pulls FLUX/SKY/IVAR/LSF (SFrame extensions)
-    instead of FLUX/SKY_EAST/SKY_WEST/LSF.  IVAR is combined with the
-    same sigma-clipped-mean window as the other arrays; the
+    get_fiber_spec() (see SummarizeCframe.combine_fiber() for the shared
+    logic), but pulls FLUX/SKY/IVAR/LSF (SFrame extensions) instead of
+    FLUX/SKY_EAST/SKY_WEST/LSF.  IVAR is combined with the same
+    sigma-clipped-mean window as the other arrays; the
     "* n_fibers * 0.63694" inverse-variance-of-the-median correction
     used in get_med_spec()'s percentile==50 branch does not apply here
     and is not attempted.
@@ -341,60 +316,25 @@ def get_fiber_spec(filename, percent=50, navg=10, sigma=3.0, maxiters=5,
                  % (len(sci), filename))
             return None
 
-        wav      = x['WAVE'].data.astype(np.float64)
-        sci_flux = x['FLUX'].data[sci['fiberid'] - 1].astype(np.float64)
-        sci_sky  = x['SKY'].data[sci['fiberid'] - 1].astype(np.float64)
-        sci_var  = x['IVAR'].data[sci['fiberid'] - 1].astype(np.float64)
-        sci_lsf  = x['LSF'].data[sci['fiberid'] - 1].astype(np.float64)
-        bad = x['MASK'].data[sci['fiberid'] - 1] != 0
-        sci_flux[bad] = np.nan
-        sci_sky[bad]  = np.nan
-        sci_var[bad]  = np.nan
-        sci_lsf[bad]  = np.nan
+        wav = x['WAVE'].data.astype(np.float64)
+        arrays = {
+            'flux': x['FLUX'].data[sci['fiberid'] - 1],
+            'sky':  x['SKY'].data[sci['fiberid'] - 1],
+            'var':  x['IVAR'].data[sci['fiberid'] - 1],
+            'lsf':  x['LSF'].data[sci['fiberid'] - 1],
+        }
+        mask = x['MASK'].data[sci['fiberid'] - 1]
 
-        clean = _interp_mask_to_wave(mask_wave, mask_bool, wav)
-        if stat == 'mean':
-            cont = np.nanmean(sci_flux[:, clean], axis=1)
-        else:
-            cont = np.nanmedian(sci_flux[:, clean], axis=1)
-
-        good = np.isfinite(cont)
-        if good.sum() < 10:
-            print('get_fiber_spec: too few fibers with valid continuum flux in %s, skipping.'
-                 % filename)
+        combined, meta = combine_fiber(wav, arrays, mask, sci,
+                                       percent=percent, navg=navg, sigma=sigma,
+                                       maxiters=maxiters, mask_wave=mask_wave,
+                                       mask_bool=mask_bool, stat=stat,
+                                       label='get_fiber_spec', filename=filename)
+        if combined is None:
             return None
-        sci_tab  = sci[good]
-        cont     = cont[good]
-        sci_flux = sci_flux[good]
-        sci_sky  = sci_sky[good]
-        sci_var  = sci_var[good]
-        sci_lsf  = sci_lsf[good]
 
-        order    = np.argsort(cont)
-        n        = len(order)
-        i_target = int(round(percent / 100.0 * (n - 1)))
-        win      = _rank_window(order, i_target, navg)
-
-        sci_flux_out = _robust_mean(sci_flux[win], sigma=sigma, maxiters=maxiters)
-        sci_sky_out  = _robust_mean(sci_sky[win],  sigma=sigma, maxiters=maxiters)
-        sci_var_out  = _robust_mean(sci_var[win],  sigma=sigma, maxiters=maxiters)
-        sci_lsf_out  = _robust_mean(sci_lsf[win],  sigma=sigma, maxiters=maxiters)
-
-        def _mode_int(arr):
-            arr = np.asarray(arr, int)
-            return int(np.bincount(arr).argmax())
-
-        meta = dict(
-            n_sci_fibers         = n,
-            n_avg                = len(win),
-            fiberid_list         = ','.join(str(v) for v in sci_tab['fiberid'][win]),
-            ra_fiber             = float(np.mean(sci_tab['ra'][win])),
-            dec_fiber            = float(np.mean(sci_tab['dec'][win])),
-            spectrographid_fiber = _mode_int(sci_tab['spectrographid'][win]),
-            contflux_fiber       = float(np.mean(cont[win])),
-        )
-
-        return wav, sci_flux_out, sci_sky_out, sci_var_out, sci_lsf_out, meta
+        return (wav, combined['flux'], combined['sky'], combined['var'],
+                combined['lsf'], meta)
     finally:
         x.close()
 

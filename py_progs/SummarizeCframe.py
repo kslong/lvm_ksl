@@ -71,6 +71,17 @@ History::
         matching SumCframe.py/SummarizeSciSky.py/SummarizeSkyHdr.py.
         Removed get_med_spec()'s hardcoded example-file default; filename
         is now a required argument.
+    260919 ksl Added combine_pixel()/combine_fiber(), generalizing
+        get_med_spec()'s/get_fiber_spec()'s percentile and fiber-ranked
+        combination logic to a dict-of-named-arrays interface instead of
+        hardcoded SKY_EAST/SKY_WEST columns. get_med_spec()/get_fiber_spec()
+        are now thin wrappers around these two; SummarizeSframe.py's
+        versions were converted the same way and now import combine_pixel/
+        combine_fiber from here, alongside the existing _rank_window/
+        _robust_mean import. Verified against the original inline
+        algorithm with synthetic fiber arrays (both CFrame and SFrame
+        column sets, several percentile/percent values) since no real
+        CFrame/SFrame data is available outside Utah.
 '''
 
 import sys
@@ -290,6 +301,122 @@ def _robust_mean(flux_window, sigma=3.0, maxiters=5):
     return np.asarray(mean)
 
 
+def combine_pixel(arrays, mask, percentile=50):
+    '''Per-pixel percentile/median combination across fibers.
+
+    Shared core of get_med_spec() (here and in SummarizeSframe.py): each
+    array in `arrays` is masked with the same `mask` (nonzero = bad, the
+    DRP convention) and combined independently at each wavelength pixel.
+
+    Parameters:
+        arrays: dict of {name: 2-D array (n_fibers, n_wave)}.
+        mask: 2-D array, same shape as each array in `arrays`; nonzero
+            marks a bad pixel.
+        percentile: percentile to compute across fibers (default 50 =
+            median, via np.ma.median; anything else uses
+            np.nanpercentile on a NaN-filled copy).
+
+    Returns:
+        dict of {name: 1-D combined array}, one entry per input key.
+    '''
+    out = {}
+    if percentile == 50:
+        for name, arr in arrays.items():
+            out[name] = np.ma.median(np.ma.masked_array(arr, mask), axis=0)
+    else:
+        for name, arr in arrays.items():
+            filled = np.ma.filled(np.ma.masked_array(arr, mask), np.nan)
+            out[name] = np.nanpercentile(filled, percentile, axis=0)
+    return out
+
+
+def combine_fiber(wav, arrays, mask, slitmap, percent=50, navg=10, sigma=3.0,
+                  maxiters=5, mask_wave=None, mask_bool=None, stat='median',
+                  primary='flux', min_fibers=10, label='combine_fiber',
+                  filename=''):
+    '''Fiber-ranked combination across fibers (the ``-by fiber`` mode).
+
+    Shared core of get_fiber_spec() (here and in SummarizeSframe.py): ranks
+    fibers by sky-line-masked continuum flux in ``arrays[primary]``, then
+    combines the ``navg`` fibers nearest the ``percent`` rank via a
+    sigma-clipped mean, applying that same fiber window identically to
+    every array in `arrays` so the output reflects one real, consistent
+    set of fibers rather than being combined independently.
+
+    Parameters:
+        wav: 1-D wavelength array (float64).
+        arrays: dict of {name: 2-D array (n_fibers, n_wave)}. Copied and
+            NaN-filled at bad pixels internally; not modified in place.
+        mask: 2-D array, same shape as each array in `arrays`; nonzero
+            marks a bad pixel (the DRP convention).
+        slitmap: astropy Table of the fiber rows, row-aligned with
+            `arrays`; must have fiberid, ra, dec, spectrographid columns.
+        percent, navg, sigma, maxiters: see get_fiber_spec().
+        mask_wave, mask_bool: sky-line mask arrays, as returned by
+            GetSkyCont.load_mask(), used to pick the continuum window.
+        stat: 'median' (default) or 'mean' continuum statistic.
+        primary: key of `arrays` used to rank fibers (default 'flux').
+        min_fibers: minimum surviving fiber count required at each
+            filtering stage (default 10).
+        label: name used in diagnostic print()s, so callers keep their
+            own function name in messages.
+        filename: included in the "too few fibers" diagnostic, if given.
+
+    Returns:
+        (combined, meta), where combined is a dict of {name: 1-D array}
+        (one entry per key of `arrays`) and meta is the usual per-exposure
+        metadata dict; or (None, None) if too few fibers survive.
+    '''
+    bad = np.asarray(mask) != 0
+    arrays = {name: np.array(arr, dtype=np.float64) for name, arr in arrays.items()}
+    for arr in arrays.values():
+        arr[bad] = np.nan
+
+    flux = arrays[primary]
+    clean = _interp_mask_to_wave(mask_wave, mask_bool, wav)
+    if stat == 'mean':
+        cont = np.nanmean(flux[:, clean], axis=1)
+    else:
+        cont = np.nanmedian(flux[:, clean], axis=1)
+
+    good = np.isfinite(cont)
+    if good.sum() < min_fibers:
+        if filename:
+            print('%s: too few fibers with valid continuum flux in %s, skipping.'
+                 % (label, filename))
+        else:
+            print('%s: too few fibers with valid continuum flux, skipping.' % label)
+        return None, None
+
+    sci_tab = slitmap[good]
+    cont = cont[good]
+    arrays = {name: arr[good] for name, arr in arrays.items()}
+
+    order = np.argsort(cont)
+    n = len(order)
+    i_target = int(round(percent / 100.0 * (n - 1)))
+    win = _rank_window(order, i_target, navg)
+
+    combined = {name: _robust_mean(arr[win], sigma=sigma, maxiters=maxiters)
+                for name, arr in arrays.items()}
+
+    def _mode_int(arr):
+        arr = np.asarray(arr, int)
+        return int(np.bincount(arr).argmax())
+
+    meta = dict(
+        n_sci_fibers         = n,
+        n_avg                = len(win),
+        fiberid_list         = ','.join(str(v) for v in sci_tab['fiberid'][win]),
+        ra_fiber             = float(np.mean(sci_tab['ra'][win])),
+        dec_fiber            = float(np.mean(sci_tab['dec'][win])),
+        spectrographid_fiber = _mode_int(sci_tab['spectrographid'][win]),
+        contflux_fiber       = float(np.mean(cont[win])),
+    )
+
+    return combined, meta
+
+
 def get_med_spec(filename, percentile=50):
 
     sci_data = get_tel_data(filename, 'Sci', include_sky=True)
@@ -298,35 +425,16 @@ def get_med_spec(filename, percentile=50):
         return
 
     wav = sci_data['wave']
-    sci_flux = sci_data['flux']
-    sky_e_flux = sci_data['skye_flux']
-    sky_w_flux = sci_data['skyw_flux']
-    sci_lsf = sci_data['lsf']
-    sci_mask = sci_data['mask']
-    sci_flux=np.ma.masked_array(sci_flux,sci_mask)
-    sky_e_flux=np.ma.masked_array(sky_e_flux,sci_mask)
-    sky_w_flux=np.ma.masked_array(sky_w_flux,sci_mask)
-    sci_lsf=np.ma.masked_array(sci_lsf,sci_mask)
+    arrays = {
+        'flux': sci_data['flux'],
+        'skye': sci_data['skye_flux'],
+        'skyw': sci_data['skyw_flux'],
+        'lsf':  sci_data['lsf'],
+    }
+    combined = combine_pixel(arrays, sci_data['mask'], percentile=percentile)
 
-    if percentile==50:
-        sci_flux_med=np.ma.median(sci_flux,axis=0)
-        sky_e_flux_med=np.ma.median(sky_e_flux,axis=0)
-        sky_w_flux_med=np.ma.median(sky_w_flux,axis=0)
-        sci_lsf_med=np.ma.median(sci_lsf,axis=0)
-    else:
-        sci_flux = np.ma.filled(sci_flux, np.nan)
-        sky_e_flux = np.ma.filled(sky_e_flux, np.nan)
-        sky_w_flux = np.ma.filled(sky_w_flux, np.nan)
-        sci_lsf = np.ma.filled(sci_lsf, np.nan)
-        sci_flux_med=np.nanpercentile(sci_flux,percentile,axis=0)
-        sky_e_flux_med=np.nanpercentile(sky_e_flux,percentile,axis=0)
-        sky_w_flux_med=np.nanpercentile(sky_w_flux,percentile,axis=0)
-        sci_lsf_med=np.nanpercentile(sci_lsf,percentile,axis=0)
-
-    # print(sci_flux_med.shape,sky_e_flux_med.shape,sky_w_flux_med.shape)
-
-
-    return wav, sci_flux_med, sky_e_flux_med,sky_w_flux_med,sci_lsf_med
+    return (wav, combined['flux'], combined['skye'], combined['skyw'],
+            combined['lsf'])
 
 
 def get_fiber_spec(filename, percent=50, navg=10, sigma=3.0, maxiters=5,
@@ -341,7 +449,9 @@ def get_fiber_spec(filename, percent=50, navg=10, sigma=3.0, maxiters=5,
     (percent) instead of a low/high sky-vs-science pair, and applies the
     resulting fiber window identically to FLUX, SKY_EAST, SKY_WEST, and
     LSF so the four extensions stay consistent with a single real set of
-    fibers rather than being combined independently.
+    fibers rather than being combined independently -- see combine_fiber()
+    for the shared ranking/combination logic (also used by
+    SummarizeSframe.py's get_fiber_spec()).
 
     Returns (wav, sci_flux, sky_e_flux, sky_w_flux, sci_lsf, meta), or
     None if the file could not be processed.
@@ -358,59 +468,22 @@ def get_fiber_spec(filename, percent=50, navg=10, sigma=3.0, maxiters=5,
         return None
 
     wav = sci_data['wave'].astype(np.float64)
-    sci_flux = sci_data['flux'].astype(np.float64)
-    sky_e_flux = sci_data['skye_flux'].astype(np.float64)
-    sky_w_flux = sci_data['skyw_flux'].astype(np.float64)
-    sci_lsf = sci_data['lsf'].astype(np.float64)
-    bad = sci_data['mask'] != 0
-    sci_flux[bad] = np.nan
-    sky_e_flux[bad] = np.nan
-    sky_w_flux[bad] = np.nan
-    sci_lsf[bad] = np.nan
-
-    clean = _interp_mask_to_wave(mask_wave, mask_bool, wav)
-    if stat == 'mean':
-        cont = np.nanmean(sci_flux[:, clean], axis=1)
-    else:
-        cont = np.nanmedian(sci_flux[:, clean], axis=1)
-
-    good = np.isfinite(cont)
-    if good.sum() < 10:
-        print('get_fiber_spec: too few fibers with valid continuum flux in %s, skipping.'
-             % filename)
+    arrays = {
+        'flux': sci_data['flux'],
+        'skye': sci_data['skye_flux'],
+        'skyw': sci_data['skyw_flux'],
+        'lsf':  sci_data['lsf'],
+    }
+    combined, meta = combine_fiber(wav, arrays, sci_data['mask'], sci,
+                                   percent=percent, navg=navg, sigma=sigma,
+                                   maxiters=maxiters, mask_wave=mask_wave,
+                                   mask_bool=mask_bool, stat=stat,
+                                   label='get_fiber_spec', filename=filename)
+    if combined is None:
         return None
-    sci_tab    = sci[good]
-    cont       = cont[good]
-    sci_flux   = sci_flux[good]
-    sky_e_flux = sky_e_flux[good]
-    sky_w_flux = sky_w_flux[good]
-    sci_lsf    = sci_lsf[good]
 
-    order    = np.argsort(cont)
-    n        = len(order)
-    i_target = int(round(percent / 100.0 * (n - 1)))
-    win      = _rank_window(order, i_target, navg)
-
-    sci_flux_out   = _robust_mean(sci_flux[win],   sigma=sigma, maxiters=maxiters)
-    sky_e_flux_out = _robust_mean(sky_e_flux[win], sigma=sigma, maxiters=maxiters)
-    sky_w_flux_out = _robust_mean(sky_w_flux[win], sigma=sigma, maxiters=maxiters)
-    sci_lsf_out    = _robust_mean(sci_lsf[win],    sigma=sigma, maxiters=maxiters)
-
-    def _mode_int(arr):
-        arr = np.asarray(arr, int)
-        return int(np.bincount(arr).argmax())
-
-    meta = dict(
-        n_sci_fibers         = n,
-        n_avg                = len(win),
-        fiberid_list         = ','.join(str(v) for v in sci_tab['fiberid'][win]),
-        ra_fiber             = float(np.mean(sci_tab['ra'][win])),
-        dec_fiber            = float(np.mean(sci_tab['dec'][win])),
-        spectrographid_fiber = _mode_int(sci_tab['spectrographid'][win]),
-        contflux_fiber       = float(np.mean(cont[win])),
-    )
-
-    return wav, sci_flux_out, sky_e_flux_out, sky_w_flux_out, sci_lsf_out, meta
+    return (wav, combined['flux'], combined['skye'], combined['skyw'],
+            combined['lsf'], meta)
 
 
 def make_med_spec(xtab,data_dir,outfile='',percentile=50,exp_start=None,

@@ -22,7 +22,7 @@ Synopsis:
 
 Command line usage (if any):
 
-    usage: SummarizeSkyHdr.py [-h] [-emin 900] [-ver 1.2.1] [-drp_all FILE]
+    usage: SummarizeSkyHdr.py [-h] [-emin 900] [-ver 1.3.2] [-drp_all FILE]
                               [-keywords FILE] [-data_dir DIR] [-out ROOT]
                               exp_start exp_stop [delta]
 
@@ -36,7 +36,7 @@ Command line usage (if any):
 
         -h             print this help and exit
         -emin N        minimum exposure time to include (default 900)
-        -ver VER       DRP version, used to locate drpall-VER.fits (default 1.2.1)
+        -ver VER       DRP version, used to locate drpall-VER.fits (default 1.3.2)
         -drp_all FILE  explicit drpall table to read instead of drpall-VER.fits
         -keywords FILE optional (keyword, definition) table to use INSTEAD
                        of the hardwired list built into this script -- see
@@ -119,6 +119,7 @@ History::
         also fixed a pre-existing RST "Unexpected indentation" issue in
         this History section (was "History:" with wrapped continuation
         lines at inconsistent indentation).
+    260919 ksl Default DRP version changed from 1.2.1 to 1.3.2.
 '''
 
 import sys
@@ -152,7 +153,7 @@ _USAGE = _usage_from_doc(__doc__)
 # module's own docstring for why this is a local copy, not an import)
 # ──────────────────────────────────────────────────────────────
 
-def read_drpall(filename='', drp_ver='1.2.1'):
+def read_drpall(filename='', drp_ver='1.3.2'):
     '''Read a drpall FITS file, or an ascii table, and return the table.'''
     if filename.count('txt') or filename.count('.tab'):
         try:
@@ -325,7 +326,7 @@ def read_header_keywords(filename, keyword_defs):
 # Batch processing
 # ──────────────────────────────────────────────────────────────
 
-def process_drpall(exp_start, exp_stop, delta=1, exp_min=900., drp_ver='1.2.1',
+def process_drpall(exp_start, exp_stop, delta=1, exp_min=900., drp_ver='1.3.2',
                    drp_all_file='', keyword_file=None,
                    data_dir='', outroot=''):
     '''
@@ -410,7 +411,7 @@ def steer(argv):
     exp_stop  = -1
     delta     = -1
     exp_min   = 900.
-    drp_ver   = '1.2.1'
+    drp_ver   = '1.3.2'
     drp_all_file = ''
     keyword_file = None
     data_dir  = ''

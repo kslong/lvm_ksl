@@ -2951,7 +2951,7 @@ list, so it can be run unattended over many exposures (e.g. at Utah).
 
 **Usage**::
 
-    SummarizeSciSky.py [-emin 900] [-ver 1.2.1] [-drp_all FILE]
+    SummarizeSciSky.py [-emin 900] [-ver 1.3.2] [-drp_all FILE]
                        [-low 10] [-high 90] [-navg 10] [-sigma 3.0]
                        [-maxiters 5] [-mask FILE] [-stat median|mean]
                        [-out ROOT] exp_start exp_stop [delta]
@@ -2973,7 +2973,7 @@ delta
     Minimum exposure time to include (default 900).
 
 -ver VER
-    DRP version, used to locate ``drpall-VER.fits`` (default 1.2.1).
+    DRP version, used to locate ``drpall-VER.fits`` (default 1.3.2).
 
 -drp_all FILE
     Explicit drpall table to read instead of ``drpall-VER.fits`` (FITS, or
@@ -2990,8 +2990,8 @@ delta
 
 Exposure selection and file-path resolution follow the same pattern as
 ``SummarizeCframe.py``'s ``read_drpall``/``select_exps``/``find_top``, but
-are re-implemented locally here (with an added ``-drp_all`` override)
-rather than imported from ``SumCframe.py``, so this script has no
+are re-implemented locally here rather than imported from ``SumCframe.py``,
+so this script has no
 dependency on the optional ``dask`` package that ``SumCframe.py`` requires
 for an unrelated function.  The per-exposure algorithm is identical to
 ``SkySubSci.py``; the rank-window/robust-mean helpers themselves are no

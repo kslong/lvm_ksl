@@ -12,7 +12,8 @@ evaluating sky subtraction quality and comparing residuals across many exposures
 
 Command line usage (if any):
 
-    usage: SummarizeSFrame.py [-h] [-ver drp_ver] [-percent 50] [-emin 900] [-out whatever]
+    usage: SummarizeSFrame.py [-h] [-ver drp_ver] [-drp_all FILE] [-percent 50]
+                              [-emin 900] [-out whatever]
                               [-by pixel|fiber] [-navg 10] [-sigma 3.0] [-maxiters 5]
                               [-mask FILE] exp_start exp_stop delta
 
@@ -29,7 +30,9 @@ Description:
     combined SKY and IVAR extensions.
 
     Options: -h prints this documentation; -ver drp_ver sets the DRP version to
-    use (default 1.2.1); -percent N sets the percentile to use (default 50);
+    use (default 1.3.2); -drp_all FILE reads a specific drpall table instead of
+    the one located from drp_ver (FITS, or ascii if the name contains
+    "txt"/".tab"); -percent N sets the percentile to use (default 50);
     -emin sets minimum exposure time to include (default 900); -out whatever
     sets the name or root name of output fits file.
 
@@ -56,9 +59,15 @@ Primary routines:
 
 Notes:
                                        
-History:
+History::
 
-240726 ksl Coding begun
+    240726 ksl Coding begun
+    260919 ksl Default DRP version changed from 1.2.1 to 1.3.2; added
+        -drp_all FILE to read_drpall()/doit()/steer() to read an explicit
+        drpall table (FITS or ascii) instead of one located from -ver,
+        matching SumCframe.py/SummarizeSciSky.py/SummarizeSkyHdr.py.
+        Removed get_med_spec()'s hardcoded example-file default; filename
+        is now a required argument.
 
 '''
 
@@ -137,8 +146,18 @@ def augment_drp_all(xtab):
     return drp_all
 
 
-def read_drpall(drp_ver='1.2.1'):
-    DRPFILE='drpall-%s.fits' % (drp_ver)
+def read_drpall(filename='',drp_ver='1.3.2'):
+
+    if filename.count('txt') or filename.count('.tab'):
+        try:
+            drp_tab=ascii.read(filename)
+            return augment_drp_all(drp_tab)
+        except:
+            print('Error: Could not locate : ', filename)
+            return []
+
+    DRPFILE=filename if filename else 'drpall-%s.fits' % (drp_ver)
+
     # First try to locate the DRP file locally, otherwise
     if os.path.isfile(DRPFILE):
         xfile=DRPFILE
@@ -223,7 +242,7 @@ def scifib(xtab,select='all',telescope=''):
     return ztab
 
 
-def get_med_spec(filename= '/Users/long/Projects/lvm_data/sas/sdsswork/lvm/spectro/redux/1.0.3/0011XX/11111/60192/lvmSFrame-00004336.fits',percentile=50):
+def get_med_spec(filename, percentile=50):
     try:
         x=fits.open(filename)
     except:
@@ -502,10 +521,10 @@ def make_med_spec(xtab,data_dir,outfile='',percentile=50,exp_start=None,
 
 
 
-def doit(exp_start=4000,exp_stop=8000,delta=5,exp_min=900.,out_name='',drp_ver='1.2.1',
-        percentile=50,by='pixel',navg=10,sigma=3.0,maxiters=5,mask_file=''):
+def doit(exp_start=4000,exp_stop=8000,delta=5,exp_min=900.,out_name='',drp_ver='1.3.2',
+        percentile=50,by='pixel',navg=10,sigma=3.0,maxiters=5,mask_file='',drp_all=''):
     xtop=find_top()
-    xtab=read_drpall(drp_ver)
+    xtab=read_drpall(drp_all,drp_ver)
     ztab=select(xtab,exp_start,exp_stop,delta)
 
     if by=='fiber' and not mask_file:
@@ -542,12 +561,13 @@ def steer(argv):
     percent=50
     out_name=''
 
-    ver='1.2.1'
+    ver='1.3.2'
     by='pixel'
     navg=10
     sigma=3.0
     maxiters=5
     mask_file=''
+    drp_all=''
 
     i=1
     while i<len(argv):
@@ -563,6 +583,9 @@ def steer(argv):
         elif argv[i]=='-ver':
             i+=1
             ver=argv[i]
+        elif argv[i]=='-drp_all':
+            i+=1
+            drp_all=argv[i]
         elif argv[i][:5]=='-perc':
             i+=1
             percent=eval(argv[i])
@@ -599,7 +622,7 @@ def steer(argv):
         return
 
     doit(exp_start,exp_stop,delta,exp_min,out_name,drp_ver=ver,percentile=percent,
-        by=by,navg=navg,sigma=sigma,maxiters=maxiters,mask_file=mask_file)
+        by=by,navg=navg,sigma=sigma,maxiters=maxiters,mask_file=mask_file,drp_all=drp_all)
 
 
 

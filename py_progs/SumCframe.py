@@ -45,6 +45,7 @@ Notes:
 History:
 
 240726 ksl Coding begun
+260919 ksl Default DRP version changed from 1.1.0 to 1.3.2.
 
 '''
 
@@ -77,7 +78,7 @@ def _usage_from_doc(doc):
     return doc[:m.start()].rstrip() + '\n' if m else doc
 
 
-def read_drpall(filename='',drp_ver='1.1.0'):
+def read_drpall(filename='',drp_ver='1.3.2'):
     '''
     This reads a drp_all fits file or
     an ascii table that contains the table
@@ -226,7 +227,7 @@ def median_frames(xfiles):
 
     return nanmedian_image
 
-def files_select(filename='',exp_start=4000,exp_stop=8000,delta=5,exp_min=900.,drp_ver='1.1.0'):
+def files_select(filename='',exp_start=4000,exp_stop=8000,delta=5,exp_min=900.,drp_ver='1.3.2'):
     '''
     Read the drp_all table and select files to process from this table
     '''
@@ -291,7 +292,7 @@ def process_files(xtab,out_name='',ave_med='ave',exp_start=None,exp_stop=None,
     return
 
 
-def doit(filename='',exp_start=4000,exp_stop=8000,delta=5,exp_min=900.,out_name='',drp_ver='1.1.0',ave_med='ave'):
+def doit(filename='',exp_start=4000,exp_stop=8000,delta=5,exp_min=900.,out_name='',drp_ver='1.3.2',ave_med='ave'):
     '''
     The main routine allowing one to process the data
     '''
@@ -322,7 +323,7 @@ def steer(argv):
     exp_min=900
     input_file=''
     out_name=''
-    xver='1.1.0'
+    xver='1.3.2'
     ave_med='ave'
 
     i=1

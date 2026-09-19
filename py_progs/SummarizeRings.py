@@ -12,7 +12,8 @@ Useful for evaluating radial variations in sky subtraction quality.
 
 Command line usage (if any):
 
-    usage: SummarizeRings.py [-h] [-ver drp_ver] [-percent 50] [-emin 900] [-out whatever]
+    usage: SummarizeRings.py [-h] [-ver drp_ver] [-drp_all FILE] [-percent 50]
+                             [-emin 900] [-out whatever]
                              [-inner 1 9] [-middle 10 19] [-outer 20 25]
                              exp_start exp_stop delta
 
@@ -24,7 +25,9 @@ Description:
     sky-subtracted flux for each ring set and the median sky spectrum.
 
     Options: -h prints this documentation; -ver drp_ver sets the DRP version to
-    use (default 1.2.1); -percent N sets the percentile to use (default 50 =
+    use (default 1.3.2); -drp_all FILE reads a specific drpall table instead of
+    the one located from drp_ver (FITS, or ascii if the name contains
+    "txt"/".tab"); -percent N sets the percentile to use (default 50 =
     median); -emin sets minimum exposure time to include (default 900); -out
     whatever sets the name or root name of output fits file; -inner min max sets
     ring range for inner set (default 1 9); -middle min max sets ring range for
@@ -40,9 +43,13 @@ Primary routines:
 
 Notes:
 
-History:
+History::
 
-250128 ksl Coding begun, based on SummarizeSFrame.py
+    250128 ksl Coding begun, based on SummarizeSFrame.py
+    260919 ksl Default DRP version changed from 1.2.1 to 1.3.2; added
+        -drp_all FILE to read_drpall()/doit()/steer() to read an explicit
+        drpall table (FITS or ascii) instead of one located from -ver,
+        matching SumCframe.py/SummarizeSciSky.py/SummarizeSkyHdr.py.
 
 '''
 
@@ -119,8 +126,18 @@ def augment_drp_all(xtab):
     return drp_all
 
 
-def read_drpall(drp_ver='1.2.1'):
-    DRPFILE='drpall-%s.fits' % (drp_ver)
+def read_drpall(filename='',drp_ver='1.3.2'):
+
+    if filename.count('txt') or filename.count('.tab'):
+        try:
+            drp_tab=ascii.read(filename)
+            return augment_drp_all(drp_tab)
+        except:
+            print('Error: Could not locate : ', filename)
+            return []
+
+    DRPFILE=filename if filename else 'drpall-%s.fits' % (drp_ver)
+
     # First try to locate the DRP file locally, otherwise
     if os.path.isfile(DRPFILE):
         xfile=DRPFILE
@@ -395,9 +412,9 @@ def make_ring_specs(xtab, data_dir, outfile='', percentile=50,
 
 
 def doit(exp_start=4000, exp_stop=8000, delta=5, exp_min=900., out_name='',
-         drp_ver='1.2.1', percentile=50, ring_sets=[(1, 9), (10, 19), (20, 25)]):
+         drp_ver='1.3.2', percentile=50, ring_sets=[(1, 9), (10, 19), (20, 25)], drp_all=''):
     xtop = find_top()
-    xtab = read_drpall(drp_ver)
+    xtab = read_drpall(drp_all, drp_ver)
     ztab = select(xtab, exp_start, exp_stop, delta)
 
     if out_name == '':
@@ -419,7 +436,8 @@ def steer(argv):
     percent = 50
     out_name = ''
 
-    ver = '1.2.1'
+    ver = '1.3.2'
+    drp_all = ''
 
     # Default ring sets
     inner = (1, 9)
@@ -440,6 +458,9 @@ def steer(argv):
         elif argv[i] == '-ver':
             i += 1
             ver = argv[i]
+        elif argv[i] == '-drp_all':
+            i += 1
+            drp_all = argv[i]
         elif argv[i][:5] == '-perc':
             i += 1
             percent = eval(argv[i])
@@ -477,7 +498,7 @@ def steer(argv):
     ring_sets = [inner, middle, outer]
 
     doit(exp_start, exp_stop, delta, exp_min, out_name, drp_ver=ver,
-         percentile=percent, ring_sets=ring_sets)
+         percentile=percent, ring_sets=ring_sets, drp_all=drp_all)
 
 
 # Next lines permit one to run the routine from the command line

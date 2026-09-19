@@ -14,7 +14,7 @@ Synopsis:
 
 Command line usage (if any):
 
-    usage: SummarizeSciSky.py [-h] [-emin 900] [-ver 1.2.1] [-drp_all FILE]
+    usage: SummarizeSciSky.py [-h] [-emin 900] [-ver 1.3.2] [-drp_all FILE]
                               [-low 10] [-high 90] [-navg 10] [-sigma 3.0]
                               [-maxiters 5] [-mask FILE] [-stat median|mean]
                               [-out ROOT] exp_start exp_stop [delta]
@@ -29,7 +29,7 @@ Command line usage (if any):
 
         -h            print this help and exit
         -emin N       minimum exposure time to include (default 900)
-        -ver VER      DRP version, used to locate drpall-VER.fits (default 1.2.1)
+        -ver VER      DRP version, used to locate drpall-VER.fits (default 1.3.2)
         -drp_all FILE explicit drpall table to read instead of drpall-VER.fits
                       (FITS, or ascii if the name contains "txt"/".tab")
         -low PCT      percentile rank (0-100) of the faint/sky-like fiber
@@ -137,6 +137,7 @@ History::
     260913  ksl  Replaced the hand-maintained _USAGE string (missing -h)
                  with _usage_from_doc(__doc__); added -h to the Options
                  list.
+    260919  ksl  Default DRP version changed from 1.2.1 to 1.3.2.
 
 '''
 
@@ -179,7 +180,7 @@ _USAGE = _usage_from_doc(__doc__)
 # only needed there for a different, unused function)
 # ──────────────────────────────────────────────────────────────
 
-def read_drpall(filename='', drp_ver='1.2.1'):
+def read_drpall(filename='', drp_ver='1.3.2'):
     '''Read a drpall FITS file, or an ascii table, and return the table.
 
     Parameters
@@ -358,7 +359,7 @@ def pick_sky_sci(filename, low=10, high=90, navg=10, sigma=3.0, maxiters=5,
 # Drpall-driven batch processing
 # ──────────────────────────────────────────────────────────────
 
-def process_drpall(exp_start, exp_stop, delta=1, exp_min=900., drp_ver='1.2.1',
+def process_drpall(exp_start, exp_stop, delta=1, exp_min=900., drp_ver='1.3.2',
                    drp_all_file='', low=10, high=90, navg=10, sigma=3.0,
                    maxiters=5, mask_file='', stat='median', outroot=''):
     '''Select exposures from a drpall table and write a combined
@@ -491,7 +492,7 @@ def steer(argv):
     exp_stop  = -1
     delta     = -1
     exp_min   = 900.
-    drp_ver   = '1.2.1'
+    drp_ver   = '1.3.2'
     drp_all_file = ''
     low       = 10.0
     high      = 90.0

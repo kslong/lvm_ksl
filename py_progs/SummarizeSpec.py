@@ -13,8 +13,8 @@ spectrograph-to-spectrograph variations before and after sky subtraction.
 
 Command line usage::
 
-    SummarizeSpec.py [-h] [-sf] [-ver drp_ver] [-percent 50] [-emin 900]
-                     [-out name] exp_start exp_stop delta
+    SummarizeSpec.py [-h] [-sf] [-ver drp_ver] [-drp_all FILE] [-percent 50]
+                     [-emin 900] [-out name] exp_start exp_stop delta
 
 Description:
 
@@ -38,7 +38,9 @@ every exposure that was rejected, with columns indicating which
 spectrographs were present and which were absent.
 
 Options: -h prints this documentation; -sf reads SFrame instead of CFrame
-files; -ver drp_ver sets the DRP version (default 1.2.1); -percent N sets
+files; -ver drp_ver sets the DRP version (default 1.3.2); -drp_all FILE
+reads a specific drpall table instead of the one located from drp_ver
+(FITS, or ascii if the name contains "txt"/".tab"); -percent N sets
 the percentile to compute (default 50 = median); -emin N sets the minimum
 exposure time in seconds to include (default 900); -out name sets the root
 name of the output files.
@@ -60,9 +62,13 @@ The skipped-exposure table is always written, even if no exposures were
 skipped, so there is always a record that the completeness check was
 performed.
 
-History:
+History::
 
-260312 ksl Coding begun, based on SummarizeRings.py
+    260312 ksl Coding begun, based on SummarizeRings.py
+    260919 ksl Default DRP version changed from 1.2.1 to 1.3.2; added
+        -drp_all FILE to read_drpall()/doit()/steer() to read an explicit
+        drpall table (FITS or ascii) instead of one located from -ver,
+        matching SumCframe.py/SummarizeSciSky.py/SummarizeSkyHdr.py.
 
 '''
 
@@ -141,21 +147,32 @@ def augment_drp_all(xtab):
     return drp_all
 
 
-def read_drpall(drp_ver='1.2.1'):
+def read_drpall(filename='', drp_ver='1.3.2'):
     '''
     Read the drpall FITS file and return an augmented metadata table.
 
     Looks for the file locally first, then falls back to the Utah path.
 
     Parameters:
-        drp_ver (str): DRP version string (default '1.2.1').
+        filename (str): Explicit drpall table to read (FITS, or ascii if
+            the name contains "txt" or ".tab"). If empty, drpall-<drp_ver>.fits
+            is looked for instead.
+        drp_ver (str): DRP version string (default '1.3.2').
 
     Returns:
         astropy.table.Table: drpall table with survey classification
         columns added, or an empty list if the file cannot be found
         or read.
     '''
-    DRPFILE = 'drpall-%s.fits' % drp_ver
+    if filename.count('txt') or filename.count('.tab'):
+        try:
+            drp_tab = ascii.read(filename)
+            return augment_drp_all(drp_tab)
+        except Exception:
+            print('Error: Could not locate : ', filename)
+            return []
+
+    DRPFILE = filename if filename else 'drpall-%s.fits' % drp_ver
     if os.path.isfile(DRPFILE):
         xfile = DRPFILE
     else:
@@ -484,7 +501,7 @@ def make_spec_specs(xtab, data_dir, outfile='', percentile=50, file_type='CFrame
 
 
 def doit(exp_start=4000, exp_stop=8000, delta=5, exp_min=900., out_name='',
-         drp_ver='1.2.1', percentile=50, file_type='CFrame'):
+         drp_ver='1.3.2', percentile=50, file_type='CFrame', drp_all=''):
     '''
     Top-level driver: read drpall, select exposures, compute spectrograph spectra.
 
@@ -497,12 +514,14 @@ def doit(exp_start=4000, exp_stop=8000, delta=5, exp_min=900., out_name='',
         drp_ver (str): DRP version string.
         percentile (int): Percentile to compute across fibers.
         file_type (str): 'CFrame' (default) or 'SFrame'.
+        drp_all (str): Explicit drpall table to read instead of the one
+            located from drp_ver.
 
     Returns:
         None
     '''
     xtop = find_top()
-    xtab = read_drpall(drp_ver)
+    xtab = read_drpall(drp_all, drp_ver)
     if len(xtab) == 0:
         return
     ztab = select(xtab, exp_start, exp_stop, delta, exp_min)
@@ -531,7 +550,8 @@ def steer(argv):
     exp_min = 900
     percent = 50
     out_name = ''
-    ver = '1.2.1'
+    ver = '1.3.2'
+    drp_all = ''
     file_type = 'CFrame'
 
     i = 1
@@ -550,6 +570,9 @@ def steer(argv):
         elif argv[i] == '-ver':
             i += 1
             ver = argv[i]
+        elif argv[i] == '-drp_all':
+            i += 1
+            drp_all = argv[i]
         elif argv[i][:5] == '-perc':
             i += 1
             percent = eval(argv[i])
@@ -565,14 +588,14 @@ def steer(argv):
         i += 1
 
     if exp_start < 0 or exp_stop < 0:
-        print('Usage: SummarizeSpec.py [-sf] [-ver drp_ver] [-percent 50] [-emin 900] [-out name] exp_start exp_stop delta')
+        print('Usage: SummarizeSpec.py [-sf] [-ver drp_ver] [-drp_all FILE] [-percent 50] [-emin 900] [-out name] exp_start exp_stop delta')
         return
 
     if delta < 0:
         delta = 1
 
     doit(exp_start, exp_stop, delta, exp_min, out_name, drp_ver=ver, percentile=percent,
-         file_type=file_type)
+         file_type=file_type, drp_all=drp_all)
 
 
 # Next lines permit one to run the routine from the command line

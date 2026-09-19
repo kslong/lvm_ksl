@@ -75,10 +75,14 @@ Notes:
     The scaled MAD (1.4826 * median(abs(x - median(x)))) equals the standard
     deviation for Gaussian data but is robust against outliers.
 
-History:
+History::
 
-260417 ksl Coding begun; wavelength_offset.py incorporated into this file
-260501 ksl doit now returns a dict; do_all added; output switched to FITS; flux_max and dw MAD columns added; exposure range/stride filtering added
+    260417 ksl Coding begun; wavelength_offset.py incorporated into this file
+    260501 ksl doit now returns a dict; do_all added; output switched to FITS; flux_max and dw MAD columns added; exposure range/stride filtering added
+    260919 ksl Fixed two build_drp_lookup()/steer() calls that passed drp_ver
+        positionally to SummarizeCframe.read_drpall(); that function's first
+        positional argument is now filename (it gained a -drp_all override),
+        so these now pass drp_ver as a keyword to avoid silently misusing it.
 
 '''
 
@@ -320,7 +324,7 @@ def build_drp_lookup(drp_ver='1.2.1'):
     topdir = find_top()
     if not topdir:
         return {}
-    drp_tab = read_drpall(drp_ver)
+    drp_tab = read_drpall(drp_ver=drp_ver)
     if not drp_tab or len(drp_tab) == 0:
         return {}
     lookup = {}
@@ -713,7 +717,7 @@ def steer(argv):
             print('Error: could not import SummarizeCframe')
             return
         topdir  = find_top()
-        drp_tab = read_drpall(drp_ver)
+        drp_tab = read_drpall(drp_ver=drp_ver)
         if len(drp_tab) == 0:
             return
         ztab = select(drp_tab, exp_start, exp_stop, delta, exp_min)

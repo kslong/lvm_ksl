@@ -113,12 +113,16 @@ bright and well-suited to measuring centroid wavelengths and fluxes as a
 function of exposure, revealing wavelength-calibration drifts or changes
 in sky brightness over a night or survey.
 
-History:
+History::
 
-240604 ksl Coding begun (as sky_gaussfit.py)
-260504 ksl Adapted for SummarizeCframe input; restricted to airglow lines only
-260504 ksl FITS output; selectable extension (-ext)
-260515 ksl Add -file, -ver, exp_start/exp_stop, and CFrame direct-file mode
+    240604 ksl Coding begun (as sky_gaussfit.py)
+    260504 ksl Adapted for SummarizeCframe input; restricted to airglow lines only
+    260504 ksl FITS output; selectable extension (-ext)
+    260515 ksl Add -file, -ver, exp_start/exp_stop, and CFrame direct-file mode
+    260919 ksl Fixed two build_drp_lookup()/steer() calls that passed drp_ver
+        positionally to SummarizeCframe.read_drpall(); that function's first
+        positional argument is now filename (it gained a -drp_all override),
+        so these now pass drp_ver as a keyword to avoid silently misusing it.
 
 '''
 
@@ -185,7 +189,7 @@ def build_drp_lookup(drp_ver='1.2.1'):
     topdir = find_top()
     if not topdir:
         return {}
-    drp_tab = read_drpall(drp_ver)
+    drp_tab = read_drpall(drp_ver=drp_ver)
     if drp_tab is None or len(drp_tab) == 0:
         return {}
     lookup = {}
@@ -465,7 +469,7 @@ def steer(argv):
             print('Error: could not import SummarizeCframe')
             return
         topdir  = find_top()
-        drp_tab = read_drpall(drp_ver)
+        drp_tab = read_drpall(drp_ver=drp_ver)
         if drp_tab is None or len(drp_tab) == 0:
             print('Error: could not read drpall for version %s' % drp_ver)
             return

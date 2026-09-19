@@ -85,7 +85,8 @@ of how the raw spectra (including sky) vary over time.
 
 **Command line usage**::
 
-    SummarizeCframe.py [-h] [-out file_out] [-emin 900] [-ver drp_ver] [-percent 50]
+    SummarizeCframe.py [-h] [-out file_out] [-emin 900] [-ver drp_ver]
+                       [-drp_all FILE] [-percent 50]
                        [-by pixel|fiber] [-navg 10] [-sigma 3.0] [-maxiters 5]
                        [-mask FILE] exp_start exp_stop delta
 
@@ -101,7 +102,11 @@ of how the raw spectra (including sky) vary over time.
     Minimum exposure time in seconds to include (default: 900).
 
 -ver drp_ver
-    DRP version to use (default: 1.2.0).
+    DRP version to use (default: 1.3.2).
+
+-drp_all FILE
+    Read a specific drpall table instead of the one located from
+    ``drp_ver`` (FITS, or ascii if the name contains ``txt``/``.tab``).
 
 -percent N
     Percentile to use (default: 50). Its meaning depends on ``-by`` (see below).
@@ -170,9 +175,9 @@ drp_all    BinTableHDU    drpall metadata for the included exposures
 
 The default output filename follows the pattern
 ``XCframe_<ver>_<exp_start>_<exp_stop>_<delta>_<percent>.fits``,
-e.g. ``XCframe_1.2.0_10000_20000_10_50.fits``. In ``-by fiber`` mode a
+e.g. ``XCframe_1.3.2_10000_20000_10_50.fits``. In ``-by fiber`` mode a
 ``_fiber`` suffix is appended, e.g.
-``XCframe_1.2.0_10000_20000_10_50_fiber.fits``, so pixel- and fiber-mode
+``XCframe_1.3.2_10000_20000_10_50_fiber.fits``, so pixel- and fiber-mode
 runs over the same exposure range don't overwrite each other. An explicit
 ``-out`` filename is used as given in either mode. In ``-by fiber`` mode,
 ``drp_all`` also gains per-exposure columns recording which fibers were
@@ -196,7 +201,8 @@ useful for evaluating sky subtraction quality.
 
 **Command line usage**::
 
-    SummarizeSframe.py [-h] [-ver drp_ver] [-percent 50] [-emin 900] [-out whatever]
+    SummarizeSframe.py [-h] [-ver drp_ver] [-drp_all FILE] [-percent 50]
+                       [-emin 900] [-out whatever]
                        [-by pixel|fiber] [-navg 10] [-sigma 3.0] [-maxiters 5]
                        [-mask FILE] exp_start exp_stop delta
 
@@ -206,7 +212,11 @@ useful for evaluating sky subtraction quality.
     Print help and exit.
 
 -ver drp_ver
-    DRP version to use (default: 1.2.0).
+    DRP version to use (default: 1.3.2).
+
+-drp_all FILE
+    Read a specific drpall table instead of the one located from
+    ``drp_ver`` (FITS, or ascii if the name contains ``txt``/``.tab``).
 
 -percent N
     Percentile to use (default: 50). Its meaning depends on ``-by`` (see below).
@@ -271,9 +281,9 @@ drp_all    BinTableHDU    drpall metadata for the included exposures
 
 The default output filename follows the pattern
 ``XSFrame_<ver>_<exp_start>_<exp_stop>_<delta>_<percent>.fits``,
-e.g. ``XSFrame_1.2.0_10000_20000_10_50.fits``. In ``-by fiber`` mode a
+e.g. ``XSFrame_1.3.2_10000_20000_10_50.fits``. In ``-by fiber`` mode a
 ``_fiber`` suffix is appended, e.g.
-``XSFrame_1.2.0_10000_20000_10_50_fiber.fits``. An explicit ``-out``
+``XSFrame_1.3.2_10000_20000_10_50_fiber.fits``. An explicit ``-out``
 filename is used as given in either mode. In ``-by fiber`` mode,
 ``drp_all`` also gains per-exposure columns recording which fibers were
 selected (fiber IDs, mean position, continuum flux, etc.).
@@ -303,7 +313,8 @@ variations in sky subtraction quality.
 
 **Command line usage**::
 
-    SummarizeRings.py [-h] [-ver drp_ver] [-percent 50] [-emin 900] [-out whatever]
+    SummarizeRings.py [-h] [-ver drp_ver] [-drp_all FILE] [-percent 50]
+                      [-emin 900] [-out whatever]
                       [-inner 1 9] [-middle 10 19] [-outer 20 25]
                       exp_start exp_stop delta
 
@@ -313,7 +324,11 @@ variations in sky subtraction quality.
     Print help and exit.
 
 -ver drp_ver
-    DRP version to use (default: 1.2.0).
+    DRP version to use (default: 1.3.2).
+
+-drp_all FILE
+    Read a specific drpall table instead of the one located from
+    ``drp_ver`` (FITS, or ascii if the name contains ``txt``/``.tab``).
 
 -percent N
     Percentile to compute (default: 50 = median).
@@ -362,7 +377,7 @@ drp_all      BinTableHDU    drpall metadata for the included exposures
 
 The default output filename follows the pattern
 ``XRings_<ver>_<exp_start>_<exp_stop>_<delta>_<percent>.fits``,
-e.g. ``XRings_1.2.0_10000_20000_10_50.fits``.
+e.g. ``XRings_1.3.2_10000_20000_10_50.fits``.
 
 **Use cases:**
 
@@ -394,7 +409,8 @@ are skipped and recorded in a companion ASCII table.
 
 **Command line usage**::
 
-    SummarizeSpec.py [-sf] [-ver drp_ver] [-percent 50] [-emin 900] [-out name]
+    SummarizeSpec.py [-sf] [-ver drp_ver] [-drp_all FILE] [-percent 50]
+                     [-emin 900] [-out name]
                      exp_start exp_stop delta
 
 **Options:**
@@ -407,7 +423,11 @@ are skipped and recorded in a companion ASCII table.
     (flux-calibrated, before sky subtraction) files.
 
 -ver drp_ver
-    DRP version to use (default: 1.2.0).
+    DRP version to use (default: 1.3.2).
+
+-drp_all FILE
+    Read a specific drpall table instead of the one located from
+    ``drp_ver`` (FITS, or ascii if the name contains ``txt``/``.tab``).
 
 -percent N
     Percentile to compute across fibers (default: 50 = median).
@@ -458,9 +478,9 @@ script replaces ``'SFrame'`` with ``'CFrame'`` in the path automatically.
 The default output filename follows the pattern
 ``XSpec_<type>_<ver>_<exp_start>_<exp_stop>_<delta>_<percent>.fits``,
 where ``<type>`` is ``CFrame`` or ``SFrame``, e.g.
-``XSpec_CFrame_1.2.0_10000_20000_10_50.fits``.  The skipped-exposure file
+``XSpec_CFrame_1.3.2_10000_20000_10_50.fits``.  The skipped-exposure file
 takes the same root with a ``.skipped.txt`` suffix, e.g.
-``XSpec_CFrame_1.2.0_10000_20000_10_50.skipped.txt``.  Using the file type
+``XSpec_CFrame_1.3.2_10000_20000_10_50.skipped.txt``.  Using the file type
 in the name means CFrame and SFrame runs do not overwrite each other.
 
 **Use cases:**

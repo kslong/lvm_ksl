@@ -471,7 +471,7 @@ diagnosis; ``check_sky_positions.py`` is what actually checks them.
 
 **Command line usage**::
 
-    SummarizeSkyHdr.py [-h] [-emin 900] [-ver 1.2.1] [-drp_all FILE]
+    SummarizeSkyHdr.py [-h] [-emin 900] [-ver 1.3.2] [-drp_all FILE]
                        [-keywords FILE] [-data_dir DIR] [-out ROOT]
                        exp_start exp_stop [delta]
 
@@ -492,7 +492,7 @@ delta
     Minimum exposure time to include (default 900).
 
 -ver VER
-    DRP version, used to locate ``drpall-VER.fits`` (default 1.2.1).
+    DRP version, used to locate ``drpall-VER.fits`` (default 1.3.2).
 
 -drp_all FILE
     Explicit drpall table to read instead of ``drpall-VER.fits``.

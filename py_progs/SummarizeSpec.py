@@ -69,6 +69,11 @@ History::
         -drp_all FILE to read_drpall()/doit()/steer() to read an explicit
         drpall table (FITS or ascii) instead of one located from -ver,
         matching SumCframe.py/SummarizeSciSky.py/SummarizeSkyHdr.py.
+    260919 ksl get_all_spec_specs() now calls
+        SummarizeCframe.combine_pixel() for the per-spectrograph
+        percentile/median flux combination instead of duplicating that
+        branch inline. Verified against the original inline logic with
+        synthetic fiber arrays.
 
 '''
 
@@ -80,6 +85,7 @@ from astropy.table import Table
 from astropy.wcs import WCS
 from astropy.coordinates import SkyCoord
 import astropy.units as u
+from SummarizeCframe import combine_pixel
 
 
 import re
@@ -317,13 +323,7 @@ def get_all_spec_specs(filename, percentile=50):
         fibers = fiber_sets[sp_id]
         sp_flux = x['FLUX'].data[fibers['fiberid'] - 1]
         sp_mask = x['MASK'].data[fibers['fiberid'] - 1]
-        sp_flux = np.ma.masked_array(sp_flux, sp_mask)
-
-        if percentile == 50:
-            flux_percentile = np.ma.median(sp_flux, axis=0)
-        else:
-            sp_flux = np.ma.filled(sp_flux, np.nan)
-            flux_percentile = np.nanpercentile(sp_flux, percentile, axis=0)
+        flux_percentile = combine_pixel({'flux': sp_flux}, sp_mask, percentile=percentile)['flux']
 
         flux_out.append(flux_percentile)
 

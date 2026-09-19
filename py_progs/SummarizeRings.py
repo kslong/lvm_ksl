@@ -50,6 +50,12 @@ History::
         -drp_all FILE to read_drpall()/doit()/steer() to read an explicit
         drpall table (FITS or ascii) instead of one located from -ver,
         matching SumCframe.py/SummarizeSciSky.py/SummarizeSkyHdr.py.
+    260919 ksl get_ring_spec()/get_all_ring_specs() now call
+        SummarizeCframe.combine_pixel() for the percentile/median flux
+        combination instead of duplicating that branch inline (once per
+        ring set); sky_med stays a plain np.ma.median call since it is
+        always the median regardless of -percent. Verified against the
+        original inline logic with synthetic fiber arrays.
 
 '''
 
@@ -62,6 +68,7 @@ from astropy.table import join, Table
 import shutil
 from datetime import datetime
 from astropy.wcs import WCS
+from SummarizeCframe import combine_pixel
 
 
 from astropy.coordinates import SkyCoord,  Galactocentric
@@ -228,13 +235,7 @@ def get_ring_spec(filename, ring_min=1, ring_max=25, percentile=50):
     wav = x['WAVE'].data
     ring_flux = x['FLUX'].data[ring_fibers['fiberid'] - 1]
     ring_mask = x['MASK'].data[ring_fibers['fiberid'] - 1]
-    ring_flux = np.ma.masked_array(ring_flux, ring_mask)
-
-    if percentile == 50:
-        flux_percentile = np.ma.median(ring_flux, axis=0)
-    else:
-        ring_flux = np.ma.filled(ring_flux, np.nan)
-        flux_percentile = np.nanpercentile(ring_flux, percentile, axis=0)
+    flux_percentile = combine_pixel({'flux': ring_flux}, ring_mask, percentile=percentile)['flux']
 
     x.close()
     return wav, flux_percentile
@@ -277,13 +278,7 @@ def get_all_ring_specs(filename, ring_sets, percentile=50):
 
         ring_flux = x['FLUX'].data[ring_fibers['fiberid'] - 1]
         ring_mask = x['MASK'].data[ring_fibers['fiberid'] - 1]
-        ring_flux = np.ma.masked_array(ring_flux, ring_mask)
-
-        if percentile == 50:
-            flux_percentile = np.ma.median(ring_flux, axis=0)
-        else:
-            ring_flux = np.ma.filled(ring_flux, np.nan)
-            flux_percentile = np.nanpercentile(ring_flux, percentile, axis=0)
+        flux_percentile = combine_pixel({'flux': ring_flux}, ring_mask, percentile=percentile)['flux']
 
         flux_rings.append(flux_percentile)
 

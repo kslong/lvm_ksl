@@ -56,22 +56,25 @@ History::
         ring set); sky_med stays a plain np.ma.median call since it is
         always the median regardless of -percent. Verified against the
         original inline logic with synthetic fiber arrays.
+    260919 ksl Removed get_ring_spec(); it was never called (only
+        get_all_ring_specs() is used by make_ring_specs()).
+    260919 ksl Removed unused imports (matplotlib.pyplot, astropy.table.join,
+        shutil, datetime, astropy.coordinates.Galactocentric), found via an
+        AST-based unused-import scan; none were referenced anywhere in the
+        file.
 
 '''
 
 import sys
 from astropy.io import ascii,fits
 import numpy as np
-import matplotlib.pyplot as plt
 import os
-from astropy.table import join, Table
-import shutil
-from datetime import datetime
+from astropy.table import Table
 from astropy.wcs import WCS
 from SummarizeCframe import combine_pixel
 
 
-from astropy.coordinates import SkyCoord,  Galactocentric
+from astropy.coordinates import SkyCoord
 import astropy.units as u
 
 
@@ -211,34 +214,6 @@ def get_ring(xtab, ring_min=1, ring_max=3):
     good = good[good['fibstatus'] == 0]
     good = good[(good['ringnum'] >= ring_min) & (good['ringnum'] <= ring_max)]
     return good
-
-
-def get_ring_spec(filename, ring_min=1, ring_max=25, percentile=50):
-    '''
-    Get the percentile spectrum for fibers in a specified ring range
-
-    Returns wavelength array and percentile flux spectrum
-    '''
-    try:
-        x = fits.open(filename)
-    except:
-        print('get_ring_spec: Could not open %s' % filename)
-        return None, None
-
-    xtab = Table(x['SLITMAP'].data)
-    ring_fibers = get_ring(xtab, ring_min=ring_min, ring_max=ring_max)
-
-    if len(ring_fibers) == 0:
-        print('get_ring_spec: No fibers found for ring %d-%d in %s' % (ring_min, ring_max, filename))
-        return None, None
-
-    wav = x['WAVE'].data
-    ring_flux = x['FLUX'].data[ring_fibers['fiberid'] - 1]
-    ring_mask = x['MASK'].data[ring_fibers['fiberid'] - 1]
-    flux_percentile = combine_pixel({'flux': ring_flux}, ring_mask, percentile=percentile)['flux']
-
-    x.close()
-    return wav, flux_percentile
 
 
 def get_all_ring_specs(filename, ring_sets, percentile=50):

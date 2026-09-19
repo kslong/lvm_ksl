@@ -78,23 +78,26 @@ History::
         inverse-variance-of-the-median correction in get_med_spec()
         remains local, applied after combine_pixel(). Verified against
         the original inline algorithm with synthetic fiber arrays.
+    260919 ksl Removed unused imports: _rank_window/_robust_mean/
+        _interp_mask_to_wave (no longer called directly here now that
+        get_med_spec()/get_fiber_spec() delegate to combine_pixel()/
+        combine_fiber()), plus pre-existing dead imports (matplotlib.pyplot,
+        astropy.table.join, shutil, datetime, astropy.coordinates.
+        Galactocentric) found via an AST-based unused-import scan.
 
 '''
 
 import sys
 from astropy.io import ascii,fits
 import numpy as np
-import matplotlib.pyplot as plt
 import os
-from astropy.table import join, Table
-import shutil
-from datetime import datetime
+from astropy.table import Table
 from astropy.wcs import WCS
-from GetSkyCont import load_mask, _interp_mask_to_wave
-from SummarizeCframe import _rank_window, _robust_mean, combine_pixel, combine_fiber
+from GetSkyCont import load_mask
+from SummarizeCframe import combine_pixel, combine_fiber
 
 
-from astropy.coordinates import SkyCoord,  Galactocentric
+from astropy.coordinates import SkyCoord
 import astropy.units as u
 
 

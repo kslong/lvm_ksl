@@ -84,16 +84,17 @@ History::
         algorithm with synthetic fiber arrays (both CFrame and SFrame
         column sets, several percentile/percent values) since no real
         CFrame/SFrame data is available outside Utah.
+    260919 ksl Removed unused imports (matplotlib.pyplot, astropy.table.join,
+        shutil, datetime, astropy.coordinates.Galactocentric), found via an
+        AST-based unused-import scan; none were referenced anywhere in the
+        file.
 '''
 
 import sys
 from astropy.io import ascii,fits
 import numpy as np
-import matplotlib.pyplot as plt
 import os
-from astropy.table import join, Table
-import shutil
-from datetime import datetime
+from astropy.table import Table
 from astropy.wcs import WCS
 import warnings
 from astropy.stats import sigma_clipped_stats
@@ -102,7 +103,7 @@ from GetSkyCont import load_mask, _interp_mask_to_wave
 from GetTelData import get_tel_data
 
 
-from astropy.coordinates import SkyCoord,  Galactocentric
+from astropy.coordinates import SkyCoord
 import astropy.units as u
 
 

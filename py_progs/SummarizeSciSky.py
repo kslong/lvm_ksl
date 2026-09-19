@@ -54,9 +54,10 @@ Description:
     Utah) without having to hand it a file list. Exposure selection and
     file-path resolution follow the same pattern as SummarizeCframe.py's
     read_drpall/select/find_top, re-implemented locally here (with an
-    added -drp_all override) rather than imported from SumCframe.py or
-    SummarizeCframe.py, so this script has no dependency on the optional
-    "dask" package that SumCframe.py requires for an unrelated function.
+    added -drp_all override) rather than imported from SumCframe.py
+    (deprecated, deprecated/) or SummarizeCframe.py, so this script has
+    no dependency on the optional "dask" package that SumCframe.py
+    requires for an unrelated function.
     read_drpall/select_exps/find_top pick out rows in [exp_start,
     exp_stop] with exptime >= -emin, every delta-th one, and resolve
     each row's "location" column to an actual file under find_top()'s
@@ -122,11 +123,12 @@ Notes:
 
     This script deliberately duplicates a small amount of logic from
     SkySubSci.py (rank-window selection and the sigma-clipped robust
-    mean) and from SummarizeCframe.py/SumCframe.py (drpall selection and
-    file-path resolution) instead of importing it, so it can run
-    standalone with no dependency beyond astropy/numpy/scipy -- in
-    particular it avoids SumCframe.py's "dask" import, which is only
-    needed there for a different (unused) function.
+    mean) and from SummarizeCframe.py/SumCframe.py (deprecated,
+    deprecated/) (drpall selection and file-path resolution) instead of
+    importing it, so it can run standalone with no dependency beyond
+    astropy/numpy/scipy -- in particular it avoids SumCframe.py's "dask"
+    import, which was only needed there for a different (unused)
+    function.
 
 History::
 

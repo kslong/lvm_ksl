@@ -24,8 +24,10 @@ Description:
     exposure, with columns for the science flux and both sky telescope spectra
     (SKY_EAST and SKY_WEST).
 
-    Compare with SumCframe.py, which combines multiple exposures into a single
-    deep spectrum per fiber (averaging across time rather than across fibers).
+    Compare with the deprecated SumCframe.py (deprecated/), which combined
+    multiple exposures into a single deep spectrum per fiber (averaging
+    across time rather than across fibers) -- superseded by this script's
+    -by fiber mode below.
 
     Options: -h prints out this help and quits; -out file_out changes the output
     filename from the default; -ver drp_ver selects a specific DRP version

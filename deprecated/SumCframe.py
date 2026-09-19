@@ -42,10 +42,19 @@ Primary routines:
 
 Notes:
                                        
-History:
+History::
 
-240726 ksl Coding begun
-260919 ksl Default DRP version changed from 1.1.0 to 1.3.2.
+    240726 ksl Coding begun
+    260919 ksl Default DRP version changed from 1.1.0 to 1.3.2.
+    260919 ksl Deprecated: moved to deprecated/. No dependents anywhere in
+        the repo, no functional development since 250127, and no dedicated
+        docs page (unlike SummarizeCframe.py/SummarizeRings.py/etc.), while
+        SummarizeCframe.py's -by fiber mode now covers the equivalent
+        combined-spectrum use case. Also has an unfixed bug: sum_frames()/
+        median_frames() combine every row of the FLUX extension (Sci, SkyE,
+        SkyW, standards, even fibstatus!=0 fibers) instead of restricting
+        to good science fibers like every other Summarize*.py script does
+        -- left as-is here since the file is no longer maintained.
 
 '''
 

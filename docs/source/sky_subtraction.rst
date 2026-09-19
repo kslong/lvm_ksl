@@ -2990,8 +2990,8 @@ delta
 
 Exposure selection and file-path resolution follow the same pattern as
 ``SummarizeCframe.py``'s ``read_drpall``/``select_exps``/``find_top``, but
-are re-implemented locally here rather than imported from ``SumCframe.py``,
-so this script has no
+are re-implemented locally here rather than imported from ``SumCframe.py``
+(deprecated -- see ``deprecated/SumCframe.py``), so this script has no
 dependency on the optional ``dask`` package that ``SumCframe.py`` requires
 for an unrelated function.  The per-exposure algorithm is identical to
 ``SkySubSci.py``; the rank-window/robust-mean helpers themselves are no

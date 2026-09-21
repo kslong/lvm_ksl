@@ -11,6 +11,10 @@ what they actually check rather than listed alphabetically:
 - **Reduction bookkeeping** — whether a batch of downloaded or locally
   reduced files is complete, current, and free of DRP errors
   (``CheckData.py``, ``CheckReduced.py``).
+- **Raw header corrections** — which raw exposures have had a header
+  keyword flagged or corrected after the fact (e.g. a ``QAQUAL``/
+  ``QAFLAG`` bad-data flag), independent of any local reduction
+  (``GetHdrfix.py``).
 - **Sky subtraction** — how well the subtracted sky matches what was
   actually there, both spectroscopically and fiber-by-fiber
   (``eval_sky.py``, ``plot_sky_gaussfit.py``).
@@ -258,6 +262,85 @@ DRP log files in ``xlog/``.
 
     # Specify alternative directories
     CheckReduced.py -d mydata -l mylogs
+
+
+Raw Header Corrections
+------------------------
+
+Audits lvmcore's ``hdrfix`` directory, where raw-header corrections
+(including manual data-quality flags) are recorded per MJD, independently
+of any local reduction.
+
+GetHdrfix.py — Summarize Raw Header Fixes
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Reads every ``lvmHdrFix-<mjd>.yaml`` file in lvmcore's ``hdrfix``
+directory and writes a single flat table of (mjd, exposure, keyword,
+value) rows -- one row per keyword actually corrected for a given
+exposure. Useful for finding which exposures have been flagged bad
+(``QAQUAL = BAD``) or otherwise had a header keyword corrected after the
+fact.
+
+**Command line usage**::
+
+    GetHdrfix.py [-h] [-hdr_dir DIR] [-exp_dir DIR] [-out ROOT]
+
+No arguments are required: with ``$LVMCORE_DIR`` set, running with no
+switches reads ``$LVMCORE_DIR/hdrfix`` and ``$LVMCORE_DIR/exposure_list``
+directly.
+
+**Options:**
+
+-h
+    Print help and exit.
+
+-hdr_dir DIR
+    Top-level hdrfix directory to read (default: ``$LVMCORE_DIR/hdrfix``).
+
+-exp_dir DIR
+    Directory holding lvmcore's per-MJD ``exposure_list_<mjd>.parquet``
+    files, used to expand ``fileroot`` patterns that wildcard the
+    exposure number (default: ``$LVMCORE_DIR/exposure_list``).
+
+-out ROOT
+    Output filename root; writes ``ROOT.txt`` (default ``GetHdrfix``).
+
+**Method:**
+
+Each yaml file's fix entries pair a ``fileroot`` fnmatch pattern (matched
+against a raw frame's own ``sdR-<hemi>-<camera>-<expnum>`` string, exactly
+as ``lvmdrp.utils.hdrfix.apply_hdrfix()`` matches it) with a header
+keyword and value. Most fileroot patterns pin down a single exact
+exposure number; a minority wildcard the exposure digits (or, rarely, the
+camera) and are resolved by testing the same fnmatch pattern against
+every real exposure that night (from the exposure list) and every
+camera, so the expansion matches what the DRP would really apply. When
+more than one fix entry in a file touches the same exposure and keyword,
+only the value from whichever entry appears **last** in the file is kept
+-- this reproduces ``apply_hdrfix()``'s own sequential-overwrite
+behavior, rather than listing every matching entry.
+
+**Output:**
+
+A single ``ascii.fixed_width_two_line`` table (``ROOT.txt``), sorted by
+exposure then keyword, with columns ``mjd``, ``exposure``, ``keyword``,
+``value`` -- exactly one row per distinct (exposure, keyword) pair.
+
+**Notes:**
+
+Requires ``pandas``/``pyarrow`` to expand wildcarded ``fileroot``
+patterns; exact-exposure entries (the large majority) need neither, and
+a pattern that can't be checked (missing exposure list, or
+pandas/pyarrow unavailable) is skipped with a printed warning rather
+than raising.
+
+**Example**::
+
+    # Uses $LVMCORE_DIR/hdrfix and $LVMCORE_DIR/exposure_list directly
+    GetHdrfix.py
+
+    # Find every exposure flagged bad
+    grep QAQUAL GetHdrfix.txt
 
 
 Sky Subtraction
@@ -771,6 +854,7 @@ See Also
 - :doc:`api/fourier_offset_check/index` - API documentation
 - :doc:`api/CheckData/index` - API documentation
 - :doc:`api/CheckReduced/index` - API documentation
+- :doc:`api/GetHdrfix/index` - API documentation
 - :doc:`api/eval_sky/index` - API documentation
 - :doc:`api/eval_standard/index` - API documentation
 - :doc:`api/SummarizeSkyHdr/index` - API documentation

@@ -9,7 +9,8 @@ same named fields in final_sky_tiles.csv, one row per problem exposure.
 Usage::
 
     check_sky_positions.py [-csv FILE] [-tol DEG] [-out FILE]
-                          [-postype reported|commanded|adopted] [drpall_file]
+                          [-postype reported|commanded|adopted]
+                          [-expmin N] [-expmax N] [drpall_file]
 
 Arguments::
 
@@ -24,11 +25,15 @@ Options::
     -csv FILE      sky tile position catalog (default: final_sky_tiles.csv)
     -tol DEG       agreement tolerance in degrees (default: 0.1)
     -out FILE      output table, ascii.fixed_width_two_line format
-                   (default: sky_problem_check_<drpall stem>[_<postype>].tab
-                   -- the postype suffix is omitted for the default
-                   'adopted'; includes the drpall root name so outputs
-                   from different drpall versions don't overwrite each
-                   other)
+                   (default: sky_problem_check_<drpall stem>[_<postype>]
+                   [_exp<min>-<max>].tab -- the postype suffix is omitted
+                   for the default 'adopted', and the exposure-range
+                   suffix only appears when -expmin/-expmax is given
+                   ('start'/'end' stand in for an unset side); includes
+                   the drpall root name so outputs from different drpall
+                   versions don't overwrite each other).  The per-name
+                   table sky_position_check_*.tab always uses the
+                   default naming, with the same suffixes.
     -postype T     which of the three recorded sky-telescope positions to
                    check against -- 'reported' (what the telescope itself
                    reported back), 'commanded' (the target position sent
@@ -42,6 +47,10 @@ Options::
                    records it once, at the commanded stage -- so this
                    only changes which POSITION the name is compared
                    against.
+    -expmin N      only check exposures with expnum >= N (default: no
+                   lower limit)
+    -expmax N      only check exposures with expnum <= N (default: no
+                   upper limit)
 
 For every exposure with both skye_name and skyw_name set (non-blank,
 non-"None"), each side's recorded (ra, dec) is matched to its single
@@ -135,6 +144,14 @@ History::
         same way.
     260913 ksl Added the missing -h line to the Options list above
         (steer() already handled -h; the docstring just never said so).
+    260924 ksl Added -expmin/-expmax to restrict the check to an
+        inclusive exposure-number range; applied in load_drpall_rows(),
+        so the per-exposure listing, per-name aggregate, and SUMMARY all
+        see the same subset.  Default output names get an
+        _exp<min>-<max> suffix when a range is given, so a subset run
+        doesn't overwrite the full run's tables.  Fixed _usage_from_doc()
+        to match 'History::' (it only matched 'History:', so -h was
+        printing this whole section).
 '''
 
 import sys
@@ -147,14 +164,14 @@ from astropy.table import Table
 
 def _usage_from_doc(doc):
     '''
-    __doc__ truncated just before a line consisting of "History:"
-    (whitespace-insensitive), so -h stays short even as that section
+    __doc__ truncated just before a line consisting of "History:" or
+    "History::" (whitespace-insensitive), so -h stays short even as that section
     grows -- without hand-duplicating the Synopsis/Options text in a
     second string.  Anchored to a whole line (not a bare substring
     search) so it can't misfire on "History:" appearing mid-sentence,
     and returns doc unchanged if no such line is present.
     '''
-    m = re.search(r'^\s*History:\s*$', doc, re.MULTILINE)
+    m = re.search(r'^\s*(?:Version\s+)?History:{0,2}\s*$', doc, re.MULTILINE)
     return doc[:m.start()].rstrip() + '\n' if m else doc
 
 
@@ -237,7 +254,7 @@ _POSTYPES = {
 }
 
 
-def load_drpall_rows(drpall_file, postype='adopted'):
+def load_drpall_rows(drpall_file, postype='adopted', expmin=None, expmax=None):
     '''
     Return a Table with one row per drpall exposure, keeping skye and skyw
     row-aligned -- needed to check whether a single row's own east/west
@@ -252,12 +269,19 @@ def load_drpall_rows(drpall_file, postype='adopted'):
         is read from SKY_HDR instead, joined back onto the drpall rows
         by EXPNUM; raises ValueError if the file has no SKY_HDR
         extension in that case.
+
+    expmin, expmax : optional inclusive bounds on expnum; None (default)
+        means no limit on that side.
     '''
     if postype not in _POSTYPES:
         raise ValueError('postype must be one of %s' % sorted(_POSTYPES))
 
     hdul = fits.open(drpall_file)
     tab = Table(_drpall_hdu(hdul).data)
+    if expmin is not None:
+        tab = tab[tab['expnum'] >= expmin]
+    if expmax is not None:
+        tab = tab[tab['expnum'] <= expmax]
     out = Table()
     out['tileid']   = tab['tileid']
     out['mjd']      = tab['mjd']
@@ -307,7 +331,8 @@ def load_drpall_rows(drpall_file, postype='adopted'):
     return out
 
 
-def _load_and_match_rows(drpall_file, csv_file, tol=0.1, postype='adopted'):
+def _load_and_match_rows(drpall_file, csv_file, tol=0.1, postype='adopted',
+                         expmin=None, expmax=None):
     '''
     Shared helper for check_problems: load drpall keeping skye/skyw
     row-aligned, restrict to rows where both are real
@@ -315,10 +340,10 @@ def _load_and_match_rows(drpall_file, csv_file, tol=0.1, postype='adopted'):
     (nearest-catalog-position) match independently.  Returns (rows,
     east_true, west_true, skye_name, skyw_name).
 
-    postype: see load_drpall_rows/_POSTYPES.
+    postype, expmin, expmax: see load_drpall_rows/_POSTYPES.
     '''
     cat_names, cat_ra, cat_dec = load_csv_positions(csv_file)
-    rows = load_drpall_rows(drpall_file, postype=postype)
+    rows = load_drpall_rows(drpall_file, postype=postype, expmin=expmin, expmax=expmax)
 
     keep = ((rows['skye_name'] != '') & (rows['skye_name'] != 'None') &
             (rows['skyw_name'] != '') & (rows['skyw_name'] != 'None'))
@@ -343,7 +368,8 @@ def _swap_mask(east_true, west_true, skye_name, skyw_name):
            & (skye_name != skyw_name))
 
 
-def check_positions(drpall_file, csv_file, tol=0.1, postype='adopted'):
+def check_positions(drpall_file, csv_file, tol=0.1, postype='adopted',
+                    expmin=None, expmax=None):
     '''
     Build a per-NAME aggregate: for every catalog sky field, how many
     times it was labeled, how often that label was right, and (crossing
@@ -352,7 +378,8 @@ def check_positions(drpall_file, csv_file, tol=0.1, postype='adopted'):
 
     postype selects which of the three SKY_HDR position pairs to check
     against (see load_drpall_rows/_POSTYPES) -- same convention as
-    check_problems.
+    check_problems.  expmin/expmax: optional inclusive expnum bounds (see
+    load_drpall_rows).
 
     skye and skyw are pooled together (each drpall row contributes one
     "observation" per side).  For classifying a row's own east/west pair
@@ -399,7 +426,7 @@ def check_positions(drpall_file, csv_file, tol=0.1, postype='adopted'):
     ever returns a catalog name.
     '''
     cat_names, cat_ra, cat_dec = load_csv_positions(csv_file)
-    rows = load_drpall_rows(drpall_file, postype=postype)
+    rows = load_drpall_rows(drpall_file, postype=postype, expmin=expmin, expmax=expmax)
 
     east_name = np.char.strip(np.array(rows['skye_name'], dtype=str))
     east_ra   = np.array(rows['skye_ra'], dtype=float)
@@ -484,7 +511,8 @@ def check_positions(drpall_file, csv_file, tol=0.1, postype='adopted'):
     return result_table, unmatched_names
 
 
-def check_problems(drpall_file, csv_file, tol=0.1, postype='adopted'):
+def check_problems(drpall_file, csv_file, tol=0.1, postype='adopted',
+                   expmin=None, expmax=None):
     '''
     Build a one-row-per-problem-exposure listing for case-by-case
     investigation.
@@ -492,7 +520,8 @@ def check_problems(drpall_file, csv_file, tol=0.1, postype='adopted'):
     postype selects which of the three SKY_HDR position pairs to check
     against (see load_drpall_rows/_POSTYPES) -- 'reported', 'commanded',
     or 'adopted' (default; the only one that works without a SKY_HDR
-    extension).
+    extension).  expmin/expmax: optional inclusive expnum bounds (see
+    load_drpall_rows).
 
     A row is included if skye or skyw (or both) is mislabeled -- i.e.
     its recorded position doesn't match its own name's catalog position.
@@ -538,7 +567,7 @@ def check_problems(drpall_file, csv_file, tol=0.1, postype='adopted'):
     checked against.
     '''
     rows, east_true, west_true, skye_name, skyw_name = _load_and_match_rows(
-        drpall_file, csv_file, tol, postype=postype)
+        drpall_file, csv_file, tol, postype=postype, expmin=expmin, expmax=expmax)
 
     east_bad = (east_true != skye_name)
     west_bad = (west_true != skyw_name)
@@ -591,13 +620,17 @@ def check_problems(drpall_file, csv_file, tol=0.1, postype='adopted'):
     return problem_table, len(rows)
 
 
-def _print_context(drpall_file, csv_file, postype, tol):
+def _print_context(drpall_file, csv_file, postype, tol, expmin=None, expmax=None):
     '''One-line header stating what's being compared, printed once above
     the final summary tables so they're never read without knowing which
     drpall file's recorded sky positions were checked against which
     catalog.'''
     print('Comparing %s recorded sky positions (postype=%s) against %s '
           '(tolerance %.3f deg)' % (drpall_file, postype, csv_file, tol))
+    if expmin is not None or expmax is not None:
+        print('Exposure range: %s to %s' % (
+            expmin if expmin is not None else '(first)',
+            expmax if expmax is not None else '(last)'))
 
 
 def _exposure_summary_table(n_checked, problem_table, n_swapped, n_halfmatch,
@@ -677,6 +710,8 @@ def steer(argv):
     tol     = 0.1
     outfile = ''
     postype = 'adopted'
+    expmin  = None
+    expmax  = None
 
     i = 1
     while i < len(argv):
@@ -695,6 +730,12 @@ def steer(argv):
         elif argv[i] == '-postype':
             i += 1
             postype = argv[i]
+        elif argv[i] == '-expmin':
+            i += 1
+            expmin = int(argv[i])
+        elif argv[i] == '-expmax':
+            i += 1
+            expmax = int(argv[i])
         elif argv[i].startswith('-'):
             print('Error: unknown option "%s"' % argv[i])
             print(_USAGE)
@@ -708,14 +749,18 @@ def steer(argv):
         return
 
     drpall_stem = os.path.splitext(os.path.basename(drpall))[0]
-    postype_suffix = '' if postype == 'adopted' else '_%s' % postype
+    name_suffix = '' if postype == 'adopted' else '_%s' % postype
+    if expmin is not None or expmax is not None:
+        name_suffix += '_exp%s-%s' % (expmin if expmin is not None else 'start',
+                                         expmax if expmax is not None else 'end')
 
     problem_outfile  = outfile if outfile else (
-        'sky_problem_check_%s%s.tab' % (drpall_stem, postype_suffix))
-    position_outfile = 'sky_position_check_%s%s.tab' % (drpall_stem, postype_suffix)
+        'sky_problem_check_%s%s.tab' % (drpall_stem, name_suffix))
+    position_outfile = 'sky_position_check_%s%s.tab' % (drpall_stem, name_suffix)
 
     # --- per-exposure problem listing ---------------------------------
-    problem_table, n_checked = check_problems(drpall, csv, tol=tol, postype=postype)
+    problem_table, n_checked = check_problems(drpall, csv, tol=tol, postype=postype,
+                                              expmin=expmin, expmax=expmax)
     n_swapped    = int((problem_table['problem_type'] == 'Swapped').sum())
     n_halfmatch  = int((problem_table['problem_type'] == 'HalfMatch').sum())
     n_mislabeled = int((problem_table['problem_type'] == 'Mislabeled').sum())
@@ -730,7 +775,8 @@ def steer(argv):
 
     # --- per-name aggregate ---------------------------------------------
     print('\n' + '=' * 70)
-    position_table, unmatched = check_positions(drpall, csv, tol=tol, postype=postype)
+    position_table, unmatched = check_positions(drpall, csv, tol=tol, postype=postype,
+                                                expmin=expmin, expmax=expmax)
 
     print(position_table)
     position_table.write(position_outfile, format='ascii.fixed_width_two_line',
@@ -750,13 +796,14 @@ def steer(argv):
     n_has_half  = int((observed['n_halfmatch'] > 0).sum())
     n_has_unk   = int((observed['n_unexplained'] > 0).sum())
 
-    rows_checked, _, _, _, _ = _load_and_match_rows(drpall, csv, tol=tol, postype=postype)
+    rows_checked, _, _, _, _ = _load_and_match_rows(drpall, csv, tol=tol, postype=postype,
+                                               expmin=expmin, expmax=expmax)
     source_table = _source_summary_table(rows_checked, problem_table)
 
     print('\n' + '=' * 70)
     print('SUMMARY')
     print('=' * 70)
-    _print_context(drpall, csv, postype, tol)
+    _print_context(drpall, csv, postype, tol, expmin, expmax)
 
     print('\n--- Per-exposure summary ---')
     print(_exposure_summary_table(n_checked, problem_table, n_swapped, n_halfmatch,

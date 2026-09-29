@@ -21,8 +21,8 @@ The tools in lvm_ksl allow you to:
 - Evaluate sky subtraction quality in DRP-processed data
 - Correct an exposure whose DRP sky subtraction is compromised by a bad
   sky-telescope pointing (e.g. too close to the Moon), by substituting in
-  a clean sky-telescope's fiber data from a different exposure and
-  rerunning the DRP's own sky-subtraction routine (SubstituteSky.py,
+  a clean sky-telescope's data (the other telescope in the same exposure,
+  or the same telescope from a different exposure) and rerunning the DRP's own sky-subtraction routine (SubstituteSky.py,
   RunSky.py)
 - Run alternative sky subtraction using ESO's SkyCorr tool, a polynomial or
   B-spline continuum fit (SkySubOrig/SkySubDev1), a PALACE decomposition
@@ -75,16 +75,24 @@ Correcting and Rerunning DRP Sky Subtraction
 
 These two scripts work together to recover an exposure whose DRP sky
 subtraction is compromised by a bad sky-telescope pointing (e.g. SkyW
-too close to the Moon): substitute in a clean sky telescope's fiber
-data from a different exposure, then rerun the production DRP's own
-sky-subtraction routine on the result.
+too close to the Moon): substitute in a clean sky telescope's data --
+the other telescope in the same exposure, or the same telescope from a
+different exposure -- then rerun the production DRP's own
+sky-subtraction routine (or any other method) on the result.
 
 SubstituteSky.py
 ^^^^^^^^^^^^^^^^^
 
-Replaces one sky telescope's fiber data (FLUX/IVAR/MASK/LSF) and
-associated header metadata in an lvmCFrame with the corresponding data
-from a different lvmCFrame.
+Replaces one sky telescope's fiber data (FLUX/IVAR/MASK/LSF), its
+SKY_EAST/SKY_WEST sky-model extension, and associated header metadata
+in an lvmCFrame with data from the same or the other sky telescope, in
+the same or a different lvmCFrame, producing a new self-consistent
+lvmCFrame usable by any sky-subtraction method.
+
+**Example**::
+
+    # 14964's SkyW was 4.5 deg from the Moon; use its own SkyE instead
+    SubstituteSky.py lvmCFrame-00014964.fits SkyW lvmCFrame-00014964.fits SkyE
 
 **Usage**::
 
@@ -123,21 +131,29 @@ fiberid-for-fiberid across all exposures.  The DRP's own sky-
 subtraction routine (``skyMethod.quick_sky_subtraction``) builds its
 sky spectrum from the raw FLUX/IVAR at the fibers tagged SkyE/SkyW in
 the CFrame being reduced -- not the extrapolated SKY_EAST/SKY_WEST
-extensions, which the current production method ignores.  So fixing a
-contaminated sky telescope means replacing the FLUX, IVAR, MASK, and
-LSF rows for that telescope's fibers, matched by fiberid.
+extensions, which the current production method ignores.  Many other
+tools (``SummarizeCframe.py``, ``GetTelData.py``, ``lvm_skyfit.py``,
+``Prep4SkyCorr.py``, ``QualCFrame.py``, ...) do read SKY_EAST/SKY_WEST,
+so both are replaced.
 
-Since SkyE/SkyW fiber assignment is fixed hardware, requesting
-different telescopes on the two sides (``target_tel`` != ``source_tel``)
-fails with a clear error -- there is no physically meaningful
-fiber-by-fiber correspondence between them.
+For the same telescope on both sides, the FLUX, IVAR, MASK, and LSF
+rows are matched by fiberid (fiber assignment is fixed hardware,
+identical across exposures).  For different telescopes
+(``target_tel`` != ``source_tel``) there is no such correspondence, so
+a warning is printed and the target rows are filled in order from the
+source telescope's good (``fibstatus==0``) fibers, reused cyclically
+if there are fewer; since the DRP and the XCframe summaries average
+over a telescope's fibers, the ordering does not matter.  The
+target telescope's SKY_EAST/SKY_WEST extension (and ``_IVAR``) is
+replaced by the source telescope's.
 
 Every PRIMARY header keyword tied to the source telescope (pointing,
 altitude, airmass, guider frames, sky-field name, heliocentric
 velocity, moon/shadow geometry, ecliptic coordinates, etc.) is copied
-too, renamed to the target telescope's own keyword names -- except the
-SKYEW/SKYWW combination weights, a joint SkyE+SkyW property recomputed
-elsewhere.  ``SKY SCI_SKYW_SEP`` (or the SkyE equivalent) is relative
+too, renamed to the target telescope's own keyword names.  The
+SKYEW/SKYWW combination weights are recomputed from the updated
+pointings with ``skyMethod.combine_skies``'s own formula (inverse
+angular distance to the science field, normalized).  ``SKY SCI_SKYW_SEP`` (or the SkyE equivalent) is relative
 to the *target's* own science pointing, so it is recomputed from the
 target's real SCIRA/SCIDEC and the newly-copied sky position
 (``lvmdrp.core.sky.ang_distance``) rather than copied as-is.  New
@@ -147,7 +163,8 @@ from where.  ``target_cframe``/``source_cframe`` are never modified.
 **Output:**
 
 An lvmCFrame FITS file, structurally identical to the input, with the
-named telescope's FLUX/IVAR/MASK/LSF rows and header block replaced.
+named telescope's FLUX/IVAR/MASK/LSF rows, SKY_EAST/SKY_WEST extension,
+and header block replaced.
 
 **See Also:** :doc:`api/SubstituteSky/index`
 

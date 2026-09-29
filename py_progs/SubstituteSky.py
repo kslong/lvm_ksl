@@ -6,9 +6,11 @@
 
 Synopsis:
 
-    Replace one sky telescope's fiber data in an lvmCFrame file with
-    the corresponding fiber data from a different lvmCFrame, so the
-    DRP's sky-subtraction step can be rerun using a better sky
+    Replace one sky telescope's data in an lvmCFrame file -- its fiber
+    rows and its SKY_EAST/SKY_WEST sky-model extension -- with data
+    from the same or the other sky telescope, in the same or a
+    different lvmCFrame, producing a new, self-consistent lvmCFrame on
+    which any sky-subtraction method can be run with a better sky
     measurement (e.g. when SkyE or SkyW was pointed too close to a
     bright Moon).
 
@@ -36,9 +38,13 @@ Command line usage (if any)::
                        telescope's fibers in source_cframe supply
                        the replacement data
 
-    Example (exposure 14964's SkyW pointed 4.5 deg from the Moon;
-    substitute in SkyW data from a clean exposure 14960):
+    Examples (exposure 14964's SkyW pointed 4.5 deg from the Moon):
 
+        # use 14964's own (clean) SkyE in place of its SkyW
+        SubstituteSky.py lvmCFrame-00014964.fits SkyW \\
+                         lvmCFrame-00014964.fits SkyE
+
+        # or substitute SkyW data from a clean exposure 14960
         SubstituteSky.py lvmCFrame-00014964.fits SkyW \\
                          lvmCFrame-00014960.fits SkyW
 
@@ -54,20 +60,37 @@ Description:
     fixing a contaminated sky telescope means replacing the FLUX,
     IVAR, MASK, and LSF rows for that telescope's fibers.
 
-    This routine copies those rows (matched by fiberid) from
-    source_cframe/source_tel into a copy of target_cframe/target_tel,
-    along with every PRIMARY header keyword tied to the source
-    telescope -- pointing, altitude, airmass, guider frames,
-    sky-field name, heliocentric velocity, moon/shadow geometry,
-    ecliptic coordinates, etc. (but not the SKYEW/SKYWW combination
-    weights, a joint SkyE+SkyW property recomputed elsewhere). It
-    adds SKY SUBST_* provenance keywords, then writes the result to
-    outfile. target_cframe and source_cframe are never modified.
+    Many non-DRP tools (SummarizeCframe.py, GetTelData.py,
+    lvm_skyfit.py, Prep4SkyCorr.py, QualCFrame.py, ...) instead read
+    the SKY_EAST/SKY_WEST extensions, so both must be replaced for the
+    output to be usable by every method.
 
-    Since SkyE/SkyW fiber assignment is fixed hardware, requesting
-    different telescopes on the two sides (target_tel != source_tel)
-    fails with a clear error -- there is no physically meaningful
-    fiber-by-fiber correspondence between them.
+    This routine writes a copy of target_cframe in which, for
+    target_tel:
+
+    - the FLUX/IVAR/MASK/LSF rows of its fibers come from
+      source_tel's fibers in source_cframe. For the same telescope
+      they are matched by fiberid (SkyE/SkyW fiber assignment is
+      fixed hardware, identical across exposures). For different
+      telescopes there is no such correspondence, so a warning is
+      printed and the target rows are filled in order from the source
+      telescope's good (fibstatus==0) fibers, reusing them cyclically
+      if there are fewer; since the DRP and the XCframe summaries
+      average over a telescope's fibers, the ordering does not matter.
+      Each row's LSF travels with its spectrum.
+    - SKY_EAST/SKY_WEST (whichever is target_tel's) and its _IVAR are
+      replaced by source_tel's in source_cframe.
+    - every PRIMARY header keyword tied to the telescope -- pointing,
+      altitude, airmass, guider frames, sky-field name, heliocentric
+      velocity, moon/shadow geometry, ecliptic coordinates, etc. --
+      is copied from source_tel.
+    - the SKYEW/SKYWW combination weights are recomputed from the
+      updated pointings with skyMethod.combine_skies's own formula
+      (inverse angular distance to the science field, normalized).
+
+    SKY SUBST_* provenance keywords are added. target_cframe and
+    source_cframe are never modified. The target's SLITMAP is left
+    unchanged.
 
 Notes:
 
@@ -83,8 +106,14 @@ Notes:
     *substituted* data was actually observed under, so those are
     copied unchanged.
 
+    When SkyE is substituted into SkyW of the same exposure (or vice
+    versa), both telescopes then sit at the same position, so the
+    DRP's near/far choice is a tie and both its line and continuum
+    sky come from the substituted telescope; SKYEW/SKYWW become
+    0.5/0.5.
+
     Rerun lvmdrp.functions.skyMethod.quick_sky_subtraction on
-    outfile to produce a corrected lvmSFrame.
+    outfile (e.g. with RunSky.py) to produce a corrected lvmSFrame.
 
 History::
 
@@ -98,6 +127,14 @@ History::
         filename strips the input directory and writes to the current
         one; an existing outfile is overwritten with a warning, no -f
         flag needed.
+    260929 ksl Now produces a fully self-consistent CFrame for use with
+        any sky-subtraction method, not just the DRP's: also replaces
+        the target's SKY_EAST/SKY_WEST (+_IVAR) extension and
+        recomputes SKYEW/SKYWW. Different telescopes on the two sides
+        (e.g. SkyE -> SkyW within one exposure) now print a warning and
+        fill the rows in order from the source's good fibers, instead
+        of failing. New SKY SUBST_MAP / SUBST_SKYEXT provenance
+        keywords.
 
 '''
 
@@ -134,8 +171,12 @@ EXTENSIONS_TO_COPY = ('FLUX', 'IVAR', 'MASK', 'LSF')
 # lvmCFrame PRIMARY header to mark keywords specific to that telescope
 TEL_TOKENS = {'SkyE': 'SKYE', 'SkyW': 'SKYW'}
 
+# maps a telescope name to its per-fiber sky-model extension in the lvmCFrame
+SKY_EXTENSIONS = {'SkyE': 'SKY_EAST', 'SkyW': 'SKY_WEST'}
+
 # SkyE/SkyW combination weights: a joint property of both telescopes
-# (recomputed by skyMethod.combine_skies), not a per-telescope one
+# (set by skyMethod.combine_skies), not a per-telescope one, so never
+# block-copied -- recomputed below from the updated pointings instead
 WEIGHT_KEYS = {'SKYEW', 'SKYWW'}
 
 
@@ -154,9 +195,11 @@ def normalize_tel(tel):
 
 def substitute_sky(target_cframe, target_tel, source_cframe, source_tel, outfile=None):
     '''
-    Replace the FLUX/IVAR/MASK/LSF fiber rows for target_tel in
-    target_cframe with the corresponding rows for source_tel from
-    source_cframe, copy the associated telescope header block, and
+    Replace the FLUX/IVAR/MASK/LSF fiber rows and SKY_EAST/SKY_WEST
+    extension for target_tel in target_cframe with source_tel's from
+    source_cframe (rows matched by fiberid for the same telescope, in
+    order from the source's good fibers otherwise), copy the
+    associated telescope header block, recompute SKYEW/SKYWW, and
     write the result to outfile.
 
     Parameters
@@ -201,21 +244,50 @@ def substitute_sky(target_cframe, target_tel, source_cframe, source_tel, outfile
 
         rows = fiberids - 1
 
-        src_tel_at_rows = np.asarray(slit_s['telescope'])[rows]
-        bad = src_tel_at_rows != source_tel
-        if bad.any():
-            example = fiberids[bad][0]
-            example_tel = src_tel_at_rows[bad][0]
-            raise ValueError(
-                f"{bad.sum()} of the target's {target_tel} fibers are not tagged '{source_tel}' "
-                f"in the source SLITMAP (e.g. fiberid {example} is '{example_tel}' there). "
-                "SkyE/SkyW fiber assignment is fixed by hardware and identical across exposures, "
-                "so substituting between different telescopes fiber-by-fiber is not physically "
-                "meaningful -- did you mean the same telescope on both sides?"
-            )
+        if target_tel == source_tel:
+            # same telescope: fiber assignment is fixed hardware, identical
+            # across exposures, so match fiber-for-fiber by fiberid
+            mapping = 'fiberid'
+            src_tel_at_rows = np.asarray(slit_s['telescope'])[rows]
+            bad = src_tel_at_rows != source_tel
+            if bad.any():
+                example = fiberids[bad][0]
+                example_tel = src_tel_at_rows[bad][0]
+                raise ValueError(
+                    f"{bad.sum()} of the target's {target_tel} fibers are not tagged '{source_tel}' "
+                    f"in the source SLITMAP (e.g. fiberid {example} is '{example_tel}' there)"
+                )
+            src_rows = rows
+        else:
+            # different telescopes: there is no fiber-for-fiber correspondence,
+            # so fill the target rows in order from the source telescope's good
+            # fibers, cycling through them again if there are fewer. The DRP
+            # (and the XCframe summaries) average over a telescope's fibers,
+            # so which source fiber lands in which target row does not matter.
+            mapping = 'order'
+            good_src = (slit_s['telescope'] == source_tel) & (slit_s['fibstatus'] == 0)
+            src_fiberids = np.asarray(slit_s['fiberid'][good_src])
+            if src_fiberids.size == 0:
+                raise ValueError(f"no good (fibstatus==0) fibers tagged '{source_tel}' found in source SLITMAP")
+            src_rows = np.resize(src_fiberids - 1, rows.size)
+            print(f"Warning: target_tel {target_tel} != source_tel {source_tel}; filling the "
+                  f"{rows.size} {target_tel} rows in order from the {src_fiberids.size} good "
+                  f"{source_tel} fibers (not matched by fiberid)")
 
         for ext in EXTENSIONS_TO_COPY:
-            ht[ext].data[rows] = hs[ext].data[rows]
+            ht[ext].data[rows] = hs[ext].data[src_rows]
+
+        # SKY_EAST/SKY_WEST (+ _IVAR) are the target telescope's sky model
+        # evaluated at every fiber; many non-DRP tools (SummarizeCframe.py,
+        # GetTelData.py, lvm_skyfit.py, ...) read them, so they must be
+        # replaced along with the fiber rows to keep the CFrame consistent
+        src_sky = SKY_EXTENSIONS[source_tel]
+        dst_sky = SKY_EXTENSIONS[target_tel]
+        for suffix in ('', '_IVAR'):
+            if src_sky + suffix in hs and dst_sky + suffix in ht:
+                ht[dst_sky + suffix].data = hs[src_sky + suffix].data.copy()
+            else:
+                print(f"Warning: {src_sky + suffix} or {dst_sky + suffix} missing; not replaced")
 
         src_token = TEL_TOKENS[source_tel]
         dst_token = TEL_TOKENS[target_tel]
@@ -241,11 +313,25 @@ def substitute_sky(target_cframe, target_tel, source_cframe, source_tel, outfile
                                     hdr_t[f'{dst_token}RA'], hdr_t[f'{dst_token}DEC'])
             hdr_t[sep_kw] = (round(float(new_sep), 4), hdr_t.comments[sep_kw])
 
+        # SKYEW/SKYWW: recompute with skyMethod.combine_skies's own formula
+        # (inverse angular distance to the science field, normalized), so
+        # they describe the sky data actually now in the file
+        if 'SKYEW' in hdr_t and 'SKYWW' in hdr_t:
+            ad_e = ang_distance(hdr_t['SKYERA'], hdr_t['SKYEDEC'], hdr_t['SCIRA'], hdr_t['SCIDEC'])
+            ad_w = ang_distance(hdr_t['SKYWRA'], hdr_t['SKYWDEC'], hdr_t['SCIRA'], hdr_t['SCIDEC'])
+            w_e = 1 / (ad_e if ad_e > 0 else 1)
+            w_w = 1 / (ad_w if ad_w > 0 else 1)
+            w_norm = w_e + w_w
+            hdr_t['SKYEW'] = (float(w_e / w_norm), hdr_t.comments['SKYEW'])
+            hdr_t['SKYWW'] = (float(w_w / w_norm), hdr_t.comments['SKYWW'])
+
         hdr_t['HIERARCH SKY SUBST_TEL'] = (target_tel, 'telescope whose fiber data was substituted')
         hdr_t['HIERARCH SKY SUBST_SRC'] = (os.path.basename(source_cframe), 'source CFrame for substituted sky')
         hdr_t['HIERARCH SKY SUBST_SRCTEL'] = (source_tel, 'telescope in source CFrame supplying the data')
         hdr_t['HIERARCH SKY SUBST_SRCEXP'] = (hdr_s.get('EXPOSURE', -1), 'source exposure number')
         hdr_t['HIERARCH SKY SUBST_NFIB'] = (int(rows.size), 'number of fibers substituted')
+        hdr_t['HIERARCH SKY SUBST_MAP'] = (mapping, 'fiber mapping: fiberid or order')
+        hdr_t['HIERARCH SKY SUBST_SKYEXT'] = (f'{src_sky}->{dst_sky}', 'sky model ext replaced')
 
         if outfile is None:
             base, ext_ = os.path.splitext(os.path.basename(target_cframe))

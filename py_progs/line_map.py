@@ -10,9 +10,9 @@ Create an image or cube from a LVM exposure
 
 Command line usage (if any):
 
-    usage: kslmap.py [-no_back]  [-image_type filter] filename
+    usage: line_map.py [-no_back]  [-band filter] filename
 
-    where image_type indicates a predefined filter to plot.  The
+    where -band indicates a predefined filter to plot.  The
     currenly allowed bands are: ha, sii
 
     -no_back means not to subtract background from the image
@@ -35,6 +35,13 @@ History::
         now goes through GetTelData.get_tel_data() instead of indexing
         SLITMAP/FLUX/MASK directly; verified identical x/y/fibid/flux/
         mask arrays and full end-to-end run first.
+    260929 ksl Fixed band averaging: np.nanmean(sciflux*selwave) averaged
+        over all channels (zeros outside the window) instead of over the
+        window, making images ~250-950x too faint and over-subtracting
+        the Ha continuum ~6x.  Now np.nanmean(sciflux[:,selwave]).  Also
+        fixed an out_labble typo that crashed the default (continuum-
+        subtracted) mode, and the docstring now gives the real flag,
+        -band.  Verified on exposure 14405.
 '''
 
 
@@ -185,12 +192,12 @@ def doit(filename,out_label='',wrange=[6560,6566],
     # Fill the flux array
     if do_mask:
         sciflux[scimask==1] = np.nan
-    flux = np.nanmean(sciflux*selwave, axis=1)
+    flux = np.nanmean(sciflux[:,selwave], axis=1)
     # print(flux)
     print('Averages',np.nanmean(flux),np.nanmedian(flux))
     # Optional continuum subtraction
     if crange:
-        cflux = np.nanmean(sciflux*cselwave,axis=1)
+        cflux = np.nanmean(sciflux[:,cselwave],axis=1)
         print('Cont Averages',np.nanmean(cflux),np.nanmedian(cflux))
         flux  = flux - cflux
         print('Final Averages',np.nanmean(flux),np.nanmedian(flux))
@@ -308,7 +315,7 @@ def steer(argv):
         if image_type==one_band[0]:
             print(one_band[1],one_band[2],image_type)
             if sub_back:
-                doit(xfits,out_labble=image_type,wrange=one_band[1],crange=one_band[2])
+                doit(xfits,out_label=image_type,wrange=one_band[1],crange=one_band[2])
             else:
                 doit(xfits,out_label=image_type,wrange=one_band[1],crange=None)
             good=True

@@ -35,14 +35,14 @@ filters or custom wavelength ranges.
 
 **Usage**::
 
-    kslmap.py [-no_back] [-image_type filter] filename
+    kslmap.py [-no_back] [-band filter] filename
 
 **Options:**
 
 -no_back
     Do not subtract background from the image.
 
--image_type filter
+-band filter
     Predefined filter to use. Options include:
 
     - ``ha`` - H-alpha emission
@@ -53,6 +53,23 @@ filters or custom wavelength ranges.
 filename
     SFrame or CFrame FITS file.
 
+**Continuum subtraction:**
+
+Each fiber's value is the mean flux over the line window minus (unless
+``-no_back``) the mean flux over a nearby continuum window, both
+redshifted to the field's systemic velocity (non-zero only near the LMC
+and SMC)::
+
+    band   line window (A)   continuum window (A)
+    ha     6560-6566         6590-6630
+    sii    6710-6735         6740-6760
+
+The same windows and method are used by ``quick_map.py`` and
+``line_map.py``; all three produce identical images.  (Before 260929 all
+three averaged over the whole spectrum rather than over each window,
+which made images too faint by a factor of several hundred and
+over-subtracted the H-alpha continuum by ~6x.)
+
 **Output:**
 
 A FITS image file with proper WCS (World Coordinate System) that can
@@ -61,10 +78,10 @@ be displayed in tools like DS9.
 **Example**::
 
     # Create an H-alpha image
-    kslmap.py -image_type ha lvmSFrame-00012345.fits
+    kslmap.py -band ha lvmSFrame-00012345.fits
 
     # Create image without background subtraction
-    kslmap.py -no_back -image_type ha lvmSFrame-00012345.fits
+    kslmap.py -no_back -band ha lvmSFrame-00012345.fits
 
 quick_map.py
 ^^^^^^^^^^^^
@@ -114,7 +131,7 @@ options for line selection.
 
 **Usage**::
 
-    line_map.py [-no_back] [-image_type filter] filename
+    line_map.py [-no_back] [-band filter] filename
 
 **Options:**
 

@@ -53,6 +53,12 @@ History::
         rss['SLITMAP'].data since it needs the full, unfiltered table.
         Verified identical x/y/fibid/flux/mask arrays and full
         end-to-end run first.
+    260929 ksl Fixed band averaging: np.nanmean(sciflux*selwave) averaged
+        over all channels (zeros outside the window) instead of over the
+        window, making images ~250-950x too faint and over-subtracting
+        the Ha continuum ~6x.  Now np.nanmean(sciflux[:,selwave]).
+        Verified on exposure 14405 against an explicit per-fiber
+        calculation.
 
 '''
 
@@ -240,12 +246,12 @@ def doit(filename,out_label='',wrange=[6560,6566],
     # Fill the flux array
     if do_mask:
         sciflux[scimask==1] = np.nan
-    flux = np.nanmean(sciflux*selwave, axis=1)
+    flux = np.nanmean(sciflux[:,selwave], axis=1)
     # print(flux)
     print('Averages',np.nanmean(flux),np.nanmedian(flux))
     # Optional continuum subtraction
     if crange:
-        cflux = np.nanmean(sciflux*cselwave,axis=1)
+        cflux = np.nanmean(sciflux[:,cselwave],axis=1)
         print('Cont Averages',np.nanmean(cflux),np.nanmedian(cflux))
         flux  = flux - cflux
         print('Final Averages',np.nanmean(flux),np.nanmedian(flux))

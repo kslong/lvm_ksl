@@ -10,9 +10,9 @@ Create an image or cube from a LVM exposure
 
 Command line usage (if any):
 
-    usage: kslmap.py [-no_back]  [-image_type filter] filename
+    usage: kslmap.py [-no_back]  [-band filter] filename
 
-    where image_type indicates a predefined filter to plot.  The
+    where -band indicates a predefined filter to plot.  The
     currenly allowed bands are: ha, sii
 
     -no_back means not to subtract background from the image
@@ -35,6 +35,16 @@ History::
         now goes through GetTelData.get_tel_data() instead of indexing
         SLITMAP/FLUX/MASK directly; verified identical x/y/fibid/flux/
         mask arrays and full end-to-end run first.
+    260929 ksl Fixed band averaging: np.nanmean(sciflux*selwave) averaged
+        over all channels (zeros outside the window) instead of over the
+        window, making images ~250-950x too faint and over-subtracting
+        the Ha continuum ~6x (47% of fibers negative on exposure 14405).
+        Now np.nanmean(sciflux[:,selwave]).  Also: the continuum window's
+        upper edge is now redshifted (wrange[1] was corrected twice
+        instead); fixed a crash (undefined mfheader) when no AG coadd
+        exists, now falling back to SCIRA/SCIDEC/SCIPA; docstring now
+        gives the real flag, -band, not -image_type.  Verified on 14405
+        against an explicit per-fiber calculation.
 '''
 
 
@@ -173,9 +183,9 @@ def doit(filename,wrange=[6560,6566], out_label='',
         else:
             print(f'{procscifile} does not exist, skipping astrometry')
             do_astrom = False
-            RAobs  = mfheader['RAMEAS']
-            DECobs = mfheader['DECMEAS']
-            posang = mfheader['POSCIPA']
+            RAobs  = rss['PRIMARY'].header['SCIRA']
+            DECobs = rss['PRIMARY'].header['SCIDEC']
+            posang = rss['PRIMARY'].header.get('SCIPA',0)
     
     # Read fibermap and get x,y coordinates of fibers
     sci_data = get_tel_data(xname, 'Sci')
@@ -196,7 +206,7 @@ def doit(filename,wrange=[6560,6566], out_label='',
     wrange[1]*=(1+z)
     if crange!=None:
         crange[0]*=(1+z)
-        wrange[1]*=(1+z)
+        crange[1]*=(1+z)
 
 
     nfibers,nchans = rss['FLUX'].data.shape
@@ -215,12 +225,12 @@ def doit(filename,wrange=[6560,6566], out_label='',
     if do_mask:
         sciflux[scimask==1] = np.nan
     if not cube:
-        flux = np.nanmean(sciflux*selwave, axis=1)
+        flux = np.nanmean(sciflux[:,selwave], axis=1)
         print(flux)
         print('Averages',np.nanmean(flux),np.nanmedian(flux))
         # Optional continuum subtraction
         if crange:
-            cflux = np.nanmean(sciflux*cselwave,axis=1)
+            cflux = np.nanmean(sciflux[:,cselwave],axis=1)
             print('Cont Averages',np.nanmean(cflux),np.nanmedian(cflux))
             flux  = flux - cflux
             print('Final Averages',np.nanmean(flux),np.nanmedian(flux))

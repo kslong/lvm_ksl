@@ -3046,20 +3046,51 @@ Evaluating DRP Sky Subtraction
 Recovering an Exposure with a Bad Sky Pointing
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-1. Identify a clean exposure whose sky telescope pointed well away from
-   the Moon (e.g. by checking ``SKY SKYW_MOON_SEP``/``SKY SKYE_MOON_SEP``
-   in each candidate CFrame's header)
-2. Substitute that telescope's fiber data into the compromised
-   exposure's CFrame::
+1. Identify the bad telescope and a clean replacement, by checking
+   ``SKY SKYW_MOON_SEP``/``SKY SKYE_MOON_SEP`` (and
+   ``SKY SCI_SKYW_SEP``/``SKY SCI_SKYE_SEP``) in the CFrame header.  The
+   replacement can be:
 
+   - the *other* sky telescope in the same exposure, if it is clean --
+     the simplest option, since it was observed at the same time and
+     airmass; or
+   - the same telescope from a different exposure taken near in time.
+
+2. Substitute it into the compromised exposure's CFrame.  The result is
+   a new, self-consistent CFrame (fiber rows, SKY_EAST/SKY_WEST, header,
+   SKYEW/SKYWW all updated) that any sky-subtraction method can use::
+
+       # 14964's SkyW was 4.5 deg from the Moon; its SkyE was clean
+       SubstituteSky.py lvmCFrame-00014964.fits SkyW \
+                         lvmCFrame-00014964.fits SkyE
+
+       # or: same telescope from another exposure
        SubstituteSky.py lvmCFrame-00014964.fits SkyW \
                          lvmCFrame-00014771.fits SkyW
 
-3. Rerun the DRP's sky subtraction on the result::
+3. Rerun the DRP's sky subtraction on the result (or run any other
+   method, e.g. via ``SummarizeCframe.py`` + ``SkySubRun.py``)::
 
        RunSky.py lvmCFrame-00014964.sky_subst.fits
 
-4. Evaluate the corrected lvmSFrame as usual (eval_sky.py, sky_plot.py)
+   ``RunSky.py`` also writes an ancillary sky table under
+   ``$SAS_BASE_DIR`` (``.../ancillary/lvm-skytable-brz-<expnum>.fits``).
+
+4. Compare the corrected exposure with the original::
+
+       QualSFrame.py lvmSFrame-00014964.sky_subst.fits
+       QualCFrame.py lvmCFrame-00014964.sky_subst.fits
+
+   For 14964 (SkyE substituted for SkyW), the result was judged
+   plausibly better than the original though not perfect.  Note that
+   when the substituted telescope is close to the science field (SkyE
+   was 2.2 deg from Vela), any emission from the target itself in that
+   sky field is subtracted too.
+
+``SubstituteSky.py``, ``RunSky.py``, ``QualSFrame.py`` and
+``QualCFrame.py`` all import ``lvmdrp``, so they must be run in an
+environment that has it, with ``$SAS_BASE_DIR`` and ``$LVM_MASTER_DIR``
+reachable.
 
 Testing Alternative Sky Subtraction
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

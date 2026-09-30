@@ -18,7 +18,7 @@ Synopsis:
     re-implementation that depends only on numpy/scipy; see Notes for what
     differs.
 
-Description:
+Description::
 
     Model, per spectrograph arm (b, r, z; boundaries ARMS):
 
@@ -46,7 +46,7 @@ Description:
     wider), with the decision smoothed along wavelength.  Kernels conserve
     flux: throughput (flat-field) differences are NOT absorbed.
 
-Primary routines:
+Primary routines::
 
     fit_kernel        fit one relative LSF kernel surface (source -> target)
     apply_kernel      convolve a spectrum with a fitted kernel surface
@@ -65,8 +65,8 @@ History::
 
     260930 ksl Coding begun (Vela background-sky tests, test_sky/background),
         adapting Ivan Katkov's lsf_surface_iterative approach so that the
-        LSF matching is independent of the lvmsky repository.  Moved to py_dev/
-        on branch sky_patch.
+        LSF matching is independent of the lvmsky repository.  Moved to
+        py_progs/ on branch sky_patch.
 
 '''
 import numpy as np

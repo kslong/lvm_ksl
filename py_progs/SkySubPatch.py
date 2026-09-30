@@ -51,7 +51,7 @@ Command line usage (if any):
         -out ROOT   output root (default lvmSFrame-<exposure>.patch, in the
                     current directory); with several inputs ROOT_<exp>
 
-Description:
+Description::
 
     1. Background patch: every fiber's nebular lines (Halpha, [NII]6583,
        [SII]6716/6731, [OIII]5007; plus Hbeta when the Moon is below the
@@ -93,7 +93,7 @@ Description:
     the patch itself contains (in extended nebulae, a "floor") is
     subtracted from every fiber.
 
-Primary routines:
+Primary routines::
 
     select_background  choose the patch and build the background spectrum
     make_units         define the calibration units for -mode
@@ -111,7 +111,7 @@ Notes:
     GetTelData, which swaps an SFrame name for its CFrame, so they show
     unsubtracted data.  Needs data/sky_mask.fits and
     data/lvm_sky_lines_all.dat from this repository and lsf_kernel.py
-    alongside it in py_dev/.
+    alongside it in py_progs/.
 
 History::
 
@@ -122,7 +122,7 @@ History::
         per-fiber neighbourhoods or slit blocks; per unit a wavelength
         shift, two-sided LSF kernels (lsf_kernel.py) and per-arm
         throughput fitted on sky lines only, [OI]6300/6364 excluded as
-        they can contain source emission.  Moved to py_dev/ on branch
+        they can contain source emission.  Moved to py_progs/ on branch
         sky_patch, with repository-relative paths.
 
 '''
@@ -146,7 +146,6 @@ _HERE = os.path.dirname(os.path.abspath(__file__))
 _REPO = os.path.dirname(_HERE)
 sys.path.insert(0, _HERE)
 import lsf_kernel as LK
-sys.path.insert(0, os.path.join(_REPO, 'py_progs'))
 from GetSkyCont import load_mask, _interp_mask_to_wave
 
 warnings.simplefilter('ignore')

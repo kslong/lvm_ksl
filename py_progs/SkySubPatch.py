@@ -107,9 +107,9 @@ Notes:
 
     Runs in the ksl environment.  Numerical libraries are limited to one
     thread per process (parallelism is over calibration units).  The
-    output name contains "SFrame", but QualSFrame.py's maps go through
-    GetTelData, which swaps an SFrame name for its CFrame, so they show
-    unsubtracted data.  Needs data/sky_mask.fits and
+    output can be assessed with QualSFrame.py (run it in a different
+    directory from the DRP SFrame's report: its map files are named by
+    exposure number only).  Needs data/sky_mask.fits and
     data/lvm_sky_lines_all.dat from this repository and lsf_kernel.py
     alongside it in py_progs/.
 

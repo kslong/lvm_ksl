@@ -785,12 +785,19 @@ collide.
 QualSFrame.py — Per-Exposure HTML Quality Report (SFrame)
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-Reads an lvmSFrame file and builds an HTML file containing header
-information plus the science/sky spectral comparison, Hα/[SII]/continuum
-images, the STD/SCI/MOD flux-calibration sensitivity comparison, and (if
-possible) the flux-calibrated standard-star vs. Gaia comparison. Renamed
-from ``QuickLook.py`` to match ``QualCFrame.py``, its lvmCFrame
-counterpart.
+Reads an lvmSFrame file and builds an HTML file assessing how good the
+reduction is, including the sky subtraction: header information, the
+science and sky-telescope spectra (interactive and static), what line
+emission the subtracted sky contains, how well the continuum and bright
+sky lines were subtracted, line/continuum/[OI] images, the STD/SCI/MOD
+flux-calibration sensitivity comparison, and (if possible) the
+flux-calibrated standard-star vs. Gaia comparison. Renamed from
+``QuickLook.py`` to match ``QualCFrame.py``, its lvmCFrame counterpart.
+
+The sky-subtraction sections use only the file's FLUX, SKY, IVAR and
+MASK, so an SFrame-layout file written by any sky-subtraction method
+(e.g. ``SkySubPatch.py``, or ``SubstituteSky.py`` + ``RunSky.py``) is
+judged the same way as a DRP lvmSFrame.
 
 **Command line usage**::
 
@@ -814,12 +821,52 @@ filename
   extension stripped). Image links in the file are relative, so the
   report and the ``figs_qual/`` directory below must be kept together.
 - ``figs_qual/`` — subdirectory (shared with ``QualCFrame.py``) holding
-  all PNGs referenced by the report: science/sky spectra and the
-  doublet-aware sky-subtraction-residual line panels from
-  ``eval_qual_sframe`` (via ``eval_standard.plot_diagnostic_line_panels``),
-  line and continuum images from ``make_images``, the STD/SCI/MOD
-  sensitivity comparison from ``eval_standard.eval_sensitivity_comparison``,
-  and the standard-star vs. Gaia comparison from ``eval_standard.qual_eval``.
+  all PNGs referenced by the report, and ``plotly.min.js``, the Plotly
+  library for the interactive spectra, written there once from the
+  installed plotly package so the reports work offline.
+- ``qdata/`` — the FITS maps made by ``quick_map.py`` for the images.
+  Their names depend only on the exposure number, so reports on two
+  different files of the same exposure (e.g. the DRP SFrame and another
+  method's) should be run in separate directories.
+
+**Report sections:**
+
+- *Overview* — header summary and pointing table (see below).
+- *Science Spectrum* — an interactive (Plotly, zoomable) plot of the
+  median sky-subtracted spectrum of the science fibers with its 10-90
+  percentile range, and the median total and sky on a log scale
+  (``make_plotly_spectra``); then the static figure with fixed-scale
+  panels and close-ups of the diagnostic line regions
+  (``eval_qual_sframe``).
+- *SkyE and SkyW Spectra* — the same, interactive and static, for the
+  two sky telescopes, including the difference of their total spectra.
+- *Line Emission in the Subtracted Sky* — [OII]3727, Hβ, [OIII]5007, Hα,
+  [NII]6583, [SII]6716,6731 and [SIII]9531 fitted in the subtracted sky,
+  the science fibers' total (before subtraction) and the raw SkyE/SkyW
+  spectra; "sky / total" is the share of the field's line flux removed
+  from every fiber (``eval_sky_emission``).  With the Moon up, the solar
+  absorption spectrum in scattered moonlight makes [OII], Hβ and Hα
+  unreliable, and they are flagged.
+- *Continuum Subtraction Quality* — per arm, the continuum left in pixels
+  free of sky and nebular lines: median, fiber-to-fiber scatter, as a
+  percentage of the sky continuum and against the Milky Way 5 sigma
+  level, and the change across the field of a fitted plane; the steps at
+  the b/r and r/z junctions; and per-arm maps (``eval_continuum``).
+- *Sky-Line Subtraction Quality* — for 8 bright, isolated sky lines, the
+  residual rms, the rms expected from noise, the systematic part, the
+  signed integrated residual and a red-blue asymmetry, relative to the
+  subtracted sky line; residual profiles (median and 10-90 percentile),
+  whose shape shows a throughput, wavelength or line-width mismatch; and
+  maps of each fiber's residual (``eval_sky_lines``).  [OI]6300 is also
+  nebular and is left out of the summaries.
+- *Line and Continuum images* — Hα, [SII] and continuum maps of the
+  file's own, sky-subtracted data (``make_images``).
+- *[OI] 6300 Emission and Sky-Line Residual Control* — a map of [OI]6300,
+  to look for [OI] from the source, next to the 5577 airglow line as a
+  control (no nebular contribution), with their correlations with [SII]
+  and with each other (``make_oi_images``).
+- *Flux Calibration Comparison* and the standard-star vs. Gaia comparison
+  (``eval_standard``).
 
 **Overview section:**
 

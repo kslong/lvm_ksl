@@ -3172,9 +3172,8 @@ less exercised.
   field-median [O III] 5007.
 - Kernels only broaden, so wherever the patch is broader than a fiber,
   that fiber's spectrum is degraded to the patch's resolution.
-- ``QualSFrame.py``'s maps read through ``GetTelData.get_tel_data()``,
-  which swaps an "SFrame" filename for the matching CFrame, so its maps
-  of this output show *unsubtracted* data.
+- Run ``QualSFrame.py`` on the output and on the DRP SFrame in separate
+  directories: its map files are named by exposure number only.
 
 **See Also:** :doc:`api/SkySubPatch/index`
 
@@ -3371,9 +3370,11 @@ Sky from a Patch of the Science Field
    and broadening (CALIB).  Throughput maps from CALIB show the smooth,
    flat-field-like pattern the method corrects for.
 
-3. Compare with the DRP's SFrame for the same exposure.  Bear in mind that
-   ``QualSFrame.py``'s maps show the unsubtracted CFrame (see
-   ``SkySubPatch.py`` above).
+3. Compare with the DRP's SFrame for the same exposure by running
+   ``QualSFrame.py`` on each, in separate directories.  Its sections on
+   the line emission in the subtracted sky, the continuum and the
+   sky-line residuals use only FLUX, SKY and IVAR, so the two reports
+   are directly comparable (see :doc:`data_quality`).
 
 
 Notes

@@ -75,9 +75,11 @@ Primary routines:
 
 Output:
 
-When the input is an SFrame FITS file, the output is an ASCII fixed-width table
+When the input is an SFrame (or CFrame) FITS file, the output is an ASCII fixed-width table
 with one row per successfully fit fiber.  Columns cover the fit parameters
-(flux, wave, fwhm, back, rmse) for each line together with fiberid, ra, and dec.
+(flux, wave, fwhm, back, rmse) for each line together with fiberid, ra, dec,
+spectrographid, and the exposure, mjd and tile_id of the input file (the same
+in every row), so the table identifies its own exposure and fibers.
 The output filename defaults to the input filename with .fits replaced by .txt,
 or <root>.txt if -out is supplied.
 
@@ -103,6 +105,8 @@ History:
 260909 ksl Added resolve_nebular_lines(): drops NEBULAR_LINES entries (oi_a/oi_b at low velocity) whose shifted window overlaps a SKY_LINES window, for callers (DecomposeCleanSky.py, sky_nebular_leak_eval.py) that need a single nebular-vs-sky answer per line rather than do_one's fit-both-and-compare
 260909 ksl Added siii_a (9068.6) and siii_b (9530.6) to NEBULAR_LINES, matching lvm_gaussfit.py's do_one() wavelengths/windows -- confirmed correct over data/dap_lines.txt's 9069.00/9531.10, which that file's own header already flags as not matching Mappings/Cloudy
 260909 ksl Added oii_a (3726.092), oii_b (3729.875), and hb (4861.325) to NEBULAR_LINES, matching lvm_gaussfit.py's wavelengths/windows (same already-validated source as siii_a/siii_b). oii_a/oii_b are only 3.8 A apart -- narrower than a single-Gaussian independent fit can reliably deblend, unlike lvm_gaussfit.py's own joint double-Gaussian fit for this pair; see the inline NEBULAR_LINES comment. This also extends do_one()'s own per-fiber fit output with these three lines for free, since it already iterates NEBULAR_LINES directly.
+260929 ksl flux/eflux columns now written with 4 significant figures (.3e) instead of 3 (.2e). At 3 figures the rounding step was up to 0.6% for fluxes with a leading 1 (e.g. sky5577), coarse enough to make many fibers share identical values and to pin per-spectrograph median ratios at exactly 1.000 in a 21-exposure fiber-to-fiber consistency study.
+260930 ksl FITS-input output tables now also carry spectrographid, exposure, mjd and tile_id columns, so downstream tools (SkyLineFlatness.py) need neither filename parsing nor the original FITS file.
 
 '''
 
@@ -477,7 +481,7 @@ def do_all(filename='data/lvmSFrame-00009088.fits', vel=0.0, outname='', nproc=8
     columns=results.colnames
     for one in columns:
         if one.count('flux'):
-            results[one].format='.2e'
+            results[one].format='.3e'
         elif one.count('wave'):
             results[one].format='.2f'
         elif one.count('fwhm'):
@@ -497,7 +501,18 @@ def do_all(filename='data/lvmSFrame-00009088.fits', vel=0.0, outname='', nproc=8
         else:
             print('Did not reformat ',one)
 
-
+    # identify each row's exposure and spectrograph in the table itself, so
+    # downstream tools (e.g. SkyLineFlatness.py) need neither the filename nor
+    # the original FITS file.  Added after the format loop above, whose
+    # substring matching would otherwise treat 'spectrographid' as 'ra'.
+    hdr=x['PRIMARY'].header
+    spec_of=dict(zip(slittab['fiberid'],slittab['spectrographid']))
+    results['spectrographid']=[int(spec_of[f]) for f in results['fiberid']]
+    results['exposure']=int(hdr.get('EXPOSURE',-1))
+    results['mjd']=int(hdr.get('MJD',-1))
+    results['tile_id']=int(hdr.get('TILE_ID',-1))
+    for one in ('spectrographid','exposure','mjd','tile_id'):
+        results[one].format='d'
 
     results.write(outname,format='ascii.fixed_width_two_line',overwrite=True)
     return results

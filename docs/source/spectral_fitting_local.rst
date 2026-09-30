@@ -15,7 +15,7 @@ The spectral fitting tools include:
 - ``lvm_gaussfit.py`` - Fit standard emission lines across an RSS file
 - ``lvm_snrfit.py`` - Fit the Mappings-model line set expected in SNRs,
   jointly for lines too close together to fit independently
-- ``sky_gaussfit.py`` - Fit nebular and airglow lines fiber-by-fiber in SFrame files
+- ``sky_gaussfit.py`` - Fit nebular and airglow lines fiber-by-fiber in SFrame (or CFrame) files
 - ``lvm_line_profile.py`` - Compare Gaussian vs Moffat airglow line profiles on raw sky spectra
 - ``lvm_double.py`` - Fit single or double Gaussian profiles to a line
 - ``lvm_triple.py`` - Fit up to triple Gaussian profiles
@@ -301,6 +301,13 @@ fitter for individual spectra or RSS files, ``sky_gaussfit.py`` is tuned
 for survey-scale fiber-by-fiber analysis of SFrame data and includes a
 comprehensive airglow line set for monitoring sky-subtraction residuals.
 
+Run on an **lvmCFrame** (before sky subtraction) instead, the airglow-line
+fits measure the raw sky in every fiber; since the sky is essentially
+uniform over the IFU, their fiber-to-fiber variation measures the
+instrument's flatness.  That is the first step of the sky-flatness
+workflow (``SkyLineFlatness.py``; see Instrument Flatness in
+:doc:`data_quality`).
+
 **Usage**::
 
     sky_gaussfit.py [-lmc] [-smc] [-v vel] [-out root] [-np nproc] filename [filename ...]
@@ -325,8 +332,9 @@ comprehensive airglow line set for monitoring sky-subtraction residuals.
 **Arguments:**
 
 filename
-    One or more SFrame FITS files.  ASCII spectrum files with WAVE and FLUX
-    columns are also accepted (processed via ``do_individual``).
+    One or more SFrame (or CFrame) FITS files.  ASCII spectrum files with
+    WAVE and FLUX columns are also accepted (processed via
+    ``do_individual``).
 
 **Lines fitted:**
 
@@ -402,12 +410,20 @@ velocity-shifted.
 
 **Output:**
 
-When the input is an SFrame FITS file, the output is an ASCII fixed-width
-table (one row per successfully fit fiber) with columns covering the fit
-parameters (flux, wave, fwhm, back, rmse) for each line together with
-fiberid, ra, and dec.  The output filename defaults to the input filename
-with ``.fits`` replaced by ``.txt``, or ``<root>.txt`` if ``-out`` is
-supplied.
+When the input is an SFrame (or CFrame) FITS file, the output is an ASCII
+fixed-width table, one row per successfully fit fiber, with columns:
+
+- ``flux_<line>``, ``eflux_<line>``, ``wave_<line>``, ``ewave_<line>``,
+  ``fwhm_<line>``, ``efwhm_<line>``, ``back_<line>``, ``eback_<line>``,
+  ``rmse_<line>``, ``chi2_<line>`` for each line (fluxes to 4 significant
+  figures);
+- ``fiberid``, ``ra``, ``dec``, ``spectrographid`` for the fiber;
+- ``exposure``, ``mjd``, ``tile_id`` of the input file (the same in every
+  row), so a table identifies its own exposure without relying on its
+  filename.
+
+The output filename defaults to the input filename with ``.fits``
+replaced by ``.txt``, or ``<root>.txt`` if ``-out`` is supplied.
 
 When the input is one or more ASCII spectrum files, output is written to
 ``Gauss_<stem>.txt`` (single file) or ``Gauss_<root>.txt`` (multiple files).
@@ -430,6 +446,9 @@ parallelism for debugging.
 
     # Fit individual ASCII spectra (no velocity shift)
     sky_gaussfit.py spectrum1.txt spectrum2.txt
+
+    # Fit the raw (un-subtracted) sky lines in a CFrame, for SkyLineFlatness.py
+    sky_gaussfit.py -np 8 -out skyfit_CF_14405 lvmCFrame-00014405.fits
 
 
 Spatial maps of the per-fiber fit results (wavelength residuals, flux

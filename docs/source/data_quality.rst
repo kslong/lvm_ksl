@@ -18,6 +18,10 @@ what they actually check rather than listed alphabetically:
 - **Sky subtraction** — how well the subtracted sky matches what was
   actually there, both spectroscopically and fiber-by-fiber
   (``eval_sky.py``, ``plot_sky_gaussfit.py``).
+- **Instrument flatness** — how uniform the raw sky-line flux is from
+  fiber to fiber and spectrograph to spectrograph before sky subtraction,
+  and whether that pattern repeats between exposures (``sky_gaussfit.py``
+  on CFrames, ``SkyLineFlatness.py``; see Instrument Flatness below).
 - **Flux calibration** — how well calibrated standard-star spectra
   (STD/MOD methods) and Gaia-matched field stars (SCI method) agree
   with their Gaia reference spectra, and how well the three
@@ -466,6 +470,80 @@ Three PNG files saved to ``Figs_gaussfit_sky/``:
 
     # 3. Process many files at once (one PNG set per file)
     plot_sky_gaussfit.py lvmSFrame-*.txt
+
+Applied to ``sky_gaussfit.py`` fits of an **lvmCFrame** instead of an
+SFrame, the flux maps show the raw sky-line flux in every fiber, i.e. the
+instrument's fiber-to-fiber flatness rather than subtraction residuals.
+The fixed ±2 % colour range suits the bright lines (about 2 % rms fiber
+scatter); the faint OH lines are noise-dominated at that stretch.  To
+compare many exposures quantitatively, use ``SkyLineFlatness.py`` (see
+Instrument Flatness below).
+
+
+Instrument Flatness
+-------------------
+
+How uniform the instrument's response is across the science IFU.  The
+night sky is essentially uniform over the IFU, so in an lvmCFrame (before
+any sky subtraction) every science fiber should see the same airglow-line
+flux; fiber-to-fiber and spectrograph-to-spectrograph differences in that
+flux measure throughput and fiber-flat errors.  A pattern that repeats in
+every exposure is instrumental, not sky.
+
+**Typical workflow** (uses only lvmCFrame files)::
+
+    # 1. Fit the airglow lines in every science fiber of each CFrame
+    #    (one table per exposure; the tables carry their own exposure
+    #    and spectrograph columns)
+    sky_gaussfit.py -np 8 -out skyfit_CF_14405 lvmCFrame-00014405.fits
+
+    # 2. Optionally map each exposure's fiber-to-fiber pattern
+    plot_sky_gaussfit.py skyfit_CF_14405.txt
+
+    # 3. Compare the exposures: spectrograph offsets, and how
+    #    reproducible the fiber pattern is
+    SkyLineFlatness.py skyfit_CF_*.txt
+
+``sky_gaussfit.py`` is documented in :doc:`spectral_fitting_local`, and
+``plot_sky_gaussfit.py`` under Sky Subtraction above.
+
+SkyLineFlatness.py — Sky-Line Flatness Across Exposures
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Normalizes each line's per-fiber flux by the exposure's IFU median and
+reports (a) each spectrograph's median ratio per exposure, and (b) how
+reproducible the fiber-by-fiber pattern is: the Spearman correlation of
+each exposure's pattern with the median of all the others, and the
+fraction of the fiber-to-fiber variance common to every exposure.
+Writes ``<root>_spec.txt``, ``<root>_expo.txt`` and ``<root>.png``.
+
+**Command line usage**::
+
+    SkyLineFlatness.py [-h] [-lines L] [-clip lo hi] [-out ROOT] fitfile [fitfile ...]
+
+The fit files must come from ``sky_gaussfit.py`` run on CFrames (260930
+or later, so that they contain the ``spectrographid`` and ``exposure``
+columns).  See the script's ``-h`` for the options.
+
+.. figure:: images/SkyLineFlatness.png
+   :width: 100%
+   :alt: SkyLineFlatness.py output: per-spectrograph sky-line ratios and fiber-pattern correlations for 21 exposures
+
+   Example ``SkyLineFlatness.py`` output for 21 exposures in and near Vela
+   (9083-9091 on MJD 60288; 14350-16998 on MJD 60385-60426), made
+   260930.  Top two panels: each spectrograph's median sky-line flux
+   relative to the whole IFU, for the b/r-arm lines and the z-arm lines
+   (circle = sp1, square = sp2, triangle = sp3; color = line).  Bottom:
+   Spearman correlation between each exposure's per-fiber sky-line
+   pattern and the median pattern of all the other exposures.
+
+On these 21 exposures, spanning 4.5 months, the bright sky lines vary by
+about 2% (rms) from fiber to fiber, most of it the same pattern in every
+exposure, and the three spectrographs differ by 1-3% in a way that
+depends on arm (b/r: sp1 about +1.5%, sp3 about -1.5%; z: sp2 about
+-1.5%), stable to a few tenths of a percent.
+
+**See Also:** :doc:`api/SkyLineFlatness/index`, :doc:`api/sky_gaussfit/index`
 
 
 Flux Calibration

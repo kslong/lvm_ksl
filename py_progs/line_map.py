@@ -42,6 +42,9 @@ History::
         fixed an out_labble typo that crashed the default (continuum-
         subtracted) mode, and the docstring now gives the real flag,
         -band.  Verified on exposure 14405.
+    260930 ksl An SFrame is now mapped as given (sky-subtracted), via
+        get_tel_data(..., use_cframe=False); since 260913 the data had
+        silently come from the matching CFrame.
 '''
 
 
@@ -152,7 +155,7 @@ def doit(filename,out_label='',wrange=[6560,6566],
         posang=0
     
     # Read fibermap and get x,y coordinates of fibers
-    sci_data = get_tel_data(filename, 'Sci')
+    sci_data = get_tel_data(filename, 'Sci', use_cframe=False)
     if sci_data is None:
         print('Error: could not retrieve Sci data from %s' % filename)
         return

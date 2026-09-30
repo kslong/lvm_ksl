@@ -22,9 +22,10 @@ Command line usage (if any):
                 are resolved per-exposure from the header's
                 SCI_SKYE_SEP/SCI_SKYW_SEP separations.
 
-    filename    an lvmCFrame or lvmSFrame FITS file. An SFrame path is
-                transparently swapped for the matching CFrame, since the
-                per-telescope FLUX/IVAR/MASK/LSF data live there.
+    filename    an lvmCFrame or lvmSFrame FITS file. From the command
+                line an SFrame path is swapped for the matching CFrame
+                (the unsubtracted data); from Python, get_tel_data(...,
+                use_cframe=False) reads the file as given.
 
     Options::
 
@@ -85,6 +86,11 @@ History::
         SKY_EAST/SKY_WEST/SKY_EAST_IVAR/SKY_WEST_IVAR broadcast arrays
         for the Sci selection, needed by SummarizeCframe.py's
         get_med_spec()/get_fiber_spec() and QualCFrame.py/QualSFrame.py.
+    260930 ksl Added use_cframe to get_tel_data() (default True, the old
+        behavior).  The unconditional SFrame->CFrame swap had made
+        quick_map/kslmap/line_map -- and so QualSFrame.py's images --
+        show unsubtracted CFrame data for any SFrame since 260913; those
+        scripts now pass use_cframe=False.
 '''
 
 import sys
@@ -123,11 +129,13 @@ def _select_fibers(xtab, telescope):
     return ztab[ztab['telescope'] == telescope]
 
 
-def get_tel_data(filename, telescope='Sci', fiberid=None, include_sky=False):
+def get_tel_data(filename, telescope='Sci', fiberid=None, include_sky=False,
+                 use_cframe=True):
     '''
-    Read one raw lvmCFrame (or lvmSFrame, transparently swapped to the
-    matching CFrame) and return FLUX/IVAR/MASK/LSF/SLITMAP for exactly
-    the requested telescope -- nothing else, unless include_sky is set.
+    Read one raw lvmCFrame (or lvmSFrame -- by default swapped to the
+    matching CFrame, see use_cframe) and return FLUX/IVAR/MASK/LSF/SLITMAP
+    for exactly the requested telescope -- nothing else, unless
+    include_sky is set.
 
     Parameters:
         filename: str
@@ -146,6 +154,14 @@ def get_tel_data(filename, telescope='Sci', fiberid=None, include_sky=False):
             valid when telescope resolves to 'Sci'; otherwise an error is
             printed and None is returned, since those arrays don't mean
             anything relative to SkyE/SkyW's own fibers.
+        use_cframe: bool
+            If True (default), a filename containing "SFrame" is replaced
+            by the matching CFrame, so the unsubtracted data are returned.
+            If False, the file is read exactly as given -- e.g. the
+            sky-subtracted FLUX of an lvmSFrame, or of an SFrame-layout
+            file written by another sky-subtraction method.  The map
+            scripts (quick_map/kslmap/line_map) use False, so a map of an
+            SFrame shows sky-subtracted data.
 
     Returns::
 
@@ -164,7 +180,7 @@ def get_tel_data(filename, telescope='Sci', fiberid=None, include_sky=False):
             skye_flux, skye_ivar, skyw_flux, skyw_ivar : 2-D arrays,
                              only present if include_sky was True
     '''
-    if filename.count('SFrame'):
+    if use_cframe and filename.count('SFrame'):
         filename = filename.replace('SFrame', 'CFrame')
 
     try:

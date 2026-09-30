@@ -45,6 +45,9 @@ History::
         exists, now falling back to SCIRA/SCIDEC/SCIPA; docstring now
         gives the real flag, -band, not -image_type.  Verified on 14405
         against an explicit per-fiber calculation.
+    260930 ksl An SFrame is now mapped as given (sky-subtracted), via
+        get_tel_data(..., use_cframe=False); since 260913 the data had
+        silently come from the matching CFrame.
 '''
 
 
@@ -188,7 +191,7 @@ def doit(filename,wrange=[6560,6566], out_label='',
             posang = rss['PRIMARY'].header.get('SCIPA',0)
     
     # Read fibermap and get x,y coordinates of fibers
-    sci_data = get_tel_data(xname, 'Sci')
+    sci_data = get_tel_data(xname, 'Sci', use_cframe=False)
     if sci_data is None:
         print('Error: could not retrieve Sci data from %s' % xname)
         return

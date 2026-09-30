@@ -94,6 +94,10 @@ History::
         fiber, gaia_id) triples keyed by the true slot number.
     260907 ksl Updated a docstring reference for QuickLook.py's rename
         to QualSFrame.py -- no functional change.
+    260930 ksl plot_diagnostic_line_panels() gains optional noise= (draws
+        the noise-only 10-90 percentile range around the median) and
+        titles= (extra per-panel title text); default behavior, and so
+        QualCFrame.py, unchanged.
 
 '''
 
@@ -391,7 +395,7 @@ DIAGNOSTIC_LINES = [
 LINE_WINDOW_HALF_WIDTH = 50.0  # Angstrom, +/- around each line center -- wide enough to show line + local continuum
 
 
-def plot_diagnostic_line_panels(axs, wav, band_flux, overlays=None, refline=None):
+def plot_diagnostic_line_panels(axs, wav, band_flux, overlays=None, refline=None, noise=None, titles=None):
     '''
     Fill in a 2x3 (or shorter) grid of axes, one per DIAGNOSTIC_LINES
     window, each showing the 10th/50th/90th percentile band of
@@ -412,6 +416,14 @@ def plot_diagnostic_line_panels(axs, wav, band_flux, overlays=None, refline=None
     sky-subtraction-residual check. Left None (no y-limit override,
     matplotlib autoscales) for the CFrame's field-brightness check,
     which isn't residual-shaped and has no natural zero point.
+
+    noise: optional 1-D per-pixel noise sigma (e.g. the median over fibers
+    of 1/sqrt(IVAR)); draws the 10-90 percentile range noise alone would
+    give around the median (median +/- 1.2816 sigma) as dashed lines, so
+    a grey band wider than it shows real fiber-to-fiber differences.
+
+    titles: optional list of extra text appended (on a second line) to
+    each panel's title.
 
     Only fills axs[:len(DIAGNOSTIC_LINES)]; any extra axes are left
     alone for the caller to hide or reuse.
@@ -435,6 +447,10 @@ def plot_diagnostic_line_panels(axs, wav, band_flux, overlays=None, refline=None
 
         ax.fill_between(xwav, p10, p90, color='0.85', label='field 10-90%ile' if i == 0 else None)
         ax.plot(xwav, p50, color='k', lw=1.5, label='field median' if i == 0 else None)
+        if noise is not None:
+            nz = 1.2816 * np.asarray(noise)[idx]
+            ax.plot(xwav, p50 + nz, color='#1f3b99', ls='--', lw=1, label='noise-only 10-90%' if i == 0 else None)
+            ax.plot(xwav, p50 - nz, color='#1f3b99', ls='--', lw=1)
 
         overlay_specs = []
         for label, spec, color in overlays:
@@ -468,7 +484,10 @@ def plot_diagnostic_line_panels(axs, wav, band_flux, overlays=None, refline=None
                 half = max(np.nanmax(np.abs(combined)), abs(refline) * 1.2)
                 ax.set_ylim(-half, half)
 
-        ax.set_title('%s (%.0f A)' % (name, wl))
+        if titles is not None and i < len(titles) and titles[i]:
+            ax.set_title('%s (%.0f A)\n%s' % (name, wl, titles[i]), fontsize=9)
+        else:
+            ax.set_title('%s (%.0f A)' % (name, wl))
         if i % ncols == 0:
             ax.set_ylabel('FLUX')
         if i >= len(DIAGNOSTIC_LINES) - ncols:

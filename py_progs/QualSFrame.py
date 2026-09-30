@@ -176,7 +176,12 @@ History::
         New "Continuum Subtraction Quality" section (eval_continuum):
         per-arm continuum residual in line-free pixels (median, scatter,
         % of sky continuum, vs MW 5 sigma, plane-fit change across the
-        field), the step at the b/r and r/z junctions, and per-arm maps.  The new maps use the other images' hot colour map and
+        field), the step at the b/r and r/z junctions, and per-arm maps.
+        Cutouts now show the noise-only 10-90 percentile range (dashed,
+        from the IVAR) so real fiber-to-fiber scatter can be told from
+        noise; new continuum-removed version of the six line-region
+        panels (eval_line_regions_cont_removed), titled with the spread
+        of the per-fiber continuum levels vs the noise-only spread.  The new maps use the other images' hot colour map and
         5-95 percentile stretch.
         plot_fits_image() now draws on WCS axes: its RA/Dec tick labels
         had been interpolated linearly between two image corners, which
@@ -746,6 +751,74 @@ def eval_continuum(filename='data/lvmSFrame-00011061.fits',outroot='test'):
 
 
 
+
+# nebular lines inside each DIAGNOSTIC_LINES window, excluded (+-8 A) when
+# estimating a fiber's local continuum in that window
+CONT_REMOVED_LINES=[3726.03,3728.82,4861.33,4958.91,5006.84,6548.05,6562.80,6583.45,6716.44,6730.82,9068.6,9530.6]
+
+
+def eval_line_regions_cont_removed(filename='data/lvmSFrame-00011061.fits',outroot='test'):
+    '''
+    The science figure's six diagnostic line windows again, but with each
+    fiber's local continuum (its median over the window, excluding +-8 A
+    around the nebular lines) removed first, so the grey 10-90 percentile
+    band shows only line-shaped structure plus noise.  Each panel title
+    gives the 10-90 percentile spread of the per-fiber continuum levels
+    that were removed, and the spread noise alone would give; the latter
+    allows for the noise correlation between adjacent pixels (from
+    resampling), measured from the data, since a continuum level is an
+    average over many pixels.  The noise-only 10-90 percentile range
+    around the median is drawn as dashed lines.
+
+    Returns the figure name.
+    '''
+    x=fits.open(filename)
+    xtab=Table(x['SLITMAP'].data)
+    sci=scifib(xtab,select='science',telescope='Sci')
+    rows=sci['fiberid']-1
+    wav=np.asarray(x['WAVE'].data,dtype=float)
+    bad=x['MASK'].data[rows]!=0
+    flux=np.where(bad,np.nan,x['FLUX'].data[rows]).astype(float)
+    ivar=np.where(bad,np.nan,x['IVAR'].data[rows]).astype(float)
+    sigma=np.where(ivar>0,1/np.sqrt(ivar),np.nan)
+    noise=np.nanmedian(sigma,axis=0)
+
+    near_line=np.min(np.abs(wav[:,None]-np.array(CONT_REMOVED_LINES)[None,:]),axis=1)<=8
+    removed=np.full_like(flux,np.nan)
+    titles=[]
+    with np.errstate(all='ignore'):
+        for name,wl,_ in eval_standard.DIAGNOSTIC_LINES:
+            idx=np.abs(wav-wl)<eval_standard.LINE_WINDOW_HALF_WIDTH
+            cpix=idx&~near_line
+            cont=np.nanmedian(flux[:,cpix],axis=1)
+            removed[:,idx]=flux[:,idx]-cont[:,None]
+            # noise on a fiber's continuum level: pixel noise / sqrt(N), inflated for the
+            # adjacent-pixel correlation rho: variance of a mean of an AR(1) series ~ (1+rho)/(1-rho)
+            z=(flux[:,cpix]-cont[:,None])/sigma[:,cpix]
+            rho=np.nanmedian([np.corrcoef(v[np.isfinite(v)][:-1],v[np.isfinite(v)][1:])[0,1]
+                              for v in z[::10] if np.isfinite(v).sum()>20])
+            rho=min(max(rho,0),0.9)
+            ncp=cpix.sum()
+            cnoise=np.nanmedian(sigma[:,cpix])/np.sqrt(ncp)*np.sqrt((1+rho)/(1-rho))*1.2533
+            spread=np.nanpercentile(cont,90)-np.nanpercentile(cont,10)
+            titles.append('continuum 10-90%%: %.1e (noise %.1e)' % (spread,2*1.2816*cnoise))
+
+    location='./figs_qual/'
+    if os.path.isdir(location)==False:
+        os.mkdir(location)
+    if outroot=='':
+        outroot='test'
+    figname=location+outroot+'.lines_cont_removed.png'
+    fig,axes=plt.subplots(2,3,figsize=(12,7.4))
+    eval_standard.plot_diagnostic_line_panels(axes.flat,wav,removed,refline=MW_5SIGMA,noise=noise,titles=titles)
+    axes.flat[0].legend(fontsize=7,loc='best')
+    fig.tight_layout()
+    fig.savefig(figname)
+    plt.close(fig)
+    return figname
+
+
+
 def eval_qual_sframe(filename='data/lvmSFrame-00011061.fits',ymin=-0.2e-13,ymax=1e-13,xmin=3600,xmax=9500,outroot=''):
     '''
     Provide a standard plot for looking at how well the sky subtraction has worked overall
@@ -861,7 +934,9 @@ def eval_qual_sframe(filename='data/lvmSFrame-00011061.fits',ymin=-0.2e-13,ymax=
     # (pre-subtraction) field brightness to the SKY_EAST/SKY_WEST models,
     # which don't exist as SFrame extensions once the sky is subtracted.
     line_axs = [fig.add_subplot(gs[3 + i // 3, i % 3]) for i in range(6)]
-    eval_standard.plot_diagnostic_line_panels(line_axs, wav, sci_flux, refline=MW_5SIGMA)
+    sci_ivar=np.ma.masked_array(x['IVAR'].data[science_fibers['fiberid']-1],sci_mask)
+    sci_noise=np.ma.median(1/np.ma.sqrt(np.ma.masked_less_equal(sci_ivar,0)),axis=0).filled(np.nan)
+    eval_standard.plot_diagnostic_line_panels(line_axs, wav, sci_flux, refline=MW_5SIGMA, noise=sci_noise)
     line_axs[0].legend(fontsize=8, loc='best')
 
     plt.tight_layout()
@@ -1300,7 +1375,8 @@ def eval_sky_lines(filename='data/lvmSFrame-00011061.fits',outroot='test'):
             res['integral'][i]=np.nansum(r,axis=1)*dw/total
             red=wav[win]>line
             res['asym'][i]=(np.nansum(r[:,red],axis=1)-np.nansum(r[:,~red],axis=1))*dw/total
-            profiles.append((wav[win]-line,np.nanpercentile(r/peak,[10,50,90],axis=0),sky_line/peak))
+            noise=np.nanmedian(np.where(ivar[:,win]>0,1/np.sqrt(ivar[:,win]),np.nan),axis=0)/peak
+            profiles.append((wav[win]-line,np.nanpercentile(r/peak,[10,50,90],axis=0),sky_line/peak,noise))
 
     def _rstd(a):
         a=a[np.isfinite(a)]
@@ -1332,9 +1408,11 @@ def eval_sky_lines(filename='data/lvmSFrame-00011061.fits',outroot='test'):
     ncol=4
     nrow=int(np.ceil(len(SKYLINE_CHECK)/ncol))
     fig,axes=plt.subplots(nrow,ncol,figsize=(16,4*nrow),sharey=True)
-    for ax,line,(dx,pct,shape) in zip(axes.flat,SKYLINE_CHECK,profiles):
+    for ax,line,(dx,pct,shape,noise) in zip(axes.flat,SKYLINE_CHECK,profiles):
         ax.fill_between(dx,pct[0],pct[2],color='C0',alpha=0.3,label='10-90%')
         ax.plot(dx,pct[1],color='C0',label='median')
+        ax.plot(dx,pct[1]+1.2816*noise,color='#1f3b99',ls='--',lw=1,label='noise-only 10-90%')
+        ax.plot(dx,pct[1]-1.2816*noise,color='#1f3b99',ls='--',lw=1)
         ax.plot(dx,0.05*shape,'k:',label='5% of sky line')
         ax.axhline(0,color='orange',lw=1)
         ax.set_title('%.2f' % line+('' if line not in SKYLINE_SOURCE else '  (also nebular)'))
@@ -1372,6 +1450,16 @@ def eval_sky_lines(filename='data/lvmSFrame-00011061.fits',outroot='test'):
     fig.savefig(map_name)
     plt.close(fig)
     return table,prof_name,map_name
+
+cont_removed_comment='''
+The same six line regions as the bottom panels above, but with each fiber's own local continuum
+removed first (its median over the window, excluding +-8 A around the nebular lines).  The grey
+10-90 percentile band therefore no longer includes fiber-to-fiber continuum differences; those are
+summarized in each panel title as the 10-90 percentile spread of the continuum levels removed,
+next to the spread that noise alone would give.  In both figures the dashed blue lines show the
+10-90 percentile range that noise alone would produce around the median (from the IVAR): where the
+grey band is wider than the dashed lines, the fibers really differ.
+'''
 
 plotly_comment='''
 Interactive plot (drag to zoom, double-click to reset, click a legend entry to hide it): the median
@@ -1460,7 +1548,7 @@ scatter; "asymmetry", red half minus blue half of the residual (a wavelength off
 antisymmetric residual).  [OI]6300 is also emitted by shocked gas, so it is listed but left out of
 the summary row and the maps.  The profile plot shows the median residual and its 10-90 percentile
 range across fibers at each line, on a common scale, with 5% of the sky line (dotted) for
-reference: a symmetric bump or dip indicates a throughput mismatch, an S-shape a wavelength offset,
+reference, and the 10-90 percentile range noise alone would give (dashed): a symmetric bump or dip indicates a throughput mismatch, an S-shape a wavelength offset,
 and a W or M shape a difference in line width.  The maps show each fiber's median rms and median
 integrated residual over the sky-only lines.
 '''
@@ -1501,6 +1589,8 @@ def make_html(filename='data/lvmSFrame-00011061.fits', outroot=''):
     figname,sky_figname= eval_qual_sframe(filename,ymin=-0.2e-13,ymax=1e-13,xmin=3600,xmax=9500)
 
     string+=xhtml.image('%s' % (figname),width=900,height=1500)
+    string+=xhtml.paragraph(cont_removed_comment)
+    string+=xhtml.image('%s' % (eval_line_regions_cont_removed(filename,outroot)),width=900,height=555)
     string+=xhtml.hline()
     string+=xhtml.h2('SkyE and SkyW  Spectra')
     string+=sky_html

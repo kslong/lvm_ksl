@@ -837,7 +837,13 @@ filename
   percentile range, and the median total and sky on a log scale
   (``make_plotly_spectra``); then the static figure with fixed-scale
   panels and close-ups of the diagnostic line regions
-  (``eval_qual_sframe``).
+  (``eval_qual_sframe``), and the same close-ups with each fiber's
+  local continuum removed, titled with the fiber-to-fiber spread of the
+  continuum levels against the spread noise alone would give
+  (``eval_line_regions_cont_removed``).  In all the close-ups, and in the
+  sky-line residual profiles below, dashed lines show the 10-90
+  percentile range that noise alone (from the IVAR) would give, so a
+  grey band wider than them indicates real differences between fibers.
 - *SkyE and SkyW Spectra* — the same, interactive and static, for the
   two sky telescopes, including the difference of their total spectra.
 - *Line Emission in the Subtracted Sky* — [OII]3727, Hβ, [OIII]5007, Hα,

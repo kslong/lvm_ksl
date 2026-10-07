@@ -181,7 +181,9 @@ e.g. ``XCframe_1.3.2_10000_20000_10_50.fits``. In ``-by fiber`` mode a
 runs over the same exposure range don't overwrite each other. An explicit
 ``-out`` filename is used as given in either mode. In ``-by fiber`` mode,
 ``drp_all`` also gains per-exposure columns recording which fibers were
-selected (fiber IDs, mean position, continuum flux, etc.).
+selected (fiber IDs, mean position, continuum flux, etc.).  ``-by fiber``
+XCframe files are the input to the sky-model training and comparison
+tools described in :doc:`sky_models`.
 
 **Use cases:**
 

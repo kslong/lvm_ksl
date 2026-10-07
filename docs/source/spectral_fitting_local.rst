@@ -465,6 +465,7 @@ but on **raw, pre-subtraction** sky spectra rather than sky-subtracted
 science fibers — the goal is to characterize the true instrumental line
 shape directly, independent of any sky-subtraction algorithm or the
 PALACE decomposer used by ``SkySubDev2.py`` (see :doc:`sky_subtraction`).
+The open LSF question this bears on is summarized in :doc:`sky_models`.
 
 Fully standalone: it imports nothing from any other ``py_progs`` script
 (only external packages — numpy, astropy, matplotlib, scipy, lmfit).

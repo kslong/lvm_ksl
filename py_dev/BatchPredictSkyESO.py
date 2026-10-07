@@ -91,7 +91,7 @@ Description:
     resumming. Before this change, the ESO candidate was compared
     unconvolved against LVM data while the MLP candidate already had
     this LSF reconstruction applied -- see docs/source/
-    sky_model_landscape.rst's "Current Open Problem" section for the
+    sky_models.rst's "Open Questions" section for the
     fuller context (the ESO local engine's own internal convolution is
     a fixed, LVM-untuned ~0.4 A kernel, unrelated to this per-row step).
 
@@ -132,6 +132,8 @@ History::
         script's -n_workers had matched BatchPredictSky.py instead, a
         second, less-precise convention that had crept in alongside it).
         -n's default changed from 20 to all rows in fits_file.
+    261007  ksl  Doc reference updated for the rename of
+        sky_model_landscape.rst to sky_models.rst.
 
 '''
 

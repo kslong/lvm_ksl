@@ -9,6 +9,9 @@ the sky telescopes (SkyCorr, continuum fits, PALACE, the ESO Sky Model)
 and ones that take the sky from the science IFU itself.
 
 This page describes the available sky subtraction and sky modeling tools.
+How the physically based sky models -- the ESO Sky Model, PALACE, and the
+semi-empirical machine-learning model built on PALACE -- relate to each
+other is explained in :doc:`sky_models`.
 Measuring how uniform the sky lines are across the IFU (an instrumental
 flat-field question rather than a sky-subtraction one) is covered in
 :doc:`data_quality`.
@@ -304,7 +307,8 @@ Sky Modeling
 
 These tools generate theoretical sky spectra using the ESO Sky Model and
 the PALACE airglow model, which can be compared to observed sky spectra
-for validation.
+for validation.  See :doc:`sky_models` for an overview of these models
+and of the semi-empirical machine-learning approach built on PALACE.
 
 EsoSkyObs.py
 ^^^^^^^^^^^^
@@ -585,7 +589,8 @@ These tools support the development of improved sky subtraction by identifying
 sky-line-free wavelength windows for continuum fitting and by assembling
 stacked sky spectra from the LVM sky telescopes.  Together they are intended
 to characterise the sky background well enough to constrain physical models
-of the airglow emission.
+of the airglow emission.  What the PALACE-based decomposition used here
+fits, and how its versions differ, is described in :doc:`sky_models`.
 
 XSkySepIvan.py
 ^^^^^^^^^^^^^^
@@ -1392,6 +1397,9 @@ same physically-motivated, per-row-LSF-refined decomposition
 ``DecomposeCleanSky.py`` uses — see "Nebular-Line-Based Method
 Evaluation" below) for the continuum/line separation, with the near/far
 recipe and bisection scale search otherwise identical to SkySubDev1.py.
+The decomposition is imported from the ``lvmsky`` repository; see
+:doc:`sky_models` for what it fits and which ``lvmsky`` version is in
+use.
 
 **Usage**::
 
@@ -2283,7 +2291,7 @@ Decomposes one or more of FLUX (science fiber), SKY_EAST, and SKY_WEST
 from an XCframe summary file into a nebula-free "clean sky" model, using
 ``sky_decomp.lsf_surface_iterative.SkyDecompLSFSurfaceIterative`` with the
 known nebular emission lines excluded from the fit ("mask-and-wrap").
-Lives in ``py_dev/`` (not Sphinx-API-documented — see :doc:`sky_model_landscape`
+Lives in ``py_dev/`` (not Sphinx-API-documented — see :doc:`sky_models`
 for that tier's conventions) since it live-imports the ``lvmsky`` repo's
 ``skysub`` package, the same pattern as ``py_dev/PredictSky.py``.
 
@@ -3407,6 +3415,8 @@ Notes
 See Also
 --------
 
+- :doc:`sky_models` - The physically based sky models (ESO Sky Model,
+  PALACE, semi-empirical machine learning) and how they are compared
 - :doc:`summarize` - Tools for evaluating sky subtraction across many exposures
 - :doc:`api/eval_sky/index` - API documentation
 - :doc:`api/SubstituteSky/index` - API documentation

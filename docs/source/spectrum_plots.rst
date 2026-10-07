@@ -33,7 +33,7 @@ scaling math is ported line-for-line.
 
 **Sky-line masking (** ``-mask`` **/** ``-mask_file`` **):** highlights
 pixels flagged as sky-line-contaminated in ``data/sky_mask.fits`` (see
-``palace_make_mask.py``, :doc:`sky_subtraction`) in light grey. Off by
+``palace_make_mask.py``, :doc:`sky_continuum`) in light grey. Off by
 default.
 
 **Y-axis scaling** (mutually exclusive; last one given wins):
@@ -150,7 +150,7 @@ view it, just a browser.
 -sky_lines
     Overlay a second, independent line list of strong sky lines (default
     ``data/sky_lines.txt``, as produced by ``palace_make_mask.py``'s
-    ``--line-output`` -- see :doc:`sky_subtraction`), drawn as blue tick
+    ``--line-output`` -- see :doc:`sky_continuum`), drawn as blue tick
     marks alongside the scientific ``-lines`` overlay (red). Unlike the
     scientific list, sky lines get no static text label -- only a tick
     mark and a hover tooltip (name + wavelength) -- since the point is to
@@ -235,7 +235,7 @@ See Also
   reference table for ``PlotSpecI.py``
 - :doc:`spectral_fitting_local` - ``GetSpec.py``/emission-line fitting tools
   that produce the spectra plotted here
-- :doc:`sky_subtraction` - ``palace_make_mask.py``, which produces
+- :doc:`sky_continuum` - ``palace_make_mask.py``, which produces
   ``data/sky_mask.fits`` (the ``-mask`` overlay) and
   ``data/sky_lines.txt`` (the ``-sky_lines`` overlay)
 - :doc:`visualization` - Spatial (RA/Dec) image maps, a different kind

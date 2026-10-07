@@ -21,7 +21,7 @@ data products:
 A sixth, drpall-driven script, ``SummarizeSciSky.py``, follows the same
 exposure-selection pattern as ``SummarizeCframe.py`` but computes a
 science-fiber-based sky estimate rather than a plain median spectrum; see
-:doc:`sky_subtraction` for its documentation, alongside its file-list-driven
+:doc:`sky_from_science` for its documentation, alongside its file-list-driven
 counterpart ``SkySubSci.py``.
 
 .. note::
@@ -127,7 +127,7 @@ of how the raw spectra (including sky) vary over time.
     window to FLUX, SKY_EAST, SKY_WEST, and LSF alike. This preserves a
     real, internally-consistent set of fibers instead of mixing fibers
     pixel-by-pixel. It reuses the same ranking/combination approach as
-    ``SkySubSci.py`` / ``SummarizeSciSky.py`` (see :doc:`sky_subtraction`).
+    ``SkySubSci.py`` / ``SummarizeSciSky.py`` (see :doc:`sky_from_science`).
 
 -navg N
     In ``-by fiber`` mode, the number of nearest-rank fibers combined per

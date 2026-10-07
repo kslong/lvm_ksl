@@ -363,7 +363,7 @@ Ha         6562.80  A   ha
 single-Gaussian fits to separate reliably; consumers needing a real
 [OII] doublet ratio should use ``fit_double_gaussian_to_spectrum``'s
 joint fit instead (see ``SkySubNebEval.fit_oii_doublet`` in
-:doc:`sky_subtraction` for the pattern).
+:doc:`sky_nebular_eval` for the pattern).
 
 ``resolve_nebular_lines(vel=0., coincidence_tol=3.0)`` splits this list
 into the subset safe to treat as genuinely nebular at a given systemic
@@ -375,8 +375,7 @@ Judged by center-to-center proximity (not fit-window overlap, which would
 also wrongly flag lines like ha/nii_a/nii_b just for sharing the same
 crowded red OH-forest region as a real, resolvable sky line) — see the
 function's own docstring for the full reasoning. Used by the sky/nebular-
-line separation tools in :doc:`sky_subtraction`'s "Nebular-Line-Based
-Method Evaluation" section, which share this line catalog and velocity
+line separation tools in :doc:`sky_nebular_eval`, which share this line catalog and velocity
 convention throughout.
 
 Airglow lines — fitted at fixed, unshifted wavelengths (ESO UVES atlas):
@@ -464,7 +463,7 @@ background) to the same 18 airglow lines used by ``sky_gaussfit.py``,
 but on **raw, pre-subtraction** sky spectra rather than sky-subtracted
 science fibers — the goal is to characterize the true instrumental line
 shape directly, independent of any sky-subtraction algorithm or the
-PALACE decomposer used by ``SkySubDev2.py`` (see :doc:`sky_subtraction`).
+PALACE decomposer used by ``SkySubDev2.py`` (see :doc:`sky_methods`).
 The open LSF question this bears on is summarized in :doc:`sky_models`.
 
 Fully standalone: it imports nothing from any other ``py_progs`` script
@@ -678,7 +677,7 @@ continuum-free residual for line measurement.
     ``palace_make_mask.py``-format FITS mask flagging sky-line-affected
     pixels (default: the vendored ``data/sky_mask.fits``, the same
     default ``PlotSpec.py``/``PlotSpecI.py`` use for their ``-mask``
-    option -- see :doc:`sky_subtraction`).
+    option -- see :doc:`sky_continuum`).
 
 -kstep N
     B-spline knot spacing in Angstroms (default 100).

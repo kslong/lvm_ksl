@@ -54,7 +54,7 @@ spectrum is a real test of the model at Las Campanas. ``EsoSkyObs.py``
 can run it with LCO or Paranal site parameters (altitude, pressure).
 
 **Tools in lvm_ksl** (all in ``py_progs/``, documented in
-:doc:`sky_subtraction`):
+:doc:`sky_model_tools` and :doc:`sky_methods`):
 
 - ``EsoSkyObs.py`` -- predict the sky for one pointing and time, with
   the MOON, ZODI, DIFFUSE and LINES components kept separate.
@@ -286,7 +286,7 @@ Two kinds of comparison are set up:
   file and write sky-subtracted spectra in a common layout, so they can
   be run through ``SkySubRun.py`` and compared with the DRP and the
   other methods using ``SkySub_eval.py`` and the nebular-line tools (see
-  :doc:`sky_subtraction`).
+  :doc:`sky_methods`, :doc:`sky_method_eval` and :doc:`sky_nebular_eval`).
 - **Sky prediction.** ``BatchPredictSky.py`` (semi-empirical model) and
   ``BatchPredictSkyESO.py`` (ESO Sky Model) both write the observed and
   predicted sky for the same exposures in one layout (WAVE, FLUX_OBS,

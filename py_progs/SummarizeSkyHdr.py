@@ -8,7 +8,9 @@ Synopsis:
 
     Summarize a fixed, hardwired list of raw acquisition/astrometry
     PRIMARY-header keywords (reported/commanded/adopted telescope
-    positions and sky field names -- see _KEYWORD_DEFS below) across
+    positions and sky field names -- see _KEYWORD_DEFS below), plus the
+    flux-calibration method and the precipitable water vapor (PWV) the
+    DRP used for its telluric correction, across
     many exposures selected from a drpall table, for diagnosing where in
     the DRP a sky telescope's position and name can end up disagreeing
     (see check_sky_positions.py, which found this disagreement from the
@@ -84,10 +86,18 @@ Notes:
     SkyPosKeywords.txt (not part of this repo) -- if that reference
     table changes, update _KEYWORD_DEFS here by hand to match, or pass
     -keywords to read an external table instead without editing this
-    script.  A keyword's definition ending in "[deg]" is treated as
-    numeric (missing/undefined -> NaN); anything else is treated as a
-    string (missing/undefined -> the literal string "None", matching
-    drpall's own placeholder convention).
+    script.  A keyword whose definition ends in a bracketed unit (e.g.
+    "[deg]", "[mm]") is treated as numeric (missing/undefined -> NaN);
+    anything else is treated as a string (missing/undefined -> the
+    literal string "None", matching drpall's own placeholder
+    convention).
+
+    PWV_MED/PWV_STD/FLUXCAL are included for training the lvmsky sky
+    model, whose telluric decomposition must use the same PWV the DRP
+    used.  The DRP measures PWV from the standard stars and applies a
+    telluric correction only when FLUXCAL is MOD; it writes -999.9 when
+    the PWV fit failed (kept as-is here, not converted to NaN), and in
+    that case a MOD reduction used its default of 15 mm.
 
     Some of these keywords (SCIASRC/SKYEASRC/SKYWASRC, the astrometry-
     source quality flags) are absent from older/some exposures' headers
@@ -120,6 +130,9 @@ History::
         this History section (was "History:" with wrapped continuation
         lines at inconsistent indentation).
     260919 ksl Default DRP version changed from 1.2.1 to 1.3.2.
+    261007 ksl Added PWV_MED, PWV_STD and FLUXCAL to the hardwired
+        keywords, for training the lvmsky sky model; any definition
+        ending in a bracketed unit (not only "[deg]") is now numeric.
 '''
 
 import sys
@@ -270,6 +283,11 @@ _KEYWORD_DEFS = [
     ('SKYWRA',   'SkyW telescope adopted RA [deg]'),
     ('SKYWDEC',  'SkyW telescope adopted Dec [deg]'),
     ('SKYWASRC', "Quality: source of SkyW astrometry - 'GDR coadd' or 'CMD position'"),
+    ('PWV_MED',  'Median standard-star PWV used for the telluric correction '
+                 '(-999.9 if failed) [mm]'),
+    ('PWV_STD',  'Std dev of the per-star PWV values (-999.9 if failed) [mm]'),
+    ('FLUXCAL',  'Flux calibration method (MOD, SCI or STD); telluric-corrected '
+                 'with PWV_MED only for MOD'),
 ]
 
 
@@ -281,9 +299,10 @@ def load_keyword_defs(keyword_file=None):
     fixed_width_two_line (keyword, definition) ascii table instead (e.g.
     an updated SkyPosKeywords.txt) without having to edit this script.
 
-    is_numeric is True when the definition ends in "[deg]" (the RA/Dec
-    keywords), False otherwise (the sky-field-name and
-    astrometry-source-quality keywords).
+    is_numeric is True when the definition ends in a bracketed unit
+    such as "[deg]" or "[mm]" (the RA/Dec and PWV keywords), False
+    otherwise (the sky-field-name, astrometry-source-quality and
+    FLUXCAL keywords).
     '''
     if keyword_file is None:
         pairs = _KEYWORD_DEFS
@@ -292,7 +311,8 @@ def load_keyword_defs(keyword_file=None):
         pairs = [(str(row['keyword']).strip(), str(row['definition']).strip())
                 for row in tab]
 
-    return [(kw, definition, definition.endswith('[deg]')) for kw, definition in pairs]
+    return [(kw, definition, re.search(r'\[[^\]]+\]$', definition) is not None)
+            for kw, definition in pairs]
 
 
 def read_header_keywords(filename, keyword_defs):

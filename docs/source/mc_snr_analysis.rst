@@ -82,16 +82,17 @@ arcminutes), which is approximately the radius of the LVM science IFU.
 Adjust this if your sources are large enough that a wider radius is
 appropriate, or smaller if you want only well-centred pointings.
 
-**Outputs**
+**Outputs** (``find_obs.py`` appends the run date, ``YYMMDD``, to the
+root name)
 
-- ``smc_snr_observed.matched.txt`` — **the observed file required by
+- ``smc_snr_observed.<YYMMDD>.matched.txt`` — **the observed file required by
   all subsequent steps.**  One row per observation-source pair,
   containing all source-catalog columns plus the drpall metadata
   (``expnum``, ``mjd``, ``exptime``, ``tileid``, ``location``) and
   the angular separation between the source and the pointing centre.
   Pass this file to ``rss_snap.py`` in step 1.
 
-- ``smc_snr_observed.sum.txt`` — one row per source with ``Nobs``
+- ``smc_snr_observed.<YYMMDD>.sum.txt`` — one row per source with ``Nobs``
   (number of matching exposures), ``TotExp`` (total integration time
   in seconds), and ``MedSep`` (median separation in arcseconds).
   Inspect this file first to check which sources have sufficient
@@ -99,7 +100,7 @@ appropriate, or smaller if you want only well-centred pointings.
 
 **Verification**
 
-- Open ``smc_snr_observed.sum.txt`` and confirm that the sources you
+- Open ``smc_snr_observed.<YYMMDD>.sum.txt`` and confirm that the sources you
   expect to have been observed show ``Nobs > 0`` and a ``TotExp``
   consistent with the number of visits to each field.
 - Sources with ``Nobs = 0`` have not been observed yet and will not
@@ -108,8 +109,8 @@ appropriate, or smaller if you want only well-centred pointings.
   arcseconds) and that no sources have unexpectedly large separations
   that might indicate a coordinate mismatch between the catalog and
   the drpall file.
-- If the output files already exist (from a previous run), choose a
-  different ``-root`` name; the script refuses to overwrite existing
+- If the output files already exist (from an earlier run the same
+  day), choose a different ``-root`` name; the script refuses to overwrite existing
   files.
 
 See :doc:`find_obs` for full documentation.
@@ -464,14 +465,14 @@ The preparation step and main workflow can be run in either order::
     find_obs.py -root smc_snr_observed -max 900 drpall-1.2.0.fits smc_snr_cotton24.txt
 
     # Inspect coverage before proceeding
-    more smc_snr_observed.sum.txt
+    more smc_snr_observed.<YYMMDD>.sum.txt
 
     # Preparation (independent): create per-source broadband image cutouts
     LSnap.py -size 10 -type ha  mcels_ha.fits  smc_snr_cotton24.txt
     LSnap.py -size 10 -type sii mcels_sii.fits smc_snr_cotton24.txt
 
     # Step 1: create snapshots, fit lines, make diagnostic plots
-    rss_snap.py -all smc_snr_observed.matched.txt
+    rss_snap.py -all smc_snr_observed.<YYMMDD>.matched.txt
 
     # Step 2: generate source + background annulus table
     GenAnnularBackground.py smc_snr_cotton24.txt

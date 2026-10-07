@@ -26,8 +26,9 @@ The ``source_catalog`` argument is an ASCII table with at least three
 columns: ``RA`` (degrees), ``Dec`` (degrees), and ``Source_name``.
 
 The ``-root outroot`` option sets the root name for output files.
-The default is ``results``, giving ``results.matched.txt`` and
-``results.sum.txt``.
+The current date (YYMMDD) is appended to the root, so with the default
+root ``results`` a run on 261005 gives ``results.261005.matched.txt``
+and ``results.261005.sum.txt``.
 
 The ``-max sep_arcsec`` option sets the cross-match radius in arcseconds.
 The default is 900 arcseconds (15 arcminutes), which corresponds roughly
@@ -55,11 +56,11 @@ the source and the overlapping pointings.
 
 Two output files are written in fixed-width ASCII format:
 
-- ``<root>.matched.txt``: All matched pairs, one row per
+- ``<root>.<YYMMDD>.matched.txt``: All matched pairs, one row per
   observation-source match, including all drpall columns and all
   source-catalog columns together with the angular separation.
 
-- ``<root>.sum.txt``: One row per unique source, reporting the source
+- ``<root>.<YYMMDD>.sum.txt``: One row per unique source, reporting the source
   name, the number of matching exposures (``Nobs``), the total
   accumulated exposure time in seconds (``TotExp``), and the median
   angular separation in arcseconds (``MedSep``).
@@ -88,8 +89,9 @@ The ``drpall_file`` argument may be either:
   exposure number is used instead, matching the FITS-loader
   convention.
 
-The routine will refuse to overwrite existing output files.  Use a
-different ``-root`` name if you want to rerun with different parameters.
+The routine will refuse to overwrite existing output files.  Since the
+date is part of the name, a rerun on a later day writes new files; to
+rerun on the same day, use a different ``-root`` name.
 
 The cross-match uses ``search_around_sky``, which considers all pairs
 within the match radius, not just the closest match.  A single exposure
@@ -102,11 +104,14 @@ History::
     260312 ksl  Coding begun
     260718 ksl  Added support for SummarizeData.py ascii observation
         summaries as an alternative to the drpall FITS file
+    261005 ksl  Output file names now include the date, e.g.
+        results.261005.matched.txt
 
 '''
 
 import sys
 import os
+from datetime import datetime
 import numpy as np
 from astropy.io import ascii, fits
 from astropy.table import Table, hstack
@@ -390,6 +395,7 @@ def steer(argv):
     drpall_file = positional[0]
     source_file = positional[1]
 
+    root = '%s.%s' % (root, datetime.now().strftime('%y%m%d'))
     obs_output = root + '.matched.txt'
     sum_output = root + '.sum.txt'
 

@@ -31,9 +31,10 @@ source is considered a match.  The match radius defaults to 900
 arcseconds (15 arcminutes), which is approximately the radius of the
 LVM science IFU.
 
-The script produces two output files:
+The script produces two output files, named with the run date
+(``YYMMDD``) appended to the root:
 
-``<root>.matched.txt``
+``<root>.<YYMMDD>.matched.txt``
     One row for every observation-source pair that satisfied the match
     criterion.  Contains all columns from the source catalog and the
     key observation columns (exposure number, MJD, exposure time, RA,
@@ -41,7 +42,7 @@ The script produces two output files:
     plus the angular separation in arcseconds between the source
     position and the pointing centre.
 
-``<root>.sum.txt``
+``<root>.<YYMMDD>.sum.txt``
     One row per unique source in the catalog, summarising how many
     exposures matched (``Nobs``), the total accumulated exposure time
     in seconds (``TotExp``), and the median angular separation in
@@ -120,10 +121,12 @@ source_catalog
     Print the full documentation and exit.
 
 -root outroot
-    Root name for output files.  Default is ``results``, which gives
-    ``results.matched.txt`` and ``results.sum.txt``.  The script
-    refuses to overwrite an existing file; use a different root name
-    to rerun with changed parameters.
+    Root name for output files.  The run date (``YYMMDD``) is
+    appended, so the default ``results`` gives, for a run on 261005,
+    ``results.261005.matched.txt`` and ``results.261005.sum.txt``.
+    The script refuses to overwrite an existing file; a rerun on a
+    later day writes new files, and to rerun on the same day with
+    changed parameters use a different root name.
 
 -max sep_arcsec
     Cross-match radius in arcseconds.  Default is 900.  Use a smaller
@@ -143,9 +146,9 @@ the default 900 arcsecond radius, and write results with the root name
 
     find_obs.py -root lmc drpall-1.2.0.fits lmc_catalog.txt
 
-This writes ``lmc.matched.txt`` (all matched pairs) and
-``lmc.sum.txt`` (one row per source with exposure counts and total
-integration time).
+This writes ``lmc.<YYMMDD>.matched.txt`` (all matched pairs) and
+``lmc.<YYMMDD>.sum.txt`` (one row per source with exposure counts and
+total integration time), where ``<YYMMDD>`` is the date of the run.
 
 Tighter match radius
 ^^^^^^^^^^^^^^^^^^^^
@@ -167,10 +170,10 @@ files::
     find_obs.py -root my_targets drpall-1.2.0.fits my_catalog.txt
 
     # Step 2: inspect the summary
-    more my_targets.sum.txt
+    more my_targets.<YYMMDD>.sum.txt
 
     # Step 3: retrieve the exposures for a source with good coverage
-    #         (exposure numbers are listed in my_targets.matched.txt)
+    #         (exposure numbers are listed in my_targets.<YYMMDD>.matched.txt)
     LocateReduced.py -cp 12345 12350
 
 

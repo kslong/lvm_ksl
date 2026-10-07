@@ -12,16 +12,20 @@ the scince fibers of a sky-subtracted LVM exposure
 
 Command line usage (if any):
 
-    usage: lvm_gaussfit.py --h] [-lmc] [-smc] [-v vel] [-stype SOURCE][-out root] filename ...
+    usage: lvm_gaussfit.py [-h] [-lmc] [-smc] [-v vel] [-stype SOURCE] [-plot] [-out root] filename ...
 
-    where
+    where filename is the name of an SFrame-compatible file or one or more txt files.
 
-    -h prient this tdocumeantiaon and fits
-    -lmc or -smc applies a velocity offset for fitting
-    -vel whatever applies a velocity offset that the user specifies
-    -stype SOURCE or BACK - used only for spectra that has been created as text files
-    -out root sets the rootname for the output file
-    filename is the a name of an SFrame compatiable file or one or more txt files
+    Options::
+
+        -h            print this help and exit
+        -lmc or -smc  applies the LMC (262 km/s) or SMC (146 km/s) velocity offset for fitting
+        -v vel        applies a velocity offset (km/s) that the user specifies
+        -stype SOURCE or BACK  used only for spectra that have been created as text files
+        -plot         for an SFrame-compatible file, saves a plot of the fits for each fiber
+                      as Gauss_dir/Fib<fiberid>.png (plots are always made for text files,
+                      in Gauss_plot/)
+        -out root     sets the rootname for the output file
 
 
 Description:
@@ -63,9 +67,11 @@ Primary routines:
 
 Notes:
 
-History:
+History::
 
-240604 ksl Coding begun
+    240604 ksl Coding begun
+    261007 ksl Docstring: document -plot, correct -vel to -v (the flag
+    steer() actually accepts), options listed under Options::
 
 '''
 

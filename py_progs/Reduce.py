@@ -441,7 +441,7 @@ def do_one(mjd,exp,clean=True,xcopy=True,get_only=False,force=False):
 
     if xcopy:
         print("Running LocateData and copying files on %s" % str(exp))
-        locate_data_process = subprocess.run(["LocateData.py", "-cp", str(exp), str(exp)])
+        locate_data_process = subprocess.run(["LocateData.py", "-cp", str(exp)])
 
         if locate_data_process.returncode == 0:
             print("LocateData.py executed successfully.")
@@ -560,10 +560,10 @@ def doit(mjd,first_exp,last_exp,clean=True,xcopy=False):
     
     if xcopy:
         print("Running LocateData and copying files")
-        locate_data_process = subprocess.run(["LocateData.py", "-cp", str(scani), str(scanf)])
+        locate_data_process = subprocess.run(["LocateData.py", "-cp", '%d-%d' % (scani,scanf)])
     else:
         print("Running LocateData w/o copying files")
-        locate_data_process = subprocess.run(["LocateData.py", str(scani), str(scanf)])
+        locate_data_process = subprocess.run(["LocateData.py", '%d-%d' % (scani,scanf)])
 
     if locate_data_process.returncode == 0:
         print("LocateData.py executed successfully.")

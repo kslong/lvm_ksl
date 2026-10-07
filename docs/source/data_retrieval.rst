@@ -191,11 +191,11 @@ LocateData.py
 ^^^^^^^^^^^^^
 
 Searches local directories to find calibrated LVM data files for a
-range of exposures.
+set of exposures.
 
 **Usage**::
 
-    LocateData.py [-h] [-cp] [-dir whatever] [-drp VERSION] [-CFrame] exp_start [exp_stop]
+    LocateData.py [-h] [-cp] [-link] [-dir whatever] [-drp VERSION] [-CFrame] exposures
 
 **Options:**
 
@@ -204,6 +204,9 @@ range of exposures.
 
 -cp
     Copy files to a local data directory.
+
+-link
+    Create symbolic links in the local data directory instead of copying.
 
 -dir path
     Alternative destination for copied files (implies -cp).
@@ -216,11 +219,14 @@ range of exposures.
 
 **Arguments:**
 
-exp_start
-    First exposure number to locate.
-
-exp_stop
-    Last exposure number (optional).
+exposures
+    One or more words specifying exposures, as in ``Reduce.py`` but with
+    no MJD needed: ``4155`` (one exposure), ``4155-4160`` (an inclusive
+    range), or ``4155,4157,4160`` (a list).  Any number of words may be
+    combined, e.g. ``4339 4420-4422``.  Words greater than 50000 are
+    taken to be MJDs and ignored, so a ``Reduce.py`` exposure string can
+    be reused as is.  Note that two bare numbers mean two exposures, not
+    a range.
 
 **Output:**
 
@@ -230,7 +236,10 @@ versions of a file exist, only the most recent is reported.
 **Example**::
 
     # Locate and copy SFrame files for exposures 4155-4160
-    LocateData.py -cp -drp 1.2.0 4155 4160
+    LocateData.py -cp -drp 1.2.0 4155-4160
+
+    # Locate and copy CFrame files for a non-contiguous set of exposures
+    LocateData.py -cp -CFrame 3476,3478,3480 5584-5589
 
 
 Typical Workflows
@@ -260,7 +269,7 @@ Finding Data Across Multiple MJDs
 ::
 
     # Locate all exposures in a range
-    LocateData.py -drp 1.2.0 10000 20000
+    LocateData.py -drp 1.2.0 10000-20000
 
     # The output file in xlog/ lists all found files
 

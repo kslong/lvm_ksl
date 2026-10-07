@@ -12,15 +12,27 @@ from series of LVM exposures
 
 Command line usage (if any):
 
-    usage: LocateData.py [-h] [-cp] [-link] [-dir whatever] [-drp 1.2.0] [-CFrame] exp_start [exp_stop]
+    usage: LocateData.py [-h] [-cp] [-link] [-dir whatever] [-drp 1.2.0] [-CFrame] exposures
 
-    where exp_start and exp_stop are LVM exposure numbers that one wishes to locate. If
-    exp_stop is not provided, a single exposure will be returned. -h prints out this help file.
-    -cp means not only to locate the files but to copy them to local data directory.
-    -link creates symbolic links in the local data directory instead of copying.
-    -dir whatever gives an alternative place to copy or link the data. Note that -dir implies -cp
-    even if it is not given. -drp 1.2.0 selects data from a specific drp run, e.g. 1.2.0.
-    -CFrame locates CFrame files instead of SFrame files, which is the default.
+    where exposures is one or more words specifying the LVM exposure numbers to
+    locate, interpreted as in Reduce.py (except that no MJD is needed):
+
+        4155            a single exposure
+        4155-4160       exposures 4155 through 4160 inclusive
+        4155,4157,4160  exposures 4155, 4157, and 4160
+
+    Any number of such words may be given, e.g. 4339 4420-4422 3476,3478,3480.
+    A word greater than 50000 is taken to be an MJD (as in a Reduce.py command
+    line) and is ignored, so the same exposure string can be used for both.
+
+    Options::
+
+        -h          print this help and exit
+        -cp         copy the located files to a local data directory
+        -link       create symbolic links in the local data directory instead of copying
+        -dir whatever  alternative place to copy or link the data (implies -cp)
+        -drp 1.2.0  select data from a specific drp run, e.g. 1.2.0
+        -CFrame     locate CFrame files instead of SFrame files (the default)
 
 Description:
 
@@ -39,9 +51,13 @@ Notes:
     This uses glob to locate the files, and if there are multiple files it looks
     for the one that is most recent
 
-History:
+History::
 
-231223 ksl Coding begun
+    231223 ksl Coding begun
+    261007 ksl Exposures are now specified as in Reduce.py (single exposures,
+    ranges like 4155-4160, and comma lists like 4155,4157, any number of
+    them, MJDs ignored) rather than as exp_start [exp_stop].  Note that
+    two bare numbers now mean two exposures, not a range.
 
 '''
 
@@ -76,6 +92,53 @@ def _usage_from_doc(doc):
     '''
     m = re.search(r'^\s*(?:Version\s+)?History:{0,2}\s*$', doc, re.MULTILINE)
     return doc[:m.start()].rstrip() + '\n' if m else doc
+
+
+_USAGE = _usage_from_doc(__doc__)
+
+
+def parse_exposures(words):
+    '''
+    Convert a list of command-line words into a list of exposure
+    numbers.  Each word may be a single exposure (4155), a range
+    (4155-4160), or a comma-separated list (4155,4157,4160) whose
+    elements may themselves be ranges.  Words greater than 50000
+    are MJDs (as in Reduce.py) and are ignored.  Duplicates are
+    dropped, preserving the original order.
+
+    Returns the list of exposures, or None if a word cannot be parsed.
+    '''
+    xexp=[]
+    for word in words:
+        for one in word.split(','):
+            if one=='':
+                continue
+            try:
+                if one.count('-'):
+                    xword=one.split('-')
+                    if len(xword)!=2:
+                        raise ValueError
+                    imin=int(xword[0])
+                    imax=int(xword[1])
+                    if imin>imax:
+                        print('Error: range %s has end before start' % one)
+                        return None
+                    xexp.extend(range(imin,imax+1))
+                else:
+                    value=int(one)
+                    if value<=50000:
+                        xexp.append(value)
+            except ValueError:
+                print('Error: badly formatted exposure specification %s' % word)
+                return None
+
+    seen=set()
+    exposures=[]
+    for one in xexp:
+        if one not in seen:
+            seen.add(one)
+            exposures.append(one)
+    return exposures
 
 
 def get_creation_time(file_path):
@@ -119,25 +182,32 @@ def select_ver(files,xver):
 
 
 
-def find_em(exp_start=3596,exp_stop=3599,file_type='SFrame',xver=''):
+def find_em(exp_start=3596,exp_stop=3599,file_type='SFrame',xver='',exposures=None):
     '''
     This looks for files in in the reduced data diretories 
     of a specific file type.  It reports the most recently created
     version of the file is it exists.  
 
+    The exposures searched for are exp_start through exp_stop, unless
+    exposures (a list of exposure numbers) is given, in which case
+    exp_start and exp_stop are ignored.
+
     The routine returns a table of the locations.  If the file is
     not found the locataion is reported as Unknown, but a row 
     in the table is still created.
     '''
-    print('Looking for last %s file  of exposures %d through %d' % (file_type,exp_start,exp_stop))
+    if exposures is None:
+        exposures=list(range(exp_start,exp_stop+1))
+        print('Looking for last %s file  of exposures %d through %d' % (file_type,exp_start,exp_stop))
+    else:
+        print('Looking for last %s file  of %d exposures' % (file_type,len(exposures)))
 
-    i=exp_start
     expno=[]
     xfiles=[]
     location=[]
     creation_date=[]
     nfiles=[]
-    while i<=exp_stop:
+    for i in exposures:
         # print(i)
         expno.append(i)
         xfile='lvm%cFrame-%08d.fits' % (file_type[0],i)
@@ -168,7 +238,6 @@ def find_em(exp_start=3596,exp_stop=3599,file_type='SFrame',xver=''):
                 location.append('Unknown')
                 creation_date.append('Unknown')
                 nfiles.append(0)
-        i+=1
 
     xtab=Table([expno,xfiles,nfiles,creation_date,location],
         names=['Exposure','Filename','nfiles','Creation_date','Location'])
@@ -176,7 +245,7 @@ def find_em(exp_start=3596,exp_stop=3599,file_type='SFrame',xver=''):
     print(xtab)
     if os.path.isdir('./xlog')==False:
         os.mkdir('./xlog')
-    xtab.write('./xlog/xfound_%05d_%05d.txt' % (exp_start,exp_stop),format='ascii.fixed_width_two_line',overwrite=True)
+    xtab.write('./xlog/xfound_%05d_%05d.txt' % (min(exposures),max(exposures)),format='ascii.fixed_width_two_line',overwrite=True)
 
     return xtab
 
@@ -215,10 +284,9 @@ def get_em(xtab,destination='',link=False):
         
 def steer(argv):
     '''
-    usage: LocateData.py [-h] [-cp] [-link] [-dir whatever] [-drp 1.2.0] [-C] exp_start [exp_stop]
+    usage: LocateData.py [-h] [-cp] [-link] [-dir whatever] [-drp 1.2.0] [-CFrame] exposures
     '''
-    exp_start=0
-    exp_stop=0
+    words=[]
     xcp=False
     xlink=False
     destination=''
@@ -228,8 +296,8 @@ def steer(argv):
     i=1
     while i<len(argv):
         if argv[i]=='-h':
-               print(_usage_from_doc(__doc__))
-               return
+            print(_USAGE)
+            return
         elif argv[i]=='-cp':
             xcp=True
         elif argv[i]=='-link':
@@ -247,25 +315,19 @@ def steer(argv):
         elif argv[i][0]=='-':
             print('Error: Unknown switch',argv)
             return
-        elif exp_start==0:
-            exp_start=eval(argv[i])
-        elif exp_stop==0:
-            exp_stop=eval(argv[i])
         else:
-            print(_usage_from_doc(__doc__))
-            print('Error:Improper command line', argv)
-            return
+            words.append(argv[i])
         i+=1
 
-    if exp_stop==0:
-        exp_stop=exp_start
+    exposures=parse_exposures(words)
+    if exposures is None:
+        return
+    if len(exposures)==0:
+        print(_USAGE)
+        print('Error: no exposures specified', argv)
+        return
 
-    if (exp_start>exp_stop):
-        print('Error: exp_stop %d less than exp_start %d, exiting' % (exp_start,exp_stop))
-        return 
-
-
-    locate=find_em(exp_start,exp_stop,ftype,drpver)
+    locate=find_em(file_type=ftype,xver=drpver,exposures=exposures)
     xlocate=locate[locate['Location']!='Unknown']
 
     if drpver=='':
@@ -276,7 +338,7 @@ def steer(argv):
 
 
     if len(xlocate)==0:
-        print('Could not locate any processed %s files for exposures %d to %d' % (ftype,exp_start,exp_stop))
+        print('Could not locate any processed %s files for the requested exposures' % ftype)
         return 
 
     if xcp:
@@ -295,4 +357,4 @@ if __name__ == "__main__":
     if len(sys.argv)>1:
         steer(sys.argv)
     else:
-        print (__doc__)
+        print(_USAGE)

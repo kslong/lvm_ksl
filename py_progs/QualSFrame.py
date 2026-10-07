@@ -6,9 +6,9 @@
 
 Synopsis:  
 
-Create an html file, with various plo5s, which can be used
-as a tool to assess the quality of of the lvmdrp reduction
-of an exposure.
+Create an html file, with various plots, which can be used
+as a tool to assess the quality of the reduction of an
+exposure, including its sky subtraction.
 
 
 Command line usage (if any):
@@ -20,22 +20,34 @@ Command line usage (if any):
         SFrame1 SFrame2 ... are files to be analyzed.
 
 
-Description:  
+Description::
 
-    This routine reads an lvmSFrame file and constructs
-    an html file, that contains information from the
-    headers and various plots to indicate what the 
-    quality of the data is
+    This routine reads an lvmSFrame file (or an SFrame-layout
+    file from another sky-subtraction method) and constructs an
+    html file that contains information from the headers and
+    various plots and tables to indicate what the quality of
+    the data is: the science and sky spectra (interactive and
+    static), the line emission in the subtracted sky, the
+    continuum and sky-line subtraction quality, line,
+    continuum and [OI] images, and flux-calibration checks.
+    The sky-subtraction checks use only FLUX, SKY, IVAR and
+    MASK, so any method's file is judged the same way.
 
-Primary routines:
+Primary routines::
 
     make_html is the primary driving routine
+    make_plotly_spectra   interactive science and sky spectra
+    eval_sky_emission     line emission in the subtracted sky
+    eval_continuum        continuum subtraction quality
+    eval_sky_lines        sky-line subtraction quality
+    make_images           line and continuum images
+    make_oi_images        [OI]6300 and 5577 maps
     steer handles the inputs
 
 Notes:
 
     The html file is created in the current working directory
-    and the various plots are in a subdirectory fig_quals.
+    and the various plots are in a subdirectory figs_qual.
 
     The links in the html file are relative to the html file
                                        
@@ -138,6 +150,43 @@ History::
         matched SFrame/CFrame quality-assessment pair. Updated all
         cross-file references (QualCFrame.py, eval_standard.py) and
         the Sphinx docs accordingly; no functional change.
+    260930 ksl The line/continuum images now show the SFrame's own,
+        sky-subtracted data (quick_map had been reading the matching
+        CFrame via GetTelData since 260913).  New "[OI] 6300 Emission
+        and Sky-Line Residual Controls" section (make_oi_images): maps
+        of [OI]6300 and the 5577 airglow residual on one symmetric
+        colour scale, and a table of each map's rms (also as a fraction of that line
+        in the subtracted sky) and its correlation with [SII] and 5577.
+        New "Sky-Line Subtraction Quality" section (eval_sky_lines): for
+        8 bright, isolated sky lines, per-fiber residual rms, noise,
+        signed integral and red-blue asymmetry relative to the
+        subtracted sky line, summarized in a table, as residual profiles
+        (median and 10-90 percentile) and as maps on the sky; uses only
+        FLUX/SKY/IVAR/MASK so any sky-subtraction method's SFrame can be
+        judged the same way.  Interactive Plotly versions of the full
+        science and SkyE/SkyW spectra (make_plotly_spectra) head those
+        two sections, so they can be zoomed instead of relying on fixed
+        y scales; the static figures follow them.  The Plotly library is
+        written once to figs_qual/plotly.min.js, so reports work
+        offline.  New "Line Emission in the Subtracted Sky" section
+        (eval_sky_emission): [OII], Hbeta, [OIII], Halpha, [NII], [SII],
+        [SIII]9531 fitted
+        in the subtracted sky, the science total and the raw SkyE/SkyW
+        spectra, with the fraction of the field's line flux removed.
+        New "Continuum Subtraction Quality" section (eval_continuum):
+        per-arm continuum residual in line-free pixels (median, scatter,
+        % of sky continuum, vs MW 5 sigma, plane-fit change across the
+        field), the step at the b/r and r/z junctions, and per-arm maps.
+        Cutouts now show the noise-only 10-90 percentile range (dashed,
+        from the IVAR) so real fiber-to-fiber scatter can be told from
+        noise; new continuum-removed version of the six line-region
+        panels (eval_line_regions_cont_removed), titled with the spread
+        of the per-fiber continuum levels vs the noise-only spread.  The new maps use the other images' hot colour map and
+        5-95 percentile stretch.
+        plot_fits_image() now draws on WCS axes: its RA/Dec tick labels
+        had been interpolated linearly between two image corners, which
+        put features at the wrong coordinates (0.25 deg off in RA for
+        exposure 16998).
 
 '''
 
@@ -157,6 +206,10 @@ from astropy.coordinates import get_body, solar_system_ephemeris, AltAz, EarthLo
 from astropy.time import Time
 import astropy.units as u
 from lvm_ksl import quick_map
+import plotly.graph_objects as go
+from scipy.optimize import curve_fit
+from lvm_ksl.GetSkyCont import load_mask, _interp_mask_to_wave
+from plotly.subplots import make_subplots
 from lvm_ksl import eval_standard
 from lvm_ksl.eval_standard import get_header_value, get_header_string
 
@@ -355,6 +408,417 @@ def get_percentile_yscale(arr,low,high,min_half_range=None):
 # so every existing unqualified call site below keeps working unchanged.
 
 
+def _tel_stats(x,fibers,pct=False):
+    '''masked median FLUX and SKY over fibers (and 10/90 percentiles of FLUX if pct)'''
+    rows=fibers['fiberid']-1
+    bad=x['MASK'].data[rows]!=0
+    flux=np.where(bad,np.nan,x['FLUX'].data[rows]).astype(float)
+    sky=np.where(bad,np.nan,x['SKY'].data[rows]).astype(float)
+    with np.errstate(all='ignore'):
+        out=[np.nanmedian(flux,axis=0),np.nanmedian(sky,axis=0)]
+        if pct:
+            out+=list(np.nanpercentile(flux,[10,90],axis=0))
+    return out
+
+
+def _linear_range(arr):
+    '''y range from the 1st/99th percentiles, at least +-2x the MW 5 sigma line'''
+    lo,hi=get_percentile_yscale(np.ma.masked_invalid(arr),1,99,min_half_range=2*MW_5SIGMA)
+    return [lo,hi]
+
+
+def make_plotly_spectra(filename='data/lvmSFrame-00011061.fits'):
+    '''
+    Interactive (Plotly) versions of the full-spectrum plots, which can be
+    zoomed rather than relying on a fixed y scale.
+
+    Returns (science html, sky-telescope html): html fragments to embed in
+    the report.  The first loads the Plotly library from
+    figs_qual/plotly.min.js, written there (once per directory) from the
+    installed plotly package, so the report works offline; the second
+    relies on it.
+
+    Science: the median sky-subtracted spectrum of the science fibers with
+    its 10-90 percentile range across fibers and the +-MW 5 sigma lines
+    (top), and the median total (FLUX+SKY) and sky on a log scale
+    (bottom).  Sky telescopes: the median sky-subtracted SkyE and SkyW
+    spectra (top) and the difference of their total spectra, nearer minus
+    further from the science field (bottom).
+    '''
+    x=fits.open(filename)
+    hdr=x['PRIMARY'].header
+    xtab=Table(x['SLITMAP'].data)
+    wav=np.asarray(x['WAVE'].data,dtype=float)
+    f32=lambda a: np.asarray(a,dtype=np.float32)
+
+    sci_med,sci_sky,sci_p10,sci_p90=_tel_stats(x,scifib(xtab,select='science',telescope='Sci'),pct=True)
+    zero=dict(color='orange',width=1)
+    mw=dict(color='red',width=1,dash='dot')
+
+    fig=make_subplots(rows=2,cols=1,shared_xaxes=True,vertical_spacing=0.08,
+                      subplot_titles=('Sky-subtracted science fibers: median and 10-90 percentile range',
+                                      'Total (FLUX+SKY) and sky, median over science fibers'))
+    fig.add_trace(go.Scatter(x=wav,y=f32(sci_p90),line=dict(width=0),showlegend=False,hoverinfo='skip'),row=1,col=1)
+    fig.add_trace(go.Scatter(x=wav,y=f32(sci_p10),line=dict(width=0),fill='tonexty',
+                             fillcolor='rgba(31,119,180,0.25)',name='10-90 percentile'),row=1,col=1)
+    fig.add_trace(go.Scatter(x=wav,y=f32(sci_med),line=dict(color='rgb(31,119,180)',width=1),name='median'),row=1,col=1)
+    fig.add_hline(y=0,line=zero,row=1,col=1)
+    fig.add_hline(y=MW_5SIGMA,line=mw,row=1,col=1)
+    fig.add_hline(y=-MW_5SIGMA,line=mw,row=1,col=1)
+    total=np.clip(sci_med+sci_sky,1e-18,None)
+    skyc=np.clip(sci_sky,1e-18,None)
+    fig.add_trace(go.Scatter(x=wav,y=f32(total),line=dict(width=1),name='total'),row=2,col=1)
+    fig.add_trace(go.Scatter(x=wav,y=f32(skyc),line=dict(width=1),name='sky'),row=2,col=1)
+    ceiling=np.nanpercentile(total,99)
+    fig.update_yaxes(range=_linear_range(sci_med),exponentformat='e',title_text='FLUX',row=1,col=1)
+    fig.update_yaxes(type='log',range=[np.log10(1e-3*ceiling),np.log10(2*ceiling)],exponentformat='e',
+                     title_text='FLUX',row=2,col=1)
+    fig.update_xaxes(range=[3600,9600],title_text='Wavelength (A)',row=2,col=1)
+    fig.update_layout(height=800,margin=dict(l=70,r=20,t=50,b=50),legend=dict(orientation='h',y=1.08))
+    location='./figs_qual/'
+    if os.path.isdir(location)==False:
+        os.mkdir(location)
+    jsfile=location+'plotly.min.js'
+    if not os.path.isfile(jsfile):
+        from plotly.offline import get_plotlyjs
+        with open(jsfile,'w') as g:
+            g.write(get_plotlyjs())
+    sci_html='<script src="%s"></script>\n' % jsfile + fig.to_html(full_html=False,include_plotlyjs=False)
+
+    # sky telescopes
+    e_med,e_sky=_tel_stats(x,scifib(xtab,select='SKY',telescope='SkyE'))
+    w_med,w_sky=_tel_stats(x,scifib(xtab,select='SKY',telescope='SkyW'))
+    try:
+        ra,dec=get_header_value(hdr,'SCIRA'),get_header_value(hdr,'SCIDEC')
+        near_w=distance(ra,dec,get_header_value(hdr,'SKYWRA'),get_header_value(hdr,'SKYWDEC')) < \
+            distance(ra,dec,get_header_value(hdr,'SKYERA'),get_header_value(hdr,'SKYEDEC'))
+    except Exception:
+        near_w=False
+    if near_w:
+        delta,dlabel=(w_med+w_sky)-(e_med+e_sky),'SkyW - SkyE (nearer - further)'
+    else:
+        delta,dlabel=(e_med+e_sky)-(w_med+w_sky),'SkyE - SkyW (nearer - further)'
+
+    fig=make_subplots(rows=2,cols=1,shared_xaxes=True,vertical_spacing=0.08,
+                      subplot_titles=('Sky-subtracted SkyE and SkyW fibers (median)',
+                                      'Difference of the total spectra: '+dlabel))
+    fig.add_trace(go.Scatter(x=wav,y=f32(e_med),line=dict(width=1),name='SkyE'),row=1,col=1)
+    fig.add_trace(go.Scatter(x=wav,y=f32(w_med),line=dict(width=1),name='SkyW'),row=1,col=1)
+    fig.add_trace(go.Scatter(x=wav,y=f32(delta),line=dict(width=1),name=dlabel),row=2,col=1)
+    for r in (1,2):
+        fig.add_hline(y=0,line=zero,row=r,col=1)
+        fig.add_hline(y=MW_5SIGMA,line=mw,row=r,col=1)
+        fig.add_hline(y=-MW_5SIGMA,line=mw,row=r,col=1)
+    fig.update_yaxes(range=_linear_range(np.concatenate([e_med,w_med])),exponentformat='e',title_text='FLUX',row=1,col=1)
+    fig.update_yaxes(range=_linear_range(delta),exponentformat='e',title_text='FLUX',row=2,col=1)
+    fig.update_xaxes(range=[3600,9600],title_text='Wavelength (A)',row=2,col=1)
+    fig.update_layout(height=700,margin=dict(l=70,r=20,t=50,b=50),legend=dict(orientation='h',y=1.1))
+    sky_html=fig.to_html(full_html=False,include_plotlyjs=False)
+    return sci_html,sky_html
+
+
+
+# Nebular lines measured in the subtracted sky: name, rest wavelength(s)
+# (A).  [OII]3726,3729 is fitted as a doublet (fixed separation, common
+# shift and width) and reported as the sum; [SIII]9531 is the brighter of
+# the [SIII] pair.  SKY_NEB_MOONLIT are the lines whose fit is unreliable
+# when the Moon is up: the solar absorption spectrum in scattered
+# moonlight has structure on the scale of the line (Balmer absorption;
+# strong absorption either side of [OII]).
+SKY_NEB_LINES=[['[OII]3727',[3726.03,3728.82]],['Hbeta',[4861.33]],['[OIII]5007',[5006.84]],
+               ['Halpha',[6562.80]],['[NII]6583',[6583.45]],['[SII]6716',[6716.44]],
+               ['[SII]6731',[6730.82]],['[SIII]9531',[9530.6]]]
+SKY_NEB_MOONLIT=['[OII]3727','Hbeta','Halpha']
+SKY_NEB_HALF=6.0          # fit window +-6 A
+SKY_NEB_SHIFT=1.5         # line centre allowed within +-1.5 A (~70 km/s)
+
+
+def _fit_line(wav,spec,lsf,centres):
+    '''
+    Integrated flux of one emission line, or the summed flux of a doublet:
+    Gaussians (common shift within +-SKY_NEB_SHIFT of the rest
+    wavelengths, fixed separation, common FWHM between 0.7 and 1.5 times
+    the LSF -- nebular lines are barely resolved, and a wider limit lets
+    the fit absorb continuum structure) on a linear background, fitted within +-SKY_NEB_HALF of the
+    line(s).  The narrow shift range keeps the fit off neighbouring sky
+    lines (e.g. the OH lines at 6553.6 and 6568.8 either side of Halpha).
+    NaN on failure.
+    '''
+    ref=np.mean(centres)
+    offs=np.array(centres)-ref
+    win=(wav>=min(centres)-SKY_NEB_HALF)&(wav<=max(centres)+SKY_NEB_HALF)&np.isfinite(spec)
+    if win.sum()<8:
+        return np.nan
+    xw=wav[win]-ref
+    y=spec[win]*1e16
+    fw=np.nanmedian(lsf[win]) if lsf is not None else 1.5
+    nl=len(centres)
+
+    def g(x,*p):
+        sig=p[nl+1]/2.3548
+        out=p[nl+2]+p[nl+3]*x
+        for k in range(nl):
+            out=out+p[k]/(sig*np.sqrt(2*np.pi))*np.exp(-0.5*((x-offs[k]-p[nl])/sig)**2)
+        return out
+
+    edge=np.min(np.abs(xw[:,None]-offs[None,:]),axis=1)>3
+    b0=np.median(y[edge]) if edge.any() else np.median(y)
+    f0=max(np.sum(y-b0)*np.median(np.diff(xw))/nl,1e-3)
+    p0=[f0]*nl+[0.,fw,b0,0.]
+    lo=[-np.inf]*nl+[-SKY_NEB_SHIFT,0.7*fw,-np.inf,-np.inf]
+    hi=[np.inf]*nl+[SKY_NEB_SHIFT,1.5*fw,np.inf,np.inf]
+    try:
+        p,_=curve_fit(g,xw,y,p0=p0,bounds=(lo,hi),maxfev=5000)
+    except Exception:
+        return np.nan
+    return np.sum(p[:nl])/1e16
+
+
+def eval_sky_emission(filename='data/lvmSFrame-00011061.fits',outroot='test'):
+    '''
+    How much nebular line emission is in the sky that was subtracted.
+
+    Each line in SKY_NEB_LINES is fitted (_fit_line) in four median
+    spectra: the subtracted sky (SKY, median over science fibers), the
+    science fibers' total (FLUX+SKY), and the raw SkyE and SkyW
+    spectra (FLUX+SKY of their fibers).  "sky / total" is the fraction of
+    the field's median line flux that the sky subtraction removed from
+    every fiber.  For a sky from the sky telescopes this measures nebular
+    emission (or geocoronal Halpha) in their fields; for a sky taken from
+    the science field itself it is the emission "floor" subtracted.
+
+    Returns (table rows, figure name).  The figure shows each line region
+    in the four spectra, local continuum removed.
+    '''
+    x=fits.open(filename)
+    xtab=Table(x['SLITMAP'].data)
+    wav=np.asarray(x['WAVE'].data,dtype=float)
+    lsf=None
+    if 'LSF' in x:
+        lsf=np.nanmedian(x['LSF'].data[scifib(xtab,select='science',telescope='Sci')['fiberid']-1],axis=0)
+
+    sci_med,sci_sky=_tel_stats(x,scifib(xtab,select='science',telescope='Sci'))
+    e_med,e_sky=_tel_stats(x,scifib(xtab,select='SKY',telescope='SkyE'))
+    w_med,w_sky=_tel_stats(x,scifib(xtab,select='SKY',telescope='SkyW'))
+    spectra=[('subtracted sky',sci_sky),('science total',sci_med+sci_sky),
+             ('SkyE raw',e_med+e_sky),('SkyW raw',w_med+w_sky)]
+
+    try:
+        moonlit=float(x['PRIMARY'].header['SKY MOON_ALT'])>0
+    except (KeyError,ValueError):
+        moonlit=False
+    table=[['Line','Subtracted sky','Science total (median)','Sky / total (%)','SkyE raw','SkyW raw']]
+    for name,wl in SKY_NEB_LINES:
+        fl={lab:_fit_line(wav,spec,lsf,wl) for lab,spec in spectra}
+        frac=100*fl['subtracted sky']/fl['science total']
+        label=name+(' (Moon up: uncertain)' if moonlit and name in SKY_NEB_MOONLIT else '')
+        table.append([label,'%.2e' % fl['subtracted sky'],'%.2e' % fl['science total'],
+                      '%.0f' % frac if np.isfinite(frac) else '--','%.2e' % fl['SkyE raw'],'%.2e' % fl['SkyW raw']])
+
+    location='./figs_qual/'
+    if os.path.isdir(location)==False:
+        os.mkdir(location)
+    if outroot=='':
+        outroot='test'
+    figname=location+outroot+'.skyneb.png'
+    regions=[('[OII]3726,3729',3715,3740),('Hbeta',4850,4872),('[OIII]5007',4995,5018),
+             ('[NII]+Halpha',6540,6595),('[SII]',6705,6742),('[SIII]9531',9518,9543)]
+    styles=[dict(color='#1f3b99',ls='-'),dict(color='black',ls='-'),
+            dict(color='#1a7d1a',ls='--'),dict(color='#b22222',ls='--')]
+    fig,axes=plt.subplots(2,3,figsize=(18,9))
+    for ax,(title,lo,hi) in zip(axes.flat,regions):
+        r=(wav>=lo)&(wav<=hi)
+        for (lab,spec),st in zip(spectra,styles):
+            y=spec[r]
+            ax.plot(wav[r],y-np.nanpercentile(y,20),lw=2,label=lab,**st)
+        ax.axhline(0,color='orange',lw=1)
+        ax.set_title(title,fontsize=13)
+        ax.set_xlabel('Wavelength (A)')
+    for ax in axes[:,0]:
+        ax.set_ylabel('FLUX - local continuum')
+    axes[0,0].legend(fontsize=10)
+    fig.tight_layout()
+    fig.savefig(figname)
+    plt.close(fig)
+    return table,figname
+
+
+# Continuum check: arms (line-free part used), boundary windows either side
+# of the b/r and r/z junctions, and nebular lines masked (+-10 A).
+CONT_ARMS=[['b',3700.,5750.],['r',5810.,7450.],['z',7650.,9500.]]
+CONT_JUNCTIONS=[['b/r',(5700.,5750.),(5810.,5860.)],['r/z',(7395.,7450.),(7680.,7735.)]]
+CONT_NEB_MASK=[3727.,3869.,4102.,4340.,4861.,4959.,5007.,5876.,6300.,6364.,6548.,6563.,6583.,6716.,6731.,
+               7136.,7320.,7330.,9069.,9531.]
+
+
+def eval_continuum(filename='data/lvmSFrame-00011061.fits',outroot='test'):
+    '''
+    Quantify the continuum left after sky subtraction, per arm, using
+    pixels that are free of sky lines (data/sky_mask.fits) and of the
+    nebular lines in CONT_NEB_MASK.  Each science fiber's continuum is the
+    median FLUX over those pixels in each arm.
+
+    Returns (table rows, figure name).  Per arm the table gives the median
+    over fibers and its robust scatter, the same as a percentage of the
+    subtracted sky's continuum and in units of the MW 5 sigma level, and
+    the change across the field of a plane fitted to the fibers'
+    continua (a gradient the sky subtraction did not remove, or a real
+    one in the source).  A second block gives the median step at the b/r
+    and r/z junctions (red side minus blue side), where the flux
+    calibration is weakest.  The figure maps each arm's continuum.
+    Real source continuum (stars, nebular continuum) is included: the
+    median over fibers and the plane fit are robust to a few stars, not
+    to a genuinely bright extended continuum.
+    '''
+    x=fits.open(filename)
+    xtab=Table(x['SLITMAP'].data)
+    sci=scifib(xtab,select='science',telescope='Sci')
+    rows=sci['fiberid']-1
+    wav=np.asarray(x['WAVE'].data,dtype=float)
+    bad=x['MASK'].data[rows]!=0
+    flux=np.where(bad,np.nan,x['FLUX'].data[rows]).astype(float)
+    sky=np.nanmedian(np.where(bad,np.nan,x['SKY'].data[rows]),axis=0)
+
+    mask_file=os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),'data','sky_mask.fits')
+    mw,mb=load_mask(mask_file)
+    clean=_interp_mask_to_wave(mw,mb,wav)
+    clean&=np.min(np.abs(wav[:,None]-np.array(CONT_NEB_MASK)[None,:]),axis=1)>10
+
+    ra=np.array(sci['ra'],float); dec=np.array(sci['dec'],float)
+    xx=(ra-np.nanmean(ra))*np.cos(np.radians(np.nanmean(dec)))*60
+    yy=(dec-np.nanmean(dec))*60
+
+    def _rstd(a):
+        a=a[np.isfinite(a)]
+        return 1.4826*np.median(np.abs(a-np.median(a))) if a.size else np.nan
+
+    def _plane(v):
+        '''robust plane fit; returns the max-min of the plane over the fibers'''
+        ok=np.isfinite(v)
+        if ok.sum()<20:
+            return np.nan
+        med,r=np.median(v[ok]),_rstd(v)
+        ok&=np.abs(v-med)<4*r
+        A=np.column_stack([np.ones(ok.sum()),xx[ok],yy[ok]])
+        c,*_=np.linalg.lstsq(A,v[ok],rcond=None)
+        p=c[0]+c[1]*xx+c[2]*yy
+        return np.nanmax(p)-np.nanmin(p)
+
+    table=[['Arm','Median residual','Scatter (fibers)','% of sky continuum','Median / MW 5 sigma',
+            'Change across field (plane fit)']]
+    arm_cont={}
+    with np.errstate(all='ignore'):
+        for arm,lo,hi in CONT_ARMS:
+            pix=clean&(wav>=lo)&(wav<=hi)
+            c=np.nanmedian(flux[:,pix],axis=1)
+            arm_cont[arm]=c
+            skyc=np.nanmedian(sky[pix])
+            med=np.nanmedian(c)
+            table.append([arm,'%.2e' % med,'%.2e' % _rstd(c),'%+.2f' % (100*med/skyc),
+                          '%+.2f' % (med/MW_5SIGMA),'%.2e' % _plane(c)])
+        table.append(['Junction','Median step (red - blue)','Scatter (fibers)','% of sky continuum','Step / MW 5 sigma',''])
+        for name,(b0,b1),(r0,r1) in CONT_JUNCTIONS:
+            bp=clean&(wav>=b0)&(wav<=b1)
+            rp=clean&(wav>=r0)&(wav<=r1)
+            step=np.nanmedian(flux[:,rp],axis=1)-np.nanmedian(flux[:,bp],axis=1)
+            skyc=np.nanmedian(sky[bp|rp])
+            med=np.nanmedian(step)
+            table.append([name,'%.2e' % med,'%.2e' % _rstd(step),'%+.2f' % (100*med/skyc),
+                          '%+.2f' % (med/MW_5SIGMA),''])
+
+    location='./figs_qual/'
+    if os.path.isdir(location)==False:
+        os.mkdir(location)
+    if outroot=='':
+        outroot='test'
+    figname=location+outroot+'.continuum.png'
+    fig,axes=plt.subplots(1,3,figsize=(20,6.2))
+    for ax,(arm,lo,hi) in zip(axes,CONT_ARMS):
+        v=arm_cont[arm]
+        vmin,vmax=np.nanpercentile(v,[5,95])
+        ax.set_facecolor((0.5,0.5,0.5,0.2))
+        sc=ax.scatter(ra,dec,c=v,s=14,marker='h',cmap='hot',vmin=vmin,vmax=vmax)
+        ax.set_aspect(1/np.cos(np.radians(np.nanmean(dec))))
+        ax.invert_xaxis()
+        ax.set_xlabel('RA (deg)')
+        ax.set_ylabel('Dec (deg)')
+        ax.set_title('%s arm continuum residual (%.0f-%.0f A)' % (arm,lo,hi),fontsize=10)
+        plt.colorbar(sc,ax=ax,shrink=0.8,label='median FLUX')
+    fig.tight_layout()
+    fig.savefig(figname)
+    plt.close(fig)
+    return table,figname
+
+
+
+
+# nebular lines inside each DIAGNOSTIC_LINES window, excluded (+-8 A) when
+# estimating a fiber's local continuum in that window
+CONT_REMOVED_LINES=[3726.03,3728.82,4861.33,4958.91,5006.84,6548.05,6562.80,6583.45,6716.44,6730.82,9068.6,9530.6]
+
+
+def eval_line_regions_cont_removed(filename='data/lvmSFrame-00011061.fits',outroot='test'):
+    '''
+    The science figure's six diagnostic line windows again, but with each
+    fiber's local continuum (its median over the window, excluding +-8 A
+    around the nebular lines) removed first, so the grey 10-90 percentile
+    band shows only line-shaped structure plus noise.  Each panel title
+    gives the 10-90 percentile spread of the per-fiber continuum levels
+    that were removed, and the spread noise alone would give; the latter
+    allows for the noise correlation between adjacent pixels (from
+    resampling), measured from the data, since a continuum level is an
+    average over many pixels.  The noise-only 10-90 percentile range
+    around the median is drawn as dashed lines.
+
+    Returns the figure name.
+    '''
+    x=fits.open(filename)
+    xtab=Table(x['SLITMAP'].data)
+    sci=scifib(xtab,select='science',telescope='Sci')
+    rows=sci['fiberid']-1
+    wav=np.asarray(x['WAVE'].data,dtype=float)
+    bad=x['MASK'].data[rows]!=0
+    flux=np.where(bad,np.nan,x['FLUX'].data[rows]).astype(float)
+    ivar=np.where(bad,np.nan,x['IVAR'].data[rows]).astype(float)
+    sigma=np.where(ivar>0,1/np.sqrt(ivar),np.nan)
+    noise=np.nanmedian(sigma,axis=0)
+
+    near_line=np.min(np.abs(wav[:,None]-np.array(CONT_REMOVED_LINES)[None,:]),axis=1)<=8
+    removed=np.full_like(flux,np.nan)
+    titles=[]
+    with np.errstate(all='ignore'):
+        for name,wl,_ in eval_standard.DIAGNOSTIC_LINES:
+            idx=np.abs(wav-wl)<eval_standard.LINE_WINDOW_HALF_WIDTH
+            cpix=idx&~near_line
+            cont=np.nanmedian(flux[:,cpix],axis=1)
+            removed[:,idx]=flux[:,idx]-cont[:,None]
+            # noise on a fiber's continuum level: pixel noise / sqrt(N), inflated for the
+            # adjacent-pixel correlation rho: variance of a mean of an AR(1) series ~ (1+rho)/(1-rho)
+            z=(flux[:,cpix]-cont[:,None])/sigma[:,cpix]
+            rho=np.nanmedian([np.corrcoef(v[np.isfinite(v)][:-1],v[np.isfinite(v)][1:])[0,1]
+                              for v in z[::10] if np.isfinite(v).sum()>20])
+            rho=min(max(rho,0),0.9)
+            ncp=cpix.sum()
+            cnoise=np.nanmedian(sigma[:,cpix])/np.sqrt(ncp)*np.sqrt((1+rho)/(1-rho))*1.2533
+            spread=np.nanpercentile(cont,90)-np.nanpercentile(cont,10)
+            titles.append('continuum 10-90%%: %.1e (noise %.1e)' % (spread,2*1.2816*cnoise))
+
+    location='./figs_qual/'
+    if os.path.isdir(location)==False:
+        os.mkdir(location)
+    if outroot=='':
+        outroot='test'
+    figname=location+outroot+'.lines_cont_removed.png'
+    fig,axes=plt.subplots(2,3,figsize=(12,7.4))
+    eval_standard.plot_diagnostic_line_panels(axes.flat,wav,removed,refline=MW_5SIGMA,noise=noise,titles=titles)
+    axes.flat[0].legend(fontsize=7,loc='best')
+    fig.tight_layout()
+    fig.savefig(figname)
+    plt.close(fig)
+    return figname
+
+
+
 def eval_qual_sframe(filename='data/lvmSFrame-00011061.fits',ymin=-0.2e-13,ymax=1e-13,xmin=3600,xmax=9500,outroot=''):
     '''
     Provide a standard plot for looking at how well the sky subtraction has worked overall
@@ -470,7 +934,9 @@ def eval_qual_sframe(filename='data/lvmSFrame-00011061.fits',ymin=-0.2e-13,ymax=
     # (pre-subtraction) field brightness to the SKY_EAST/SKY_WEST models,
     # which don't exist as SFrame extensions once the sky is subtracted.
     line_axs = [fig.add_subplot(gs[3 + i // 3, i % 3]) for i in range(6)]
-    eval_standard.plot_diagnostic_line_panels(line_axs, wav, sci_flux, refline=MW_5SIGMA)
+    sci_ivar=np.ma.masked_array(x['IVAR'].data[science_fibers['fiberid']-1],sci_mask)
+    sci_noise=np.ma.median(1/np.ma.sqrt(np.ma.masked_less_equal(sci_ivar,0)),axis=0).filled(np.nan)
+    eval_standard.plot_diagnostic_line_panels(line_axs, wav, sci_flux, refline=MW_5SIGMA, noise=sci_noise)
     line_axs[0].legend(fontsize=8, loc='best')
 
     plt.tight_layout()
@@ -696,37 +1162,19 @@ def plot_fits_image(filename,title='Cont.(5000-8000)',outname='test.png'):
     
     # Get the 5th and 95th percentiles of the image data
     min_val, max_val = np.nanpercentile(data, [5, 95])
-    
-    # Create a grid of pixel coordinates
-    y, x = np.indices(data.shape)
-    
-    # Convert corner pixel coordinates to celestial coordinates
-    ra_min, dec_min = wcs.all_pix2world(0, 0, 0)
-    ra_max, dec_max = wcs.all_pix2world(data.shape[1], data.shape[0], 0)
-    
-    # Plot the image
+
+    # Plot the image on WCS axes, so RA/Dec labels follow the image's
+    # own projection and rotation
     fig=plt.figure(figsize=(8, 8))
-    cmap=plt.get_cmap('hot')
+    ax=fig.add_subplot(projection=wcs)
+    cmap=plt.get_cmap('hot').copy()
     cmap.set_bad(color='gray', alpha=0.2)
-    plt.imshow(data, cmap=cmap, vmin=min_val, vmax=max_val, origin='lower', extent=(0, data.shape[1], 0, data.shape[0]))
-    plt.colorbar(label='Intensity', shrink=0.8)  # Adjust the shrink parameter as needed
-    
-    # Set up RA and DEC axis labels and ticks
-    plt.xlabel('RA')
-    plt.ylabel('DEC')
-    
-    # Set RA tick positions and labels
-    ra_ticks = np.linspace(ra_min, ra_max, 5)
-    ra_tick_labels = [f'{ra:.2f}' for ra in ra_ticks]
-    plt.xticks(np.linspace(0, data.shape[1], 5), ra_tick_labels)
-    
-    # Set DEC tick positions and labels
-    dec_ticks = np.linspace(dec_min, dec_max, 5)
-    dec_tick_labels = [f'{dec:.2f}' for dec in dec_ticks]
-    plt.yticks(np.linspace(0, data.shape[0], 5), dec_tick_labels)
-    
-    plt.title(title)
-    plt.grid(color='white', ls='dotted')
+    im=ax.imshow(data, cmap=cmap, vmin=min_val, vmax=max_val, origin='lower')
+    plt.colorbar(im, ax=ax, label='Intensity', shrink=0.8)
+    ax.set_xlabel('RA')
+    ax.set_ylabel('DEC')
+    ax.set_title(title)
+    ax.grid(color='white', ls='dotted')
     
 
     plt.savefig(outname)
@@ -766,6 +1214,260 @@ def make_images(filename='data/llvmSFrame-00011061.fits',outroot='test'):
     plot_fits_image(filename=s2_file,title='SII',outname=s2_plot)
     return ha_plot,s2_plot,cont_plot
 
+
+# [OI]6300 map and its airglow control: name, line window, continuum
+# window (A).  Continuum windows are sky-line-free in data/sky_mask.fits;
+# 6315.5-6320 also stays clear of [SIII]6312.  [OI]6364 is not mapped:
+# atomic physics fixes it at 1/3 of 6300, so it adds no information.
+OI_BANDS=[['OI6300',[6297.,6304.],[6315.5,6320.]],
+          ['Sky5577',[5574.,5581.],[5587.5,5593.]]]
+SII_BAND=['SII',[6710.,6735.],[6740.,6760.]]
+
+
+def _band_level(wav,spec,band,cont):
+    '''band-mean of spec minus the continuum-window mean (same measure as quick_map)'''
+    b=(wav>=band[0])&(wav<=band[1])
+    c=(wav>=cont[0])&(wav<=cont[1])
+    return np.nanmean(spec[b])-np.nanmean(spec[c])
+
+
+def _show_map(ax,data,vmin,vmax,cmap,title):
+    '''one map panel on WCS axes (ax created with projection=wcs)'''
+    cm=plt.get_cmap(cmap).copy()
+    cm.set_bad(color='gray', alpha=0.2)
+    im=ax.imshow(data, cmap=cm, vmin=vmin, vmax=vmax, origin='lower')
+    ax.coords[0].set_ticks(number=4)
+    ax.coords[1].set_ticks(number=4)
+    ax.set_xlabel('RA')
+    ax.set_ylabel('DEC')
+    ax.set_title(title)
+    ax.grid(color='black', ls='dotted', alpha=0.3)
+    plt.colorbar(im, ax=ax, shrink=0.8, label='band mean - continuum (FLUX units)')
+
+
+def make_oi_images(filename='data/lvmSFrame-00011061.fits',outroot='test'):
+    '''
+    Map of [OI]6300 -- to look for [OI] emission from the source -- next to
+    the 5577 airglow line as a control: 5577 has no nebular contribution,
+    so its map is the sky-subtraction residual pattern alone.  Both are
+    shown relative to their own median on one colour scale.
+
+    Returns (figure name, table rows).  The table gives, for each map,
+    the median and robust rms over the IFU, the same rms as a fraction
+    of that line's own level in the subtracted sky (SKY, median over
+    science fibers), and the pixel correlation with the [SII] map (made
+    but not shown: it duplicates the [SII] image above) and with 5577.
+    '''
+    x=fits.open(filename)
+    xtab=Table(x['SLITMAP'].data)
+    sci=scifib(xtab,select='science',telescope='Sci')
+    wav=x['WAVE'].data
+    rows=sci['fiberid']-1
+    sky=np.ma.median(np.ma.masked_array(x['SKY'].data[rows],x['MASK'].data[rows]!=0),axis=0).filled(np.nan)
+
+    maps={}
+    wcs=None
+    for name,band,cont in OI_BANDS+[SII_BAND]:
+        mapfile=quick_map.doit(filename,name,list(band),list(cont))
+        if mapfile is None:
+            print('Error: make_oi_images: could not make the %s map of %s' % (name,filename))
+            return None,[]
+        with fits.open(mapfile) as m:
+            maps[name]=np.array(m[0].data,dtype=float)
+            if wcs is None:
+                wcs=WCS(m[0].header)
+
+    location='./figs_qual/'
+    if os.path.isdir(location)==False:
+        os.mkdir(location)
+    if outroot=='':
+        outroot='test'
+    figname=location+outroot+'.oi.png'
+
+    # The sky-line maps can carry a large uniform offset (e.g. a DRP sky
+    # telescope with brighter [OI] than the science field), which would
+    # hide any structure: each is shown relative to its own median, both on
+    # one scale (the [OI]6300 map's 5-95 percentiles, the colour map and
+    # stretch of the other images).
+    meds={k:np.nanmedian(maps[k]) for k in maps}
+    lo,hi=np.nanpercentile(maps['OI6300']-meds['OI6300'],[5,95])
+    fig=plt.figure(figsize=(14,6.5))
+    for i,(name,title) in enumerate((('OI6300','[OI] 6300'),('Sky5577','5577 airglow residual'))):
+        ax=fig.add_subplot(1,2,i+1,projection=wcs)
+        _show_map(ax,maps[name]-meds[name],lo,hi,'hot',
+                  '%s\nminus its median, %.2e' % (title,meds[name]))
+    fig.tight_layout()
+    fig.savefig(figname)
+    plt.close(fig)
+
+    def _corr(a,b):
+        ok=np.isfinite(a)&np.isfinite(b)
+        return np.corrcoef(a[ok],b[ok])[0,1] if ok.sum()>10 else np.nan
+
+    table=[['Map','Median','Robust rms','rms / sky line','Corr. with [SII]','Corr. with 5577']]
+    for name,band,cont in OI_BANDS:
+        d=maps[name]
+        med=np.nanmedian(d)
+        rms=1.4826*np.nanmedian(np.abs(d-med))
+        table.append([name,'%.2e' % med,'%.2e' % rms,'%.4f' % (rms/_band_level(wav,sky,band,cont)),
+                      '%.2f' % _corr(d,maps['SII']),'%.2f' % _corr(d,maps['Sky5577'])])
+    return figname,table
+
+
+# Bright, isolated sky lines for the sky-line subtraction check (air, A),
+# chosen from the SKY spectrum to avoid nebular lines.  [OI]6300 is also
+# emitted by shocked gas, so it is reported but left out of the summaries.
+SKYLINE_CHECK=[5577.34,6300.30,6863.96,7340.89,7993.33,8399.18,8885.85,9375.98]
+SKYLINE_SOURCE=[6300.30]
+SKYLINE_HALF=4.0                 # line window: +-4 A
+SKYLINE_SIDE=(6.0,15.0)          # local continuum: 6-15 A either side
+
+
+def eval_sky_lines(filename='data/lvmSFrame-00011061.fits',outroot='test'):
+    '''
+    Quantify how well bright sky lines were subtracted, from FLUX, SKY,
+    IVAR and MASK alone -- so any sky-subtraction method writing an
+    SFrame-layout file can be judged the same way.
+
+    For each line in SKYLINE_CHECK and each good science fiber, the
+    residual (FLUX minus its local continuum) within +-SKYLINE_HALF of the
+    line is compared with the subtracted sky line (median SKY over the
+    science fibers, minus its local continuum)::
+
+        rms       rms of the residual / sky-line peak
+        noise     rms expected from IVAR / sky-line peak
+        integral  summed residual / summed sky line (signed: > 0 means
+                  under-subtracted, e.g. a throughput too low)
+        asym      (red half - blue half) of the residual / summed sky line
+                  (a wavelength offset gives an antisymmetric residual)
+
+    Returns (table rows, profile figure, map figure).  The table gives the
+    median over fibers of each quantity per line, the systematic part
+    sqrt(rms^2 - noise^2), and the robust scatter of the integral; the
+    profile figure shows the median and 10-90 percentile residual profile
+    at each line; the map figure shows each fiber's median rms and median
+    integral over the lines that are not also nebular.
+    '''
+    x=fits.open(filename)
+    xtab=Table(x['SLITMAP'].data)
+    sci=scifib(xtab,select='science',telescope='Sci')
+    rows=sci['fiberid']-1
+    wav=x['WAVE'].data
+    dw=np.median(np.diff(wav))
+    bad=x['MASK'].data[rows]!=0
+    flux=np.where(bad,np.nan,x['FLUX'].data[rows]).astype(float)
+    ivar=np.where(bad,np.nan,x['IVAR'].data[rows]).astype(float)
+    sky=np.nanmedian(np.where(bad,np.nan,x['SKY'].data[rows]),axis=0)
+
+    nfib=len(rows)
+    res={k:np.full((len(SKYLINE_CHECK),nfib),np.nan) for k in ('rms','noise','integral','asym')}
+    profiles=[]
+    with np.errstate(all='ignore'):
+        for i,line in enumerate(SKYLINE_CHECK):
+            win=np.abs(wav-line)<=SKYLINE_HALF
+            side=(np.abs(wav-line)>SKYLINE_SIDE[0])&(np.abs(wav-line)<SKYLINE_SIDE[1])
+            sky_line=sky[win]-np.nanmedian(sky[side])
+            peak=np.nanmax(sky_line)
+            total=np.nansum(sky_line)*dw
+            r=flux[:,win]-np.nanmedian(flux[:,side],axis=1)[:,None]
+            res['rms'][i]=np.sqrt(np.nanmean(r**2,axis=1))/peak
+            res['noise'][i]=np.sqrt(np.nanmean(np.where(ivar[:,win]>0,1/ivar[:,win],np.nan),axis=1))/peak
+            res['integral'][i]=np.nansum(r,axis=1)*dw/total
+            red=wav[win]>line
+            res['asym'][i]=(np.nansum(r[:,red],axis=1)-np.nansum(r[:,~red],axis=1))*dw/total
+            noise=np.nanmedian(np.where(ivar[:,win]>0,1/np.sqrt(ivar[:,win]),np.nan),axis=0)/peak
+            profiles.append((wav[win]-line,np.nanpercentile(r/peak,[10,50,90],axis=0),sky_line/peak,noise))
+
+    def _rstd(a):
+        a=a[np.isfinite(a)]
+        return 1.4826*np.median(np.abs(a-np.median(a))) if a.size else np.nan
+
+    table=[['Line (A)','rms / peak','noise / peak','systematic / peak','integral (%)',
+            'integral scatter (%)','asymmetry (%)']]
+    clean=np.array([l not in SKYLINE_SOURCE for l in SKYLINE_CHECK])
+    for i,line in enumerate(SKYLINE_CHECK):
+        rms,noise=np.nanmedian(res['rms'][i]),np.nanmedian(res['noise'][i])
+        label='%.2f' % line+('' if clean[i] else ' (also nebular [OI])')
+        table.append([label,'%.4f' % rms,'%.4f' % noise,'%.4f' % np.sqrt(max(rms**2-noise**2,0)),
+                      '%+.2f' % (100*np.nanmedian(res['integral'][i])),'%.2f' % (100*_rstd(res['integral'][i])),
+                      '%+.2f' % (100*np.nanmedian(res['asym'][i]))])
+    rms=np.nanmedian(res['rms'][clean]); noise=np.nanmedian(res['noise'][clean])
+    table.append(['median, sky-only lines','%.4f' % rms,'%.4f' % noise,'%.4f' % np.sqrt(max(rms**2-noise**2,0)),
+                  '%+.2f' % (100*np.nanmedian(res['integral'][clean])),
+                  '%.2f' % (100*np.nanmedian([_rstd(v) for v in res['integral'][clean]])),
+                  '%+.2f' % (100*np.nanmedian(res['asym'][clean]))])
+
+    location='./figs_qual/'
+    if os.path.isdir(location)==False:
+        os.mkdir(location)
+    if outroot=='':
+        outroot='test'
+
+    # residual profiles, one panel per line, all on the same y scale
+    prof_name=location+outroot+'.skylines.png'
+    ncol=4
+    nrow=int(np.ceil(len(SKYLINE_CHECK)/ncol))
+    fig,axes=plt.subplots(nrow,ncol,figsize=(16,4*nrow),sharey=True)
+    for ax,line,(dx,pct,shape,noise) in zip(axes.flat,SKYLINE_CHECK,profiles):
+        ax.fill_between(dx,pct[0],pct[2],color='C0',alpha=0.3,label='10-90%')
+        ax.plot(dx,pct[1],color='C0',label='median')
+        ax.plot(dx,pct[1]+1.2816*noise,color='#1f3b99',ls='--',lw=1,label='noise-only 10-90%')
+        ax.plot(dx,pct[1]-1.2816*noise,color='#1f3b99',ls='--',lw=1)
+        ax.plot(dx,0.05*shape,'k:',label='5% of sky line')
+        ax.axhline(0,color='orange',lw=1)
+        ax.set_title('%.2f' % line+('' if line not in SKYLINE_SOURCE else '  (also nebular)'))
+        ax.set_xlabel(r'$\Delta\lambda$ (A)')
+    for ax in axes[:,0]:
+        ax.set_ylabel('residual / sky-line peak')
+    for ax in list(axes.flat)[len(SKYLINE_CHECK):]:
+        ax.set_visible(False)
+    axes.flat[0].set_ylim(-0.08,0.08)
+    axes.flat[0].legend(fontsize=8)
+    fig.tight_layout()
+    fig.savefig(prof_name)
+    plt.close(fig)
+
+    # per-fiber maps on the sky
+    map_name=location+outroot+'.skyline_map.png'
+    ra=np.array(sci['ra'],float); dec=np.array(sci['dec'],float)
+    fib_rms=np.nanmedian(res['rms'][clean],axis=0)
+    fib_int=np.nanmedian(res['integral'][clean],axis=0)
+    fig,axes=plt.subplots(1,2,figsize=(15,6.5))
+    for ax,val,title in (
+            (axes[0],fib_rms,'rms / sky-line peak (median over sky-only lines)'),
+            (axes[1],100*fib_int,'integrated residual, % of sky line (median over sky-only lines)')):
+        vmin,vmax=np.nanpercentile(val,[5,95])
+        cmap='hot'
+        ax.set_facecolor((0.5,0.5,0.5,0.2))
+        sc=ax.scatter(ra,dec,c=val,s=18,marker='h',cmap=cmap,vmin=vmin,vmax=vmax)
+        ax.set_aspect(1/np.cos(np.radians(np.nanmean(dec))))
+        ax.invert_xaxis()
+        ax.set_xlabel('RA (deg)')
+        ax.set_ylabel('Dec (deg)')
+        ax.set_title(title,fontsize=10)
+        plt.colorbar(sc,ax=ax,shrink=0.8)
+    fig.tight_layout()
+    fig.savefig(map_name)
+    plt.close(fig)
+    return table,prof_name,map_name
+
+cont_removed_comment='''
+The same six line regions as the bottom panels above, but with each fiber's own local continuum
+removed first (its median over the window, excluding +-8 A around the nebular lines).  The grey
+10-90 percentile band therefore no longer includes fiber-to-fiber continuum differences; those are
+summarized in each panel title as the 10-90 percentile spread of the continuum levels removed,
+next to the spread that noise alone would give.  In both figures the dashed blue lines show the
+10-90 percentile range that noise alone would produce around the median (from the IVAR): where the
+grey band is wider than the dashed lines, the fibers really differ.
+'''
+
+plotly_comment='''
+Interactive plot (drag to zoom, double-click to reset, click a legend entry to hide it): the median
+sky-subtracted spectrum of the science fibers with its 10-90 percentile range across fibers, and,
+below, the median total spectrum and sky on a log scale.  The x axes are linked.  The static figure
+below shows the same spectra at fixed scales plus close-ups of the diagnostic line regions.
+'''
+
 science_plot_comment='''
 The median sky subtracted spectrum from the science fibers.  The top panel shows the median spectrum,
 scaled to highlight sky-line residuals near zero.  The second panel shows the same spectrum but scaled
@@ -788,6 +1490,67 @@ two checks line up panel-for-panel. (Note that at present,
 the lvmdrp uses the sky calculated for the science telescope 
 for subtracting sky from the sky telescopes. This implies that what is presented in this figure tells one 
 mostly about the differences in the sky in the two telescopes.)
+'''
+
+oi_image_comment='''
+A map of [OI]6300, to look for [OI] emission from the source.  [OI]6300 is also a bright airglow
+line, so its map in sky-subtracted data contains a residual from the sky subtraction as well as any
+real emission.  The 5577 airglow line, which has no nebular contribution, is shown alongside as a
+control: its map is the sky-subtraction residual pattern by itself.  Real [OI] emission should
+follow the [SII] image above (in shocks) rather than 5577.  ([OI]6364 is not shown: it is always
+1/3 of 6300.)  Both maps are shown relative to their own median (given in the panel title; a large
+median means the subtracted sky's line was brighter or fainter than the science field's), on one
+shared colour scale, displayed like the images above (5th to 95th percentile of the [OI]6300 map).  Each map is the mean FLUX in a narrow
+line window minus the mean in a nearby sky-line-free continuum window.  In the table, "rms / sky
+line" is the map's robust rms as a fraction of the same line measured in the subtracted sky (SKY,
+median over science fibers); "Corr." are pixel correlations with the [SII] image above and with the
+5577 map.
+'''
+
+sky_emission_comment='''
+Whether the sky that was subtracted contains nebular line emission.  Each line is fitted in four
+median spectra: the subtracted sky (SKY, median over science fibers), the science fibers' total
+(FLUX+SKY, i.e. before subtraction), and the raw spectra of the SkyE and SkyW telescopes.  "Sky /
+total" is the percentage of the field's median line flux that the sky subtraction removed from every
+fiber.  If the sky came from the sky telescopes, a non-zero value means nebular emission (or
+geocoronal Halpha) in their fields; if it came from the science field itself, it is the emission
+"floor" removed along with the sky, so fluxes in the sky-subtracted data are relative to it.  The
+panels show the same four spectra around each line, with a local continuum removed.  When the Moon
+is up, scattered moonlight puts the solar absorption spectrum into every spectrum (Balmer absorption
+at Hbeta and Halpha, strong absorption either side of [OII], and a Ca I line at 6717.6 A next to
+[SII]6716), so a fitted line "flux" can be negative.  With the Moon up, [OII], Hbeta and Halpha are
+marked uncertain: their values change by tens of percent with reasonable changes to the fit, while
+the other lines change by much less; check the panels.
+'''
+
+continuum_comment='''
+How much continuum is left after sky subtraction.  For each science fiber the continuum is the
+median FLUX over pixels free of sky lines and nebular lines, separately in each arm (b 3700-5750,
+r 5810-7450, z 7650-9500 A; the arm junctions are excluded).  The table gives the median over fibers
+and its fiber-to-fiber scatter, the median as a percentage of the subtracted sky's continuum and in
+units of the Milky Way 5 sigma level, and the change across the field of a plane fitted to the
+fibers' continua -- a gradient left by the sky subtraction, or a real one in the source.  The second
+block gives the median step across the b/r and r/z junctions (red side minus blue side), where the
+flux calibration is weakest.  Real continuum from the source (stars, nebular continuum) is included
+in all of these; the medians are robust to a few stars.  The maps show each fiber's continuum per arm.
+'''
+
+skyline_comment='''
+How well bright sky lines were subtracted, measured from the file's FLUX, SKY and IVAR only, so
+files from any sky-subtraction method can be compared.  For each line and each science fiber the
+residual within +-4 A of the line (after removing the fiber's local continuum) is compared with the
+sky line that was subtracted (median SKY over science fibers).  Table columns (medians over
+fibers): "rms / peak", the residual rms as a fraction of the sky-line peak; "noise / peak", the rms
+expected from the IVAR alone; "systematic / peak", the part of the rms not explained by noise;
+"integral", the summed residual as a percentage of the sky line (positive = under-subtracted, as
+from too low a throughput; negative = over-subtracted); "integral scatter", its fiber-to-fiber
+scatter; "asymmetry", red half minus blue half of the residual (a wavelength offset gives an
+antisymmetric residual).  [OI]6300 is also emitted by shocked gas, so it is listed but left out of
+the summary row and the maps.  The profile plot shows the median residual and its 10-90 percentile
+range across fibers at each line, on a common scale, with 5% of the sky line (dotted) for
+reference, and the 10-90 percentile range noise alone would give (dashed): a symmetric bump or dip indicates a throughput mismatch, an S-shape a wavelength offset,
+and a W or M shape a difference in line width.  The maps show each fiber's median rms and median
+integrated residual over the sky-only lines.
 '''
 
 image_comment='''
@@ -817,14 +1580,20 @@ def make_html(filename='data/lvmSFrame-00011061.fits', outroot=''):
 
     string+=xhtml.hline()
     string+=xhtml.h2('Science Spectrum')
+    sci_html,sky_html=make_plotly_spectra(filename)
+    string+=xhtml.paragraph(plotly_comment)
+    string+=sci_html
     string+=xhtml.paragraph(science_plot_comment)
     
 
     figname,sky_figname= eval_qual_sframe(filename,ymin=-0.2e-13,ymax=1e-13,xmin=3600,xmax=9500)
 
     string+=xhtml.image('%s' % (figname),width=900,height=1500)
+    string+=xhtml.paragraph(cont_removed_comment)
+    string+=xhtml.image('%s' % (eval_line_regions_cont_removed(filename,outroot)),width=900,height=555)
     string+=xhtml.hline()
     string+=xhtml.h2('SkyE and SkyW  Spectra')
+    string+=sky_html
     string+=xhtml.paragraph(sky_plot_comment)
 
     string+=xhtml.image('%s' % (sky_figname),width=900,height=960)
@@ -838,6 +1607,38 @@ def make_html(filename='data/lvmSFrame-00011061.fits', outroot=''):
     string+=xhtml.image('%s' % (ha_plot),width=900,height=900)
     string+=xhtml.image('%s' % (s2_plot),width=900,height=900)
     string+=xhtml.image('%s' % (cont_plot),width=900,height=900)
+
+    string+=xhtml.hline()
+    string+=xhtml.h2('Line Emission in the Subtracted Sky')
+    string+=xhtml.paragraph(sky_emission_comment)
+    se_table,se_fig=eval_sky_emission(filename,outroot)
+    string+=xhtml.table(se_table)
+    string+=xhtml.image('%s' % (se_fig),width=1100,height=550)
+
+    string+=xhtml.hline()
+    string+=xhtml.h2('Continuum Subtraction Quality')
+    string+=xhtml.paragraph(continuum_comment)
+    ct_table,ct_fig=eval_continuum(filename,outroot)
+    string+=xhtml.table(ct_table)
+    string+=xhtml.image('%s' % (ct_fig),width=1100,height=341)
+
+    string+=xhtml.hline()
+    string+=xhtml.h2('Sky-Line Subtraction Quality')
+    string+=xhtml.paragraph(skyline_comment)
+    sl_table,sl_prof,sl_map=eval_sky_lines(filename,outroot)
+    string+=xhtml.table(sl_table)
+    string+=xhtml.image('%s' % (sl_prof),width=1000,height=500)
+    string+=xhtml.image('%s' % (sl_map),width=1000,height=433)
+
+    string+=xhtml.hline()
+    string+=xhtml.h2('[OI] 6300 Emission and Sky-Line Residual Control')
+    string+=xhtml.paragraph(oi_image_comment)
+    oi_plot,oi_table=make_oi_images(filename,outroot)
+    if oi_plot:
+        string+=xhtml.table(oi_table)
+        string+=xhtml.image('%s' % (oi_plot),width=1000,height=464)
+    else:
+        string+=xhtml.paragraph('Could not make the [OI] maps')
 
     string+=xhtml.hline()
     string+=xhtml.h2('Flux Calibration Comparison (STD / SCI / MOD)')

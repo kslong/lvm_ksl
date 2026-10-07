@@ -2,11 +2,16 @@ Sky Subtraction
 ===============
 
 Sky subtraction is one of the most critical steps in LVM data reduction.
-The lvm_ksl package provides tools for both evaluating the standard DRP
-sky subtraction and for experimenting with alternative approaches using
-the ESO SkyCorr tool.
+The lvm_ksl package provides tools for evaluating the standard DRP sky
+subtraction, for repairing it when a sky telescope was badly placed, and
+for experimenting with alternative approaches -- both ones that still use
+the sky telescopes (SkyCorr, continuum fits, PALACE, the ESO Sky Model)
+and ones that take the sky from the science IFU itself.
 
 This page describes the available sky subtraction and sky modeling tools.
+Measuring how uniform the sky lines are across the IFU (an instrumental
+flat-field question rather than a sky-subtraction one) is covered in
+:doc:`data_quality`.
 
 
 Overview
@@ -22,8 +27,8 @@ The tools in lvm_ksl allow you to:
 - Correct an exposure whose DRP sky subtraction is compromised by a bad
   sky-telescope pointing (e.g. too close to the Moon), by substituting in
   a clean sky-telescope's data (the other telescope in the same exposure,
-  or the same telescope from a different exposure) and rerunning the DRP's own sky-subtraction routine (SubstituteSky.py,
-  RunSky.py)
+  or the same telescope from a different exposure) and rerunning the
+  DRP's own sky-subtraction routine (SubstituteSky.py, RunSky.py)
 - Run alternative sky subtraction using ESO's SkyCorr tool, a polynomial or
   B-spline continuum fit (SkySubOrig/SkySubDev1), a PALACE decomposition
   (SkySubDev2), a SkyDecomp continuum with nebular-line masking
@@ -41,6 +46,12 @@ The tools in lvm_ksl allow you to:
   on the science fiber itself (``DecomposeCleanSky.py``,
   ``sky_nebular_leak_eval.py``, ``SkySubNebEval.py`` — see "Nebular-Line-
   Based Method Evaluation" below)
+- Estimate the sky from the science fibers themselves rather than the sky
+  telescopes: a single sky from the faintest fibers (``SkySubSci.py``,
+  ``SummarizeSciSky.py``), or a full per-fiber sky subtraction from the
+  least-emission patch of the field, matched to each fiber's wavelength
+  offset, line-spread function and throughput (``SkySubPatch.py``, with
+  ``lsf_kernel.py``) -- see "Science-Fiber-Based Sky Estimation" below
 
 
 Evaluating Sky Subtraction
@@ -2864,19 +2875,30 @@ Science-Fiber-Based Sky Estimation
 ------------------------------------
 
 Unlike the XCframe methods above (which use the dedicated SKY_EAST/SKY_WEST
-sky telescopes), these two scripts estimate a sky spectrum directly from the
-science IFU itself.  At a typical LVM pointing most of the 1801 science
-fibers see mostly sky rather than an astronomical source; ranking fibers by
-sky-line-free continuum flux and averaging the faintest fibers gives a sky
-proxy without needing a sky telescope pointing at all.  No scale factor is
-applied to emission lines here, so the method is best suited to fields
-where a genuinely sky-dominated tail of faint fibers exists (e.g. diffuse
-or extended sources, not compact point sources filling the IFU).
+sky telescopes), the scripts in this section take the sky from the science
+IFU itself.  The sky then comes from the same direction, at the same time
+and through the same telescope as the source, so it avoids the sky
+telescopes' different pointing (and, e.g., one placed too close to the
+Moon).  The price is that whatever source emission the chosen fibers
+contain is subtracted too: in an extended nebula the result is the
+emission in *excess* of the faintest part of the field, not the absolute
+emission.
 
-Both scripts write output with WAVE/SCI/SKY/FLUX/DRP_ALL extensions
-compatible with ``SkySub_eval.py`` (FLUX = sky-subtracted, SKY = sky
-model), so they can be evaluated and compared alongside the four XCframe
-methods above.
+There are two approaches:
+
+- ``SkySubSci.py`` and ``SummarizeSciSky.py`` rank fibers by sky-line-free
+  continuum flux and average the faintest ones into one sky spectrum per
+  exposure.  No scale factor is applied to emission lines, so this suits
+  fields where a genuinely sky-dominated tail of faint fibers exists (e.g.
+  diffuse or extended sources, not compact point sources filling the IFU).
+  Both write WAVE/SCI/SKY/FLUX/DRP_ALL extensions compatible with
+  ``SkySub_eval.py`` (FLUX = sky-subtracted, SKY = sky model), so they can
+  be evaluated alongside the four XCframe methods above.
+- ``SkySubPatch.py`` builds the sky from a compact *patch* of fibers with
+  the least nebular emission, then transforms it separately for every
+  fiber to that fiber's own wavelength offset, line-spread function and
+  throughput before subtracting it, and writes a full lvmSFrame-layout
+  file.  ``lsf_kernel.py`` provides the line-spread-function matching.
 
 SkySubSci.py
 ^^^^^^^^^^^^
@@ -3030,6 +3052,160 @@ columns.
 **See Also:** :doc:`api/SummarizeSciSky/index`
 
 
+SkySubPatch.py
+^^^^^^^^^^^^^^
+
+Sky-subtract an lvmCFrame using a sky taken from a patch of the science
+field itself, with the sky adjusted separately for every fiber, and write
+an lvmSFrame-layout file with each fiber's own sky in its SKY extension.
+Still under development.
+
+**Usage**::
+
+    SkySubPatch.py [-h] [-mode groups|center|slit] [-lsf broaden|none]
+                   [-nbkg N] [-bkg FILE] [-ngroup N] [-mask FILE]
+                   [-np N] [-out ROOT] cframe [cframe ...]
+
+**Arguments:**
+
+cframe
+    One or more lvmCFrame FITS files, each processed independently.
+
+**Options:**
+
+-mode M
+    Calibration unit (default ``groups``): ``groups`` = non-overlapping
+    groups of about ``-ngroup`` neighbouring fibers on the sky, each fiber
+    getting an inverse-distance average of its 3 nearest groups'
+    calibrations; ``center`` = every fiber calibrated on itself plus its
+    ``ngroup``-1 nearest neighbours (slowest); ``slit`` = blocks of
+    ``ngroup`` consecutive fiberids within a spectrograph.
+
+-lsf L
+    ``broaden`` (default): at each wavelength broaden whichever of the fiber
+    and the sky is sharper (the fiber's FLUX, IVAR and LSF are updated
+    where the fiber is broadened); ``none``: no LSF matching.
+
+-nbkg N
+    Fibers in the background patch (default 20).
+
+-bkg FILE
+    Use these fiberids (one per line, or a table with a ``fiberid``
+    column) as the background instead of the automatic choice.
+
+-ngroup N
+    Fibers per calibration group (default 7: a fiber and its surrounding
+    hexagon).
+
+-mask FILE
+    Sky-line mask (``palace_make_mask.py`` output; default
+    ``data/sky_mask.fits``).
+
+-np N
+    Parallel worker processes (default 8).
+
+-out ROOT
+    Output root (default ``lvmSFrame-<exposure>.patch`` in the current
+    directory; with several inputs ``ROOT_<exp>``).
+
+**Description:**
+
+1. *Background patch.*  Every science fiber's nebular lines (Hα,
+   [N II] 6583, [S II] 6716/6731, [O III] 5007, plus Hβ when the Moon is
+   below the horizon; never [O II]) and bright sky lines are fitted with
+   Gaussians (``lvm_gaussfit.py``'s fitter).  After screening out fibers
+   with masked pixels, bright continuum (stars) or anomalous sky-line
+   throughput, the patch is the compact group of ``-nbkg`` fibers in one
+   spectrograph with the lowest emission that is faint in every scored
+   line.  The background is the mean of the patch spectra.
+
+2. *Calibration.*  For each calibration unit (``-mode``), the unit's
+   combined spectrum is compared with the background on sky-line pixels
+   only -- nebular lines (including [O I] 6300/6364, which can come from
+   the source as well as the sky) and the b/r (5750-5810 Å) and r/z
+   (7450-7650 Å) arm boundaries, where the flux calibration is
+   problematic, are excluded.  Three things are fitted:
+
+   - a wavelength shift (constant in b, quadratic in wavelength in r and z);
+   - the relative line-spread function, by two-sided kernel matching with
+     ``lsf_kernel.py``;
+   - a throughput factor for each arm, after the LSF matching.
+
+3. *Per-fiber sky.*  Each science fiber's sky is throughput × (background
+   continuum + background sky lines shifted and, where the background is
+   the sharper, broadened).  Where the *fiber* is the sharper, the fiber
+   is broadened instead.  Fibers that are not good science fibers (SkyE,
+   SkyW, standards, ``fibstatus`` ≠ 0) get the uncorrected background.
+
+The throughput factors are fitted on the sky lines only, but applied to
+the whole sky, continuum included -- i.e. the difference is assumed to be
+a flat-field-like effect that dims lines and continuum alike.
+
+**Output:**
+
+An lvmSFrame-layout file: FLUX (= the possibly broadened CFrame FLUX
+minus SKY), IVAR (including the sky variance), MASK, WAVE, LSF (updated
+where a fiber was broadened), SKY, SKY_IVAR, FLUXCAL_*, SLITMAP, plus
+
+- BACKGROUND -- the one-dimensional background spectrum (WAVE, BKG,
+  BKG_ERR, BKG_LSF);
+- BKGFIBERS -- the patch fibers;
+- CALIB -- per fiber: calibration unit, wavelength shift, throughput
+  (``thr_b``/``thr_r``/``thr_z``) and the fraction of pixels in which the
+  fiber was broadened in each arm.
+
+The PRIMARY header gains ``SSP*`` keywords recording the mode, the
+patch's spectrograph, and how the patch was chosen.
+
+**Results so far:** on three Vela exposures (9087, 14964, 16998) the
+sky-line residual (rms over the line / line peak) is about 0.010, compared
+with about 0.019 for the same patch sky subtracted without per-fiber
+adjustments; the photon-noise floor is 0.006-0.008.  An exposure takes
+about 2 minutes with 8 processes.  The default ``groups``/``broaden``
+setting is the one that has been tested; ``center`` and ``slit`` are
+less exercised.
+
+**Caveats:**
+
+- FLUX is emission in *excess* of the patch.  In Vela the patch still
+  contains roughly 70-80% of the field-median Hα and 30-60% of the
+  field-median [O III] 5007.
+- Kernels only broaden, so wherever the patch is broader than a fiber,
+  that fiber's spectrum is degraded to the patch's resolution.
+- Run ``QualSFrame.py`` on the output and on the DRP SFrame in separate
+  directories: its map files are named by exposure number only.
+
+**See Also:** :doc:`api/SkySubPatch/index`
+
+
+lsf_kernel.py
+^^^^^^^^^^^^^
+
+Module (no command line) that fits and applies an empirical,
+wavelength-dependent *relative* line-spread-function kernel between two
+LVM spectra, so that the sharper one can be broadened to match the other
+before sky lines are subtracted.  Used by ``SkySubPatch.py``.
+
+It is adapted from Ivan Katkov's ``sky_decomp.lsf_surface_iterative`` in
+the lvmsky repository (reference commit e30b730) but is an independent,
+simplified re-implementation that needs only numpy and scipy.  Per arm,
+the kernel has 11 taps whose weights vary with wavelength as B-splines
+(constant in b); it is constrained to be non-negative, to sum to one (so
+it conserves flux) and, by default, to be single-peaked, and is solved
+as a quadratic program with ``scipy.optimize.minimize`` (SLSQP).
+Because a kernel can only broaden, ``two_sided_match()`` fits both
+directions and at each wavelength broadens whichever spectrum is sharper.
+
+Primary routines: ``fit_kernel``, ``apply_kernel``, ``kernel_moments``,
+``two_sided_match``.
+
+The sky-line list ``SkySubPatch.py`` uses to find sky-line pixels,
+``data/lvm_sky_lines_all.dat``, is also vendored from lvmsky (file commit
+677c304); its header records the provenance.
+
+**See Also:** :doc:`api/lsf_kernel/index`
+
+
 Typical Workflows
 -----------------
 
@@ -3178,6 +3354,28 @@ Comparing Methods by Nebular-Line Recovery
        sky_nebular_leak_eval.py CleanSky_<expnum>.fits
        PlotNebularLeak.py CleanSky_<expnum>.fits
 
+Sky from a Patch of the Science Field
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+1. Sky-subtract one or more CFrames with the default settings::
+
+       SkySubPatch.py lvmCFrame-00016998.fits
+
+   The printed summary gives the patch's spectrograph and, for each
+   scored line, the patch's flux as a fraction of the field median -- how
+   much source emission is being subtracted from every fiber.
+
+2. Inspect the result: which fibers formed the patch (BKGFIBERS), the
+   background spectrum (BACKGROUND), and each fiber's shift, throughput
+   and broadening (CALIB).  Throughput maps from CALIB show the smooth,
+   flat-field-like pattern the method corrects for.
+
+3. Compare with the DRP's SFrame for the same exposure by running
+   ``QualSFrame.py`` on each, in separate directories.  Its sections on
+   the line emission in the subtracted sky, the continuum and the
+   sky-line residuals use only FLUX, SKY and IVAR, so the two reports
+   are directly comparable (see :doc:`data_quality`).
+
 
 Notes
 -----
@@ -3194,6 +3392,16 @@ Notes
   (SkySubNebEval.py) are independent axes -- a method can suppress
   airglow well while still distorting real nebular signal, or vice versa;
   check both before trusting a single "which method is better" answer
+- A sky taken from the science field itself (SkySubSci.py,
+  SkySubPatch.py) avoids the sky telescopes' different pointing, but in an
+  extended source it removes the emission present in the chosen fibers
+  along with the sky; the result measures emission relative to the
+  faintest part of the field
+- Fiber-to-fiber differences in throughput (1-3%), line width and
+  wavelength (~10 mÅ) limit how well any single sky spectrum subtracts
+  bright sky lines from every fiber; SkySubPatch.py corrects for all
+  three, using groups of neighbouring fibers, which are much more alike
+  than random pairs
 
 
 See Also
@@ -3231,6 +3439,8 @@ See Also
 - :doc:`api/PlotSkySubNebRun/index` - API documentation
 - :doc:`api/SkySubSci/index` - API documentation
 - :doc:`api/SummarizeSciSky/index` - API documentation
+- :doc:`api/SkySubPatch/index` - API documentation
+- :doc:`api/lsf_kernel/index` - API documentation
 - :doc:`summarize` - SummarizeCframe.py, whose drpall selection logic SummarizeSciSky.py mirrors
 - :doc:`spectral_fitting_local` - ``sky_gaussfit.py``'s NEBULAR_LINES/resolve_nebular_lines, shared by the nebular-line evaluation tools above
 - :doc:`data_quality` - ``QualSFrame.py``'s pointing table, reused by PlotSkySubNebEval.py

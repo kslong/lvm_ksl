@@ -11,16 +11,18 @@ Synopsis:
     identical XCframe layout (same WAVE/FLUX/SKY_EAST/SKY_WEST/LSF/DRP_ALL
     extensions, just fewer rows).
 
-    Intended as the first step of building a small validation corpus for
-    retraining the mlp_ensemble_split_zodi sky-prediction model: this script
-    only selects and repackages rows, it does not reformat anything for
-    lvmsky's decompose_parallel.py (that is a separate conversion step).
+    Intended as the first step of building a training or test corpus for
+    the semi-empirical machine-learning sky model: this script only
+    selects and repackages rows (optionally adding the precipitable water
+    vapor, PWV, of each exposure from a SummarizeSkyHdr.py file), it does
+    not reformat anything for lvmsky's decompose_parallel.py (that is a
+    separate conversion step).
 
 Command line usage (if any):
 
     usage: SelectXCF.py [-h] [-n N] [-seed SEED] [-nbins NBINS]
                         [-exptime EXPTIME] [-fluxcal FLUXCAL]
-                        [-min_glat MIN_GLAT]
+                        [-min_glat MIN_GLAT] [-hdr HDR_FILE]
                         [-lmc_ra LMC_RA] [-lmc_dec LMC_DEC] [-lmc_radius LMC_RADIUS]
                         [-smc_ra SMC_RA] [-smc_dec SMC_DEC] [-smc_radius SMC_RADIUS]
                         [-orion_ra ORION_RA] [-orion_dec ORION_DEC] [-orion_radius ORION_RADIUS]
@@ -56,6 +58,14 @@ Command line usage (if any):
                     minimum |galactic latitude| in degrees for the Sci
                     pointing (default: 10.0).
 
+    -hdr HDR_FILE   a SummarizeSkyHdr.py output file whose SKY_HDR table
+                    has PWV_MED/PWV_STD (SummarizeSkyHdr.py from 261007
+                    on).  Rows without a valid PWV (no entry for that
+                    exposure, or -999.9 where the DRP's PWV fit failed)
+                    are excluded before the draw, and pwv_med/pwv_std
+                    columns are added to the output DRP_ALL (default:
+                    none -- no PWV cut, no PWV columns).
+
     -lmc_ra/-lmc_dec/-lmc_radius
                     LMC exclusion center + radius in degrees (default:
                     80.8942, -69.7561, 6.0 -- py_progs/rss2image.py's
@@ -74,7 +84,8 @@ Description:
 
     1. Reads DRP_ALL from the input file and applies the hard cuts (exptime,
        fluxcal, galactic latitude, LMC/SMC/Orion exclusion) using the Sci
-       telescope's pointing (sci_ra/sci_dec).
+       telescope's pointing (sci_ra/sci_dec).  With -hdr, rows without a
+       valid PWV are also removed, matched on expnum.
     2. From the surviving candidate rows, draws -n rows via a stratified
        random sample over a (moon_alt x moon_fli) quantile grid, so the
        small output corpus spans the moon-geometry range the sky-prediction
@@ -83,7 +94,9 @@ Description:
     3. Writes the selected rows to a new FITS file with the same extension
        structure as the input (PRIMARY header copied, WAVE unchanged,
        FLUX/SKY_EAST/SKY_WEST/LSF and DRP_ALL sliced to the selected rows,
-       row order sorted by original index for reproducible diffing).
+       row order sorted by original index for reproducible diffing).  With
+       -hdr, DRP_ALL gains pwv_med and pwv_std [mm] columns and the
+       PRIMARY header records the file as PWVFILE.
 
 Notes::
 
@@ -91,6 +104,14 @@ Notes::
     for lvmsky's decompose_parallel.py (FLUX -> FLUX_SCI, per-row
     SKY_EAST/SKY_WEST -> FLUX_SKY_NEAR/FLUX_SKY_FAR via the Near/Far label,
     etc). That reformatting is a separate downstream step.
+
+    PWV is needed because lvmsky's telluric decomposition must use the
+    same PWV the DRP used for its telluric correction.  The DRP measures
+    PWV_MED from the standard stars and applies the correction only when
+    FLUXCAL is MOD; PWV is in the CFrame PRIMARY header but not in the
+    drpall table, hence the separate SummarizeSkyHdr.py file.  Adding it
+    here, at selection, means every later step (training, prediction,
+    evaluation) reads it from the selected file's own DRP_ALL.
 
 History::
 
@@ -104,6 +125,9 @@ History::
     260903  ksl  Switched every option from double-dash (--min-glat) to
         single-dash (-min_glat), matching py_progs/'s convention -- see
         BatchPredictSkyESO.py's History for the fuller note.
+    261007  ksl  Added -hdr: take PWV from a SummarizeSkyHdr.py file,
+        drop exposures without a valid PWV, and add pwv_med/pwv_std to
+        the output DRP_ALL.
 
 '''
 
@@ -137,6 +161,43 @@ DEFAULT_ORION = dict(ra=83.8221, dec=-5.3911, radius=15.0)
 # ---------------------------------------------------------------------------
 # Selection
 # ---------------------------------------------------------------------------
+
+def get_pwv(hdr_file, expnum):
+    '''
+    Look up PWV_MED and PWV_STD for each exposure in a SummarizeSkyHdr.py
+    file.
+
+    Parameters
+    ----------
+    hdr_file : str
+        SummarizeSkyHdr.py output FITS file (SKY_HDR extension with
+        EXPNUM, PWV_MED and PWV_STD columns).
+    expnum : array-like
+        Exposure numbers to look up (the DRP_ALL expnum column).
+
+    Returns
+    -------
+    tuple of numpy.ndarray or None
+        (pwv_med, pwv_std), aligned with expnum; NaN where the exposure
+        is not in hdr_file.  -999.9 (failed PWV fit) is passed through
+        unchanged.  None if hdr_file has no PWV columns.
+    '''
+    with fits.open(hdr_file) as hdul:
+        tab = Table(hdul['SKY_HDR'].data)
+    if 'PWV_MED' not in tab.colnames or 'PWV_STD' not in tab.colnames:
+        print(f'Error: {hdr_file} has no PWV_MED/PWV_STD columns '
+              f'(rerun SummarizeSkyHdr.py from 261007 or later)')
+        return None
+
+    lookup = {int(e): (float(m), float(s))
+              for e, m, s in zip(tab['EXPNUM'], tab['PWV_MED'], tab['PWV_STD'])}
+    pwv_med = np.full(len(expnum), np.nan)
+    pwv_std = np.full(len(expnum), np.nan)
+    for i, e in enumerate(np.asarray(expnum, int)):
+        if e in lookup:
+            pwv_med[i], pwv_std[i] = lookup[e]
+    return pwv_med, pwv_std
+
 
 def apply_hard_cuts(drp, args):
     '''
@@ -237,9 +298,12 @@ def stratified_sample(moon_alt, moon_fli, n, nbins, seed):
 # I/O
 # ---------------------------------------------------------------------------
 
-def select(fits_file, args):
+def select(fits_file, args, pwv_med=None):
     '''
     Apply the hard cuts and stratified draw to fits_file's DRP_ALL table.
+
+    pwv_med, if given (aligned with DRP_ALL, from get_pwv), additionally
+    removes rows without a valid PWV (NaN or <= 0) before the draw.
 
     Returns
     -------
@@ -254,6 +318,14 @@ def select(fits_file, args):
     print(f'{n_pass} / {len(drp)} rows pass the hard cuts '
           f'(exptime={args.exptime}, fluxcal={args.fluxcal!r}, '
           f'|b|>={args.min_glat} deg, LMC/SMC/Orion excluded)')
+    if pwv_med is not None:
+        missing = mask & ~np.isfinite(pwv_med)
+        failed = mask & np.isfinite(pwv_med) & (pwv_med <= 0)
+        mask &= np.isfinite(pwv_med) & (pwv_med > 0)
+        n_pass = int(mask.sum())
+        print(f'{n_pass} rows also have a valid PWV '
+              f'({int(missing.sum())} not in the -hdr file, '
+              f'{int(failed.sum())} with a failed PWV fit)')
     if n_pass == 0:
         raise ValueError('No rows survive the selection criteria.')
 
@@ -270,11 +342,15 @@ def select(fits_file, args):
     return selected_idx
 
 
-def write_subset(fits_file, selected_idx, outpath):
+def write_subset(fits_file, selected_idx, outpath, pwv=None, hdr_file=None):
     '''
     Write the rows at selected_idx to outpath, preserving the input file's
     extension structure (PRIMARY header, WAVE unchanged, FLUX/SKY_EAST/
     SKY_WEST/LSF and DRP_ALL sliced to selected_idx).
+
+    pwv, if given, is the (pwv_med, pwv_std) pair from get_pwv (aligned
+    with the full DRP_ALL); the selected values are added to DRP_ALL as
+    pwv_med/pwv_std and hdr_file is recorded in the PRIMARY header.
     '''
     with fits.open(fits_file, memmap=True) as hdul:
         primary_hdr = hdul['PRIMARY'].header.copy()
@@ -288,6 +364,11 @@ def write_subset(fits_file, selected_idx, outpath):
 
     primary_hdr['SRCFILE'] = (str(Path(fits_file).name), 'Input XCframe file')
     primary_hdr['NSEL'] = (len(selected_idx), 'Rows selected by SelectXCF.py')
+    if pwv is not None:
+        drp['pwv_med'] = pwv[0][selected_idx]
+        drp['pwv_std'] = pwv[1][selected_idx]
+        primary_hdr['PWVFILE'] = (str(Path(hdr_file).name),
+                                  'SummarizeSkyHdr.py file giving pwv_med/pwv_std')
 
     hdul_out = fits.HDUList([
         fits.PrimaryHDU(header=primary_hdr),
@@ -328,6 +409,10 @@ def main():
     p.add_argument('-min_glat', type=float, default=DEFAULT_MIN_GLAT,
                    dest='min_glat',
                    help='Minimum |galactic latitude| in degrees for sci_ra/sci_dec')
+    p.add_argument('-hdr', default=None,
+                   help='SummarizeSkyHdr.py file with PWV_MED/PWV_STD; rows '
+                        'without a valid PWV are excluded and pwv_med/pwv_std '
+                        'added to DRP_ALL')
     p.add_argument('-lmc_ra', type=float, default=DEFAULT_LMC['ra'], dest='lmc_ra')
     p.add_argument('-lmc_dec', type=float, default=DEFAULT_LMC['dec'], dest='lmc_dec')
     p.add_argument('-lmc_radius', type=float, default=DEFAULT_LMC['radius'], dest='lmc_radius')
@@ -344,8 +429,17 @@ def main():
         stem = Path(args.fits_file).stem
         outpath = f'{stem}_sel{args.n}.fits'
 
-    selected_idx = select(args.fits_file, args)
-    write_subset(args.fits_file, selected_idx, outpath)
+    pwv = None
+    if args.hdr is not None:
+        with fits.open(args.fits_file, memmap=True) as hdul:
+            expnum = np.asarray(hdul['DRP_ALL'].data['expnum'])
+        pwv = get_pwv(args.hdr, expnum)
+        if pwv is None:
+            return
+
+    selected_idx = select(args.fits_file, args,
+                          pwv_med=None if pwv is None else pwv[0])
+    write_subset(args.fits_file, selected_idx, outpath, pwv=pwv, hdr_file=args.hdr)
 
 
 if __name__ == '__main__':

@@ -45,8 +45,12 @@ Command line usage (if any):
 
 Description:
 
-    Each row involves two real QP decomposition fits (SkyE/SkyW) plus
-    ephemeris/reconstruction work -- CPU-bound, independent across rows.
+    Each row involves two real decomposition fits (SkyE/SkyW, run by
+    PredictSky.decompose_row through lvmsky's
+    decompose_parallel.decompose_in_process) plus ephemeris,
+    reconstruction and the post-prediction corrections -- CPU-bound,
+    independent across rows.  FLUX_PRED and LINE_PRED include
+    PredictSky.py's sky-arm and sky-line corrections.
     A first version of this script (single process) measured only a ~19%
     speedup from reusing the ensemble/SkyDecomp instance across rows,
     because that process was already running near 800% CPU via NumPy/
@@ -60,8 +64,10 @@ Description:
     single-threaded worker PROCESSES (multiprocessing, spawn context --
     fork would inherit the parent's already-initialised BLAS pools and
     undermine the clamp, same reasoning as decompose_parallel.py's own
-    comment on this). Each worker loads the ensemble and builds its own
-    SkyDecomp instance once (in init_worker), not once per row.
+    comment on this). Each worker loads the ensemble once (in
+    init_worker), not once per row; the decomposition itself is set up per
+    row, because its telluric transmission depends on each exposure's PWV
+    and airmass.
 
 History::
 
@@ -76,6 +82,8 @@ History::
         sky_gaussfit.py and TrainSkyModel.py. -n's default changed
         from 20 to all rows in fits_file (reads DRP_ALL's row count
         up front to resolve this before dispatching to workers).
+    261008  ksl  Docstring updated for PredictSky.py's rewrite for lvmsky
+        branch skydecomp-telluric-corrected-lines; no code change needed.
 
 '''
 

@@ -356,39 +356,58 @@ How To: Train a New Model
     # 0. Build the source XCframe summary from the current DRP version
     SummarizeCframe.py -by fiber -ver 1.3.2 exp_start exp_stop delta
 
-    # 1. Choose the training set
-    SelectXCF.py source.fits my_train_set.fits -n 3500 -seed 42
+    # 0b. Collect each exposure's PWV from the CFrame headers
+    #     (header-only; run where the CFrames are, e.g. at Utah)
+    SummarizeSkyHdr.py -ver 1.3.2 exp_start exp_stop
+
+    # 1. Choose the training set, keeping only exposures with a valid PWV
+    SelectXCF.py source.fits my_train_set.fits -n 3500 -seed 42 \
+        -hdr SummarizeSkyHdr_1.3.2_<exp_start>_<exp_stop>_1.fits
 
     # 2. Run the whole training pipeline
     TrainSkyModel.py my_train_set.fits -np 8
 
 ``TrainSkyModel.py`` runs four stages -- ``convert`` (reformat the
 XCframe for ``lvmsky``), ``decompose`` (``lvmsky``'s
-``decompose_parallel.py``), ``wavecache`` (assemble and filter the
-training coefficients) and ``train`` (fit the network ensemble) -- and
-writes everything to ``my_train_set_train/``, ending with
-``mlp_ensemble.pt``. Each stage is skipped if its output already exists,
-so an interrupted run can simply be restarted; ``-start_at`` and
-``-stop_after`` rerun selected stages. Evaluate the result with
+``decompose_parallel.py`` with the branch's default telluric fit model),
+``wavecache`` (assemble, filter and augment the training coefficients)
+and ``train`` (fit the network ensemble) -- and writes everything to
+``my_train_set_train/``, ending with ``mlp_ensemble.pt``. Each stage is
+skipped if its output already exists, so an interrupted run can simply
+be restarted; ``-start_at`` and ``-stop_after`` rerun selected stages.
+The filters, context features and training settings follow ``lvmsky``'s
+own training notebook. Evaluate the result with
 ``EvalCoefResiduals.py my_train_set_train`` and the test recipe above.
 
-The ``train`` stage needs enough rows for every coefficient group: in
-practice at least ~150-200 exposures for a smoke test, and of order
-1,000-3,500 for a real model.
+**Why PWV.** The branch's decomposition recomputes the telluric
+correction the DRP applied, which used the precipitable water vapor
+(``PWV_MED``) the DRP measured from that exposure's standard stars. The
+DRP applies this correction only when ``FLUXCAL`` is ``MOD`` (the
+``SelectXCF.py`` default). ``PWV_MED`` is in each CFrame's primary header
+but not in drpall, hence ``SummarizeSkyHdr.py`` and ``-hdr``; without it
+every exposure would be treated as the DRP default of 15 mm instead of
+its real value (typically 1-8 mm).
 
-**Open items before retraining on the current lvmsky branch.**
-``TrainSkyModel.py`` and ``ConvertForDecompose.py`` were written against
-``lvmsky``'s ``main`` (2026-09) and have not yet been updated:
+**Approximations.** The XCframe holds only the science fibers' LSF, so
+it is used for the sky telescopes as well, and its NaN pixels at the
+ends of the wavelength range are filled from the neighbouring pixels.
 
-- the decompose stage requests the older ``lsf-surface-iterative-split-zodi``
-  fit model rather than the branch's new default;
-- ``ConvertForDecompose.py`` does not carry the per-fiber LSF or the
-  per-telescope airmass, PWV and pointing columns that the branch's
-  geometry priors and telluric models need, so those are silently off
-  (or, for the telluric models, cannot run);
-- ``PredictSky.py`` does not yet pass the new per-telescope LSF inputs
-  to the branch's prediction routine, nor apply its new
-  post-prediction corrections.
+**Size and time.** The ``train`` stage needs enough rows for every
+coefficient group: at least ~150-200 exposures for a smoke test, and of
+order 1,000-3,500 for a real model. Decomposition takes about 1.5 s per
+spectrum per worker (three spectra per exposure). A 200-exposure test
+with 8 workers took about 5 minutes to decompose; the full 400-epoch,
+10-seed training takes much longer.
+
+**Predicting with a new model.** ``PredictSky.py`` and
+``BatchPredictSky.py`` decompose each exposure's SkyE and SkyW spectra
+with the same code and settings as the training corpus (``lvmsky``'s
+``decompose_in_process``), predict the science sky, rebuild it on the
+training basis, and by default apply the two corrections ``lvmsky``
+introduced: a sky-arm residual correction for the blue solar lines the
+moonlight model misses, and a rescaling of each group of sky lines
+fitted on the science spectrum itself. Select the exposures with
+``SelectXCF.py -hdr`` so that their PWV is available.
 
 
 Open Questions

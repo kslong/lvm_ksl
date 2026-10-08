@@ -7,10 +7,12 @@
 Synopsis:
 
     Consolidated, resumable driver that turns a SelectXCF.py-selected
-    XCframe corpus into a trained mlp_ensemble_split_zodi ensemble
-    checkpoint, running every intermediate step in one call instead of
-    hand-invoking ConvertForDecompose.py / decompose_parallel.py / a
-    wavecache script / a training script in sequence.
+    XCframe corpus into a trained semi-empirical machine-learning sky
+    model (lvmsky's mlp_ensemble_split_zodi ensemble), running every
+    intermediate step in one call: ConvertForDecompose.py, lvmsky's
+    decompose_parallel.py, the triplet build/filter/augment step, and
+    the network training.  Written for lvmsky branch
+    skydecomp-telluric-corrected-lines (2026-10).
 
 Command line usage (if any):
 
@@ -26,7 +28,9 @@ Command line usage (if any):
     where
 
     xcf_fits        is an XCframe-layout FITS file (SelectXCF.py output),
-                    the corpus of exposures to train on.
+                    the corpus of exposures to train on.  Select it with
+                    SelectXCF.py -hdr so that DRP_ALL carries each
+                    exposure's PWV (see Notes).
 
     -work_dir DIR   directory for every pipeline artifact -- decomp_input
                     FITS, decompose_parallel.py outputs, filtered_triplet
@@ -56,12 +60,10 @@ Command line usage (if any):
     -atom_k_max ATOM_K_MAX
                     upper hard bound for the atom_k coefficient filter,
                     passed to apply_triplet_filters' hard_coef_bounds
-                    (default: 10.0, widened from that function's own
-                    default of 1.0 -- see Notes).
+                    (default: 10.01, as in lvmsky's training notebook).
 
-    -epochs EPOCHS  override mlp_predictor.trainer.default_dual_group_
-                    config's n_epochs (default: unset, uses that config's
-                    own default of 50; pass a small value for a quick
+    -epochs EPOCHS  override n_epochs (default: 400, from
+                    TRAIN_CFG_OVERRIDES; pass a small value for a quick
                     smoke-test run).
 
     -seeds SEEDS    comma-separated ensemble seeds, e.g. "42,43" (default:
@@ -69,16 +71,15 @@ Command line usage (if any):
                     ensemble).
 
     -flux_mse_groups GROUPS
-                    comma-separated group names to add to the flux-MSE
-                    loss term, e.g. "moon,zodi" (default: empty/off -- see
-                    Notes; this pipeline does not build the per-row LSF
-                    path that loss term needs).
+                    comma-separated group names for the flux-MSE loss
+                    term (default: moon,zodi,continuum, from
+                    TRAIN_CFG_OVERRIDES).
 
     -train_frac F   moon-phase-stratified split fraction for training
-                    (default: 0.7).
+                    (default: 0.8, mlp_predictor's own default).
 
     -val_frac F     moon-phase-stratified split fraction for validation;
-                    the remainder is held out as test (default: 0.15).
+                    the remainder is held out as test (default: 0.1).
 
     -split_seed SEED
                     RNG seed for the moon-phase-stratified split (default:
@@ -103,69 +104,70 @@ Command line usage (if any):
 Description:
 
     Runs four stages in order, each independently resumable (skipped if
-    its expected output files already exist, unless -force is given):
+    its expected output files already exist, unless -force is given).
+    Stages 3 and 4 follow lvmsky's own training notebook
+    (notebook_sky_interpolation_triplet_dual_encoder_group_mlp_split_zodi_
+    module.ipynb):
 
       1. convert    -- ConvertForDecompose.convert(): reformats xcf_fits
-                       into the WAVE/FLUX_SCI/FLUX_SKY_NEAR/FLUX_SKY_FAR/
-                       META layout decompose_parallel.py expects.
+                       into decompose_parallel.py's stack layout (FLUX_*,
+                       LSF_*, META with airmasses, date_obs and pwv_med).
       2. decompose  -- runs lvmsky's decompose_parallel.py as a subprocess
-                       (--fit-model lsf-surface-iterative-split-zodi,
-                       -np workers), producing the meta_only,
-                       {sky1,sky2,sci}_meta_coef, and every10 (LSF/flux
-                       basis) FITS files.
-      3. wavecache  -- mlp_predictor.data.build_triplet_coef_dataset +
-                       apply_triplet_filters, then mlp_predictor.
-                       wavelengths.resolve_wavelengths_and_extinction;
-                       pickles the result as work_dir/filtered_triplet.pkl.
-      4. train      -- augments the triplet with ecliptic/physics-prior
-                       context, builds a moon-phase-stratified train/val/
-                       test split, fits per-group compressors
-                       (mlp_predictor.compressor.fit_all_group_
-                       compressors), then trains the seed ensemble
-                       (mlp_predictor.trainer.Trainer.run_ensemble) and
-                       saves it with mlp_predictor.serialization.
-                       save_ensemble. Also writes work_dir/
-                       filtered_triplet_augmented.pkl (the same corpus
-                       EvalCoefResiduals.py expects as its triplet_pkl
-                       argument).
+                       (--fit-model palacecorr-aijc-vnf-split-zodi-lsf-
+                       spline2d, the branch default; -np workers),
+                       producing the decomp_{sky1,sky2,sci},
+                       {sky1,sky2,sci}_meta_coef, meta_only and every10
+                       FITS files.
+      3. wavecache  -- builds the (near sky, far sky, science) coefficient
+                       triplet, applies the notebook's quality filters
+                       (coefficient bounds, LMC/SMC exclusion, moon/zodi
+                       role reversal, science colour excess, collapsed
+                       airglow continuum), adds the ecliptic, physics-prior
+                       and physical-moon-model context features (the last
+                       builds a cache beside the corpus on first use), and
+                       resolves each coefficient's wavelength and
+                       extinction; pickles the result as
+                       work_dir/filtered_triplet.pkl.
+      4. train      -- moon-phase-stratified train/val/test split,
+                       per-group compressors, then the seed ensemble
+                       (Trainer.run_ensemble) with the notebook's settings
+                       (TRAIN_CFG_OVERRIDES), saved with save_ensemble.
+                       Also writes work_dir/filtered_triplet_augmented.pkl
+                       (the corpus EvalCoefResiduals.py reads).
 
     The B-spline knot counts (n_moon_knots, split_zodi, n_zodi_knots) that
     run_ensemble needs are inferred from the decomposed coef_names via
-    mlp_predictor.wavelengths.infer_spline_knots rather than hand-
-    transcribed, removing a class of copy/paste error present in the
-    scripts this replaces.
+    mlp_predictor.wavelengths.infer_spline_knots.
 
 Notes::
 
-    - -atom_k_max's default of 10.0 (vs. apply_triplet_filters' own 1.0)
-      carries forward a widened bound adopted during the 260901-260902
-      retraining session: the default hard bound rejected ~95-97% of
-      rows because ATOM_K ran ~2x high vs. that bound for reasons not
-      understood at the time (ruled out by-fiber-vs-by-pixel XCframe
-      construction and multi- vs. single-exposure stacking as causes).
-      Root cause is still open; this is a working default, not a fix.
-    - flux_mse_groups defaults to off for the same reason both prior
-      training runs (stage1_train.py/stage2_train.py) left it off: it
-      needs a real per-row LSF path into decompose_parallel.py's input,
-      which this pipeline does not build (ConvertForDecompose.py
-      deliberately drops LSF -- lsf-surface-iterative-split-zodi's
-      worker uses a single global --lsf-sigma scalar instead).
+    - PWV: the branch's telluric decomposition recomputes the telluric
+      transmission the DRP applied, which used PWV_MED from each CFrame
+      header.  PWV is not in drpall, so it comes from a
+      SummarizeSkyHdr.py file via SelectXCF.py -hdr.  Rows without a
+      valid pwv_med fall back to the DRP default of 15 mm, which is
+      wrong for most exposures; the convert stage warns how many.
+    - LSF: the XCframe carries only the science fibers' LSF, which is
+      used for the sky telescopes too, and its NaN pixels at the ends of
+      the wavelength range are filled (see ConvertForDecompose.py).
+    - TRAIN_CFG_OVERRIDES copies the settings in which the notebook's
+      train_cfg cell (lvmsky commit 59687bb) differs from
+      mlp_predictor.trainer.default_dual_group_config.  Recheck it when
+      lvmsky is updated.
+    - The decompose stage runs about 1.5 s per spectrum per worker (three
+      spectra per exposure); the moon-model cache about 0.55 s per
+      exposure per worker.
     - decompose is the only stage run as a subprocess rather than an
       in-process call: it is lvmsky's own long-running, CPU-thread-
-      pinned, ProcessPoolExecutor-parallel script, and keeping it as a
-      separate process preserves its own progress bar, thread-limiting
-      env vars, and -np tuning independent of this driver.
+      pinned, parallel script, and keeping it separate preserves its own
+      progress bar, thread limits and -np tuning.
     - No evaluation stage is included by design -- run EvalCoefResiduals.py
-      (triplet_pkl=work_dir/filtered_triplet_augmented.pkl, meta_fits=
-      work_dir/<decomp_stem>_meta_only.fits) and/or BatchPredictSky.py +
-      EvalFluxResiduals.py against the saved checkpoint afterward.
-    - mlp_predictor.data.apply_triplet_filters() (inside the wavecache
-      stage) builds two Plotly diagnostic histograms and calls fig.show()
-      on each; left alone this pops a browser tab per run under Plotly's
-      default non-notebook renderer. Patched at import time here (not in
-      lvmsky) by overriding plotly.basedatatypes.BaseFigure.show, so both
-      figures are written to work_dir/plots/*.html instead, with no
-      browser auto-open -- view them locally at will.
+      on work_dir and/or BatchPredictSky.py + EvalFluxResiduals.py
+      against the saved model afterwards.
+    - mlp_predictor's filters build Plotly diagnostic histograms and call
+      fig.show(), which would open browser tabs.  Patched at import time
+      here (not in lvmsky) so the figures are written to
+      work_dir/plots/*.html instead.
 
 History::
 
@@ -174,6 +176,12 @@ History::
         previously duplicated between niv/stage1_wavecache.py and
         niv/stage1_train.py + niv/stage2_train.py into one resumable
         driver.
+    261007  ksl  Updated for lvmsky branch skydecomp-telluric-corrected-lines:
+        branch default fit model and output suffix; the notebook's
+        filters, context augments (incl. the physical moon model) and
+        training settings (TRAIN_CFG_OVERRIDES); run_ensemble given the
+        flux stack and decomposition suffix; PWV taken from DRP_ALL
+        (SelectXCF.py -hdr); default split 0.8/0.1.
 
 '''
 
@@ -184,6 +192,9 @@ import pickle
 import subprocess
 import sys
 from pathlib import Path
+
+import numpy as np
+from astropy.io import fits
 
 # ---------------------------------------------------------------------------
 # External package setup -- mlp_predictor lives in the lvmsky repo, not in
@@ -247,7 +258,41 @@ _pbd.BaseFigure.show = _save_instead_of_show
 
 STAGES = ["convert", "decompose", "wavecache", "train"]
 
-DECOMP_SUFFIX = "_lsf_surface_iterative_split_zodi"
+# lvmsky branch skydecomp-telluric-corrected-lines: decompose_parallel.py's
+# default fit model (2026-09-24) and the matching mlp_predictor variant.
+FIT_MODEL = "palacecorr-aijc-vnf-split-zodi-lsf-spline2d"
+DECOMP_VARIANT = "telluric-palacecorr"
+DECOMP_SUFFIX = mp_data.DECOMP_VARIANTS[DECOMP_VARIANT]["suffix"]
+
+# Training settings that differ from mlp_predictor.trainer.default_dual_group_config,
+# copied from the train_cfg cell of lvmsky's training notebook
+# (notebook_sky_interpolation_triplet_dual_encoder_group_mlp_split_zodi_module.ipynb,
+# lvmsky commit 59687bb, 2026-10-07) -- the configuration the lvmsky team
+# trains their deployed model with.  Every other setting is the library default.
+TRAIN_CFG_OVERRIDES = {
+    "n_epochs": 400,
+    "weight_decay": 2e-4,
+    "zodi_head_extra_dims": (),
+    "moon_group_weight": 3.0,
+    "flux_mse_groups": ("moon", "zodi", "continuum"),
+    "flux_amp_lambda": {"moon": 5.0, "zodi": 0.0},
+    "blend_init_alpha": 0.85,
+    "alpha_lr_mult": 30.0,
+    "ensemble_workers": 4,
+    "zodi_ctx_restriction": (
+        "airmass", "vanrhijn_285km", "ecl_beta_deg", "ecl_lon_sin", "ecl_lon_cos",
+        "zodi_log10_v", "sun_sep", "sun_alt", "alt", "moon_alt", "moon_sep",
+        "moon_phase_sin", "moon_phase_cos", "moon_fli", "moon_up_smooth",
+        "moon_airmass_up", "moon_signal_proxy", "zodi_po_log10", "moon_frac_po",
+    ),
+    "moon_zodi_ctx_restriction": (
+        "airmass", "vanrhijn_285km", "ecl_beta_deg", "ecl_lon_sin", "ecl_lon_cos",
+        "zodi_log10_v", "sun_sep", "moon_alt", "moon_sep", "moon_phase_sin",
+        "moon_phase_cos", "moon_fli", "moon_up_smooth", "moon_airmass_up",
+        "moon_signal_proxy", "moon_fli_x_phase_cos", "moon_sig_x_lon_cos",
+        "moon_sig_x_lon_sin", "zodi_po_log10", "moon_frac_po",
+    ),
+}
 
 
 def stage_convert(xcf_fits, decomp_input, force=False):
@@ -267,7 +312,8 @@ def stage_decompose(decomp_input, work_dir, lvmsky_skysub, n_workers, force=Fals
         work_dir / f"{stem}_sky2_meta_coef{DECOMP_SUFFIX}.fits",
         work_dir / f"{stem}_sci_meta_coef{DECOMP_SUFFIX}.fits",
         work_dir / f"{stem}_every10.fits",
-    ]
+    ] + [work_dir / f"{stem}_decomp_{arm}{DECOMP_SUFFIX}.fits"
+         for arm in ("sky1", "sky2", "sci")]
     if all(p.exists() for p in outputs) and not force:
         print(f"[decompose] outputs exist, skip ({len(outputs)} files)")
         return
@@ -275,7 +321,7 @@ def stage_decompose(decomp_input, work_dir, lvmsky_skysub, n_workers, force=Fals
     script = Path(lvmsky_skysub) / "decompose_parallel.py"
     cmd = [
         sys.executable, str(script), str(decomp_input),
-        "--fit-model", "lsf-surface-iterative-split-zodi",
+        "--fit-model", FIT_MODEL,
         "--n-workers", str(n_workers),
         "--output-dir", str(work_dir),
     ]
@@ -293,10 +339,13 @@ def _pipeline_config(work_dir, decomp_stem):
     cfg = PipelineConfig()
     cfg.data.decomp_data_root = str(work_dir)
     cfg.data.decomp_stem = decomp_stem
+    cfg.data.decomp_suffix = DECOMP_SUFFIX
     return cfg
 
 
-def stage_wavecache(work_dir, decomp_stem, atom_k_max, force=False):
+def stage_wavecache(work_dir, decomp_stem, atom_k_max, n_workers, force=False):
+    """Build, filter and augment the training triplet; resolve coefficient
+    wavelengths.  Follows cells 3 and 6 of lvmsky's training notebook."""
     cfg = _pipeline_config(work_dir, decomp_stem)
     pkl_path = work_dir / "filtered_triplet.pkl"
 
@@ -307,22 +356,54 @@ def stage_wavecache(work_dir, decomp_stem, atom_k_max, force=False):
         return filtered, cfg
 
     trip = mp_data.build_triplet_coef_dataset(
-        cfg.data.input_fits_meta,
-        cfg.data.coef_fits("sky1"),
-        cfg.data.coef_fits("sky2"),
-        cfg.data.coef_fits("sci"),
-        context_columns=cfg.data.context_columns,
+        input_fits_path=cfg.data.input_fits_meta,
+        sky_near_decomp_fits_path=cfg.data.coef_fits("sky1"),
+        sky_far_decomp_fits_path=cfg.data.coef_fits("sky2"),
+        sci_decomp_fits_path=cfg.data.coef_fits("sci"),
+        context_columns=list(cfg.data.context_columns),
+        return_chi2=True,
     )
+    with fits.open(cfg.data.input_fits_for_basis) as hdul:
+        wave = np.asarray(hdul["WAVE"].data, dtype=float)
+        wave = wave if wave.ndim == 1 else wave[0]
+
     filtered = mp_data.apply_triplet_filters(
-        trip, hard_coef_bounds={"feo": (0.0, 1.0), "atom_k": (0.0, atom_k_max)},
+        trip,
+        thin_every_n=1, chi2_qmax=90.0, chi2_min=0.0, chi2_max=10.0,
+        hard_coef_bounds={"feo": (0.0, 36.01), "atom_k": (0.0, atom_k_max)},
+        kappa=8.0, kappa_iter=3, oh_kappa=6.0, oh_kappa_iter=3,
+        exclude_field_regions=[mp_data.LMC_EXCLUSION, mp_data.SMC_EXCLUSION],
+        reversal_decomp_fits={
+            "near": cfg.data.decomp_fits("sky1"),
+            "far": cfg.data.decomp_fits("sky2"),
+            "sci": cfg.data.decomp_fits("sci"),
+        },
+        reversal_wave=wave,
+        reversal_min_component_frac=0.05,
+        reversal_min_separation=0.0,
+        colour_excess_input_fits=cfg.data.input_fits_flux,
+        colour_excess_max=mp_data.SCI_COLOUR_EXCESS_MAX,
+        diffuse_zeroed_frac=mp_data.DIFFUSE_ZEROED_FRAC,
     )
     print("[wavecache] filtered n_rows:", filtered["coef_sci"].shape[0])
 
-    mp_wave.resolve_wavelengths_and_extinction(
+    mp_data._augment_triplet_with_ecliptic(
+        filtered, force=True, meta_fits_path=cfg.data.input_fits_meta)
+    mp_data._augment_triplet_with_physics_priors(filtered, force=True)
+    # Physical moon-model context feature; builds a cache beside the corpus
+    # the first time (roughly 0.55 s per row per worker).
+    mp_data._augment_triplet_with_moon_model(
+        filtered, cfg.data.decomp_prefix, force=True, n_workers=n_workers)
+    print(f"[wavecache] n_ctx={len(filtered['ctx_names'])}")
+
+    ext = mp_wave.resolve_wavelengths_and_extinction(
         filtered,
-        cache_path=cfg.data.wavelength_cache_path,
         input_fits_for_basis=cfg.data.input_fits_for_basis,
+        use_fitted_extinction=True,
+        verbose=True,
+        decomp_suffix=cfg.data.decomp_suffix,
     )
+    filtered["wavecache_group_indices"] = ext.group_indices
 
     with open(pkl_path, "wb") as fh:
         pickle.dump(filtered, fh)
@@ -333,46 +414,53 @@ def stage_wavecache(work_dir, decomp_stem, atom_k_max, force=False):
 def stage_train(filtered, cfg, work_dir, output_path, *, epochs, seeds,
                  flux_mse_groups, train_frac, val_frac, split_seed, n_bins,
                  force=False):
+    """Fit the compressors and train the ensemble.  Follows cells 8-11 of
+    lvmsky's training notebook, with TRAIN_CFG_OVERRIDES."""
     if output_path.exists() and not force:
         print(f"[train] exists, skip: {output_path}")
         return output_path
 
-    mp_data._augment_triplet_with_ecliptic(filtered, meta_fits_path=cfg.data.input_fits_meta)
-    mp_data._augment_triplet_with_physics_priors(filtered)
-
-    group_indices = mp_data._build_group_indices(filtered["coef_names"])
+    group_indices = filtered["wavecache_group_indices"]
     print("[train] groups:", {g: len(idx) for g, idx in group_indices.items()})
 
-    moon_phase = mp_ml.moon_phase_deg_from_ctx(filtered, arm="sci")
+    moon_phase = mp_ml.moon_phase_deg_from_ctx(filtered)
     train_idx, val_idx, test_idx = mp_ml.split_indices_by_moon_phase(
         filtered["obstime_mjd"], moon_phase,
         train_frac=train_frac, val_frac=val_frac, seed=split_seed, n_bins=n_bins,
     )
     print(f"[train] split: train={train_idx.size} val={val_idx.size} test={test_idx.size}")
-    filtered["compress_train_idx"] = train_idx
-    filtered["compress_val_idx"] = val_idx
-    filtered["compress_test_idx"] = test_idx
 
     compressors, geom_kwargs = mp_comp.fit_all_group_compressors(
         filtered, group_indices, train_idx=train_idx, held_idx=val_idx,
+        xarm_threshold=mp_comp.COMPRESSION_XARM_THRESHOLD,
     )
+    filtered["compress_train_idx"] = train_idx
+    filtered["compress_val_idx"] = val_idx
+    filtered["compress_test_idx"] = test_idx
 
     n_moon_knots, split_zodi, n_zodi_knots = mp_wave.infer_spline_knots(filtered["coef_names"])
     print(f"[train] inferred spline knots: n_moon_knots={n_moon_knots} "
           f"split_zodi={split_zodi} n_zodi_knots={n_zodi_knots}")
 
     train_cfg = copy.deepcopy(mp_trainer.default_dual_group_config)
+    train_cfg.update(copy.deepcopy(TRAIN_CFG_OVERRIDES))
     if epochs is not None:
         train_cfg["n_epochs"] = epochs
     if seeds is not None:
         train_cfg["ensemble_seeds"] = tuple(seeds)
-    train_cfg["flux_mse_groups"] = tuple(flux_mse_groups)
+    if flux_mse_groups is not None:
+        train_cfg["flux_mse_groups"] = tuple(flux_mse_groups)
+    print(f"[train] n_epochs={train_cfg['n_epochs']} "
+          f"seeds={list(train_cfg['ensemble_seeds'])} "
+          f"flux_mse_groups={train_cfg['flux_mse_groups']}")
 
     trainer = mp_trainer.Trainer(cfg=train_cfg)
     artifacts = trainer.run_ensemble(
         filtered, compressors, group_indices, geom_kwargs,
         input_fits_for_basis=cfg.data.input_fits_for_basis,
+        input_fits_flux=cfg.data.input_fits_flux,
         n_moon_knots=n_moon_knots, split_zodi=split_zodi, n_zodi_knots=n_zodi_knots,
+        decomp_suffix=cfg.data.decomp_suffix,
     )
 
     mp_ser.save_ensemble(artifacts.mlp_artifacts, output_path)
@@ -401,16 +489,17 @@ def main():
                    help="Redo stages even if their outputs already exist")
     p.add_argument("-np", dest="n_workers", type=int, default=4,
                    help="decompose_parallel.py worker processes")
-    p.add_argument("-atom_k_max", type=float, default=10.0,
+    p.add_argument("-atom_k_max", type=float, default=10.01,
                    help="Upper hard bound for the atom_k coefficient filter")
     p.add_argument("-epochs", type=int, default=None,
-                   help="Override n_epochs (default: default_dual_group_config's own 50)")
+                   help="Override n_epochs (default: 400, from TRAIN_CFG_OVERRIDES)")
     p.add_argument("-seeds", default=None,
                    help="Comma-separated ensemble seeds (default: the config's 10-seed ensemble)")
-    p.add_argument("-flux_mse_groups", default="",
-                   help="Comma-separated groups for the flux-MSE loss term (default: off)")
-    p.add_argument("-train_frac", type=float, default=0.7, help="Training split fraction")
-    p.add_argument("-val_frac", type=float, default=0.15, help="Validation split fraction")
+    p.add_argument("-flux_mse_groups", default=None,
+                   help="Comma-separated groups for the flux-MSE loss term "
+                        "(default: moon,zodi,continuum, from TRAIN_CFG_OVERRIDES)")
+    p.add_argument("-train_frac", type=float, default=0.8, help="Training split fraction")
+    p.add_argument("-val_frac", type=float, default=0.1, help="Validation split fraction")
     p.add_argument("-split_seed", type=int, default=42, help="Moon-phase split RNG seed")
     p.add_argument("-n_bins", type=int, default=10, help="Moon-phase stratification bins")
     p.add_argument("-output", default=None,
@@ -445,7 +534,8 @@ def main():
 
     filtered, cfg = None, None
     if "wavecache" in stages_to_run:
-        filtered, cfg = stage_wavecache(work_dir, decomp_stem, args.atom_k_max, force=args.force)
+        filtered, cfg = stage_wavecache(work_dir, decomp_stem, args.atom_k_max,
+                                        args.n_workers, force=args.force)
 
     if "train" in stages_to_run:
         if filtered is None:
@@ -453,7 +543,8 @@ def main():
             with open(work_dir / "filtered_triplet.pkl", "rb") as fh:
                 filtered = pickle.load(fh)
         seeds = [int(s) for s in args.seeds.split(",")] if args.seeds else None
-        flux_groups = [g for g in args.flux_mse_groups.split(",") if g]
+        flux_groups = (None if args.flux_mse_groups is None
+                       else [g for g in args.flux_mse_groups.split(",") if g])
         stage_train(
             filtered, cfg, work_dir, output_path,
             epochs=args.epochs, seeds=seeds, flux_mse_groups=flux_groups,

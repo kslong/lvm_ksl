@@ -309,8 +309,8 @@ it does on a fresh set of exposures.
 
 **Prerequisites**:
 
-- ``conda activate niv`` -- the semi-empirical scripts need PyTorch,
-  which the ``lvmdrp26`` environment does not have.
+- ``conda activate lvmdrp26`` -- the semi-empirical scripts need
+  PyTorch, which that environment has (``ksl`` does not).
 - Both ``py_progs/`` and ``py_dev/`` on ``PATH`` and ``PYTHONPATH``
   (``py_dev`` is added the same way as ``py_progs``, see
   :doc:`installation`).

@@ -56,7 +56,7 @@ Other docstring RST gotchas:
 | Spectral fitting | `lvm_gaussfit.py`, `lvm_flux.py`, `lvm_double.py`, `lvm_triple.py` |
 | Astrometry | `fib2radec.py` (fiber → RA/Dec conversion) |
 | Imaging | `kslmap.py`, `quick_map.py`, `line_map.py` |
-| Data quality | `CheckReduced.py`, `CheckData.py` |
+| Data quality | `CheckReduced.py`, `CheckData.py`, `FixFlatGradient.py` (corrects DRP 1.3.2 CFrames for the dropped flat-field gradient) |
 
 ### Key Dependencies
 

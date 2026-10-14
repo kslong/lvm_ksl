@@ -14,6 +14,9 @@ what they actually check rather than listed alphabetically:
 - **Sky subtraction** — how well the subtracted sky matches what was
   actually there, both spectroscopically and fiber-by-fiber
   (``eval_sky.py``, ``plot_sky_gaussfit.py``).
+- **Instrument flatness** — a correction for the flat-field gradient
+  that DRP 1.3.2 left out of the science IFU (``FixFlatGradient.py``; see
+  Instrument Flatness below).
 - **Flux calibration** — how well calibrated standard-star spectra agree
   with their Gaia reference spectra (``eval_standard.py``).
 - **Sky telescope pointing** — whether a sky exposure's recorded
@@ -380,6 +383,85 @@ Three PNG files saved to ``Figs_gaussfit_sky/``:
 
     # 3. Process many files at once (one PNG set per file)
     plot_sky_gaussfit.py lvmSFrame-*.txt
+
+
+Instrument Flatness
+-------------------
+
+How uniform the instrument's response is across the science IFU.  The
+night sky is essentially uniform over the IFU, so in an lvmCFrame (before
+any sky subtraction) every science fiber should see the same airglow-line
+flux; spectrograph-to-spectrograph differences and smooth gradients in
+that flux point to fiber-flat errors.
+
+FixFlatGradient.py — Correct DRP 1.3.2 CFrames for the Dropped Flat-Field Gradient
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+In DRP 1.3.2 the master fiber flats are meant to carry the whole
+fiber-to-fiber correction, including the balance between the
+spectrographs and a smooth gradient across the science IFU.  Both are
+measured from the sky in science exposures, once per "ffactor epoch",
+but a bug in ``run_twilights.do_ffactor_correction`` puts only the
+per-spectrograph factors into the flats: the gradient is written to the
+flat headers (``<ARM> FIBERFLAT GCOEFF1-4``) and never applied.  Every
+1.3.2 exposure therefore keeps a smooth shading across the science IFU,
+which shows up as spectrograph 1 too high and spectrograph 3 too low, by
+up to 3-4% in 2025 (GitHub issue
+`sdss/lvmdrp#268 <https://github.com/sdss/lvmdrp/issues/268>`_; the DRP
+fix is `PR #269 <https://github.com/sdss/lvmdrp/pull/269>`_).
+
+``FixFlatGradient.py`` applies the missing gradient to existing 1.3.2
+lvmCFrame files, without rerunning the pipeline.  For each file it finds
+the calibration epoch, reads the gradient coefficients from that epoch's
+master twilight flats, and divides the science fibers' FLUX by the
+gradient (and multiplies IVAR by its square), arm by arm, with a linear
+blend across the arm overlaps.  Only the science fibers are changed: the
+sky and standard-star fibers, the SKY_EAST/SKY_WEST extensions and the
+MOD/STD flux calibration are left as they are.  Each output is the
+input's name with ``.gradfix`` inserted before ``.fits``, and its header
+records the epoch and coefficients used (``FGRADFIX``, ``FGRDEPOC``,
+``FGRD<arm><k>``).
+
+**Command line usage**::
+
+    FixFlatGradient.py [-h] [-outdir DIR] [-calib DIR] [-epochs FILE] [-epoch MJD] cframe [cframe ...]
+
+    # e.g. correct a set of CFrames into a separate directory
+    FixFlatGradient.py -outdir cframes_gradfix lvmCFrame-000*.fits
+
+By default the flats are read from ``$LVM_MASTER_DIR`` and the
+calibration epochs from ``$LVMCORE_DIR/calibrations/calibration-epochs.yaml``.
+See the script's ``-h`` for the options.
+
+.. figure:: images/FixFlatGradient_periods.png
+   :width: 70%
+   :alt: Median smooth pattern across the science IFU per period for DRP 1.3.2, the DRP fix, FixFlatGradient.py and DRP 1.2.1
+
+   Median smooth part of the sky-line (b arm) pattern across the science
+   IFU, for 66 exposures in three periods (P1 MJD < 60430, P2 60430-60800,
+   P3 > 60800).  Rows: DRP 1.3.2; 1.3.2 re-reduced with the fixed flats;
+   1.3.2 corrected with ``FixFlatGradient.py``; DRP 1.2.1.  The arrow
+   shows the direction of the gradient, and the title its size per 10 mm.
+   The 1.3.2 gradient grows from 3.8% to 10.4% per 10 mm; after either
+   correction it is 0.5-0.7% in P1 and P2.
+
+Notes:
+
+- The correction removes the error made in building the flats.  It does
+  not follow changes of the gradient within an ffactor epoch, which the
+  DRP cannot either: late in a long epoch about 1-1.5% remains between
+  spectrographs 1 and 3.
+- For files flux-calibrated with the SCI method, the sensitivity came from
+  field stars in the uncorrected science IFU, so a small zero-point error
+  remains; the script warns about such files.
+- SFrames cannot be corrected directly: correct the CFrame and redo the
+  sky subtraction.
+- Within each arm the result agrees with the DRP fix to better than
+  0.005%; in the arm overlaps the linear blend differs from the DRP's
+  weighted combination by up to 0.5% (b/r) and 1.6% (r/z).
+
+**See Also:** :doc:`api/FixFlatGradient/index`
+
 
 
 Flux Calibration

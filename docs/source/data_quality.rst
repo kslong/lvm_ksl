@@ -13,7 +13,9 @@ what they actually check rather than listed alphabetically:
   much of that the science reduction removes (``CompareCalib.py``); and
   how far the instrument drifts from the masters over the nights they
   serve, from the corrections recorded in science frame headers
-  (``CalibDrift.py``).
+  (``CalibDrift.py``); and which epochs are outliers, steps or bad in
+  themselves, from a census of the masters of all epochs
+  (``CalibEpochs.py``).
 - **Reduction bookkeeping** — whether a batch of downloaded or locally
   reduced files is complete, current, and free of DRP errors
   (``CheckData.py``, ``CheckReduced.py``).
@@ -307,6 +309,61 @@ version where the reductions are stored.
     CalibDrift.py -out CalibDrift_1.3.2 -table CalibDrift_1.3.2/calib_drift.txt
 
 **See Also:** :doc:`api/CalibDrift/index`
+
+
+CalibEpochs.py — Census of All Calibration Epochs
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Reduces the long-term masters of every calibration epoch to a few
+numbers per camera — fiber trace position, tilt and width; wavelength at
+the centre, dispersion and LSF; how much each fiber's wavelength solution
+wiggles relative to its neighbours; bias level and noise; the ratio of
+each twilight flat to the previous epoch's — and searches each series
+over the epochs for epochs that do not fit:
+
+- **outlier**: differs from both neighbouring epochs, in opposite
+  directions, while the neighbours agree with each other;
+- **step**: a lasting change from the previous epoch;
+- **large change**: an unusually large change from the previous epoch in
+  the parts the science reduction does not correct (the trace difference
+  after one shift per fiber block, the wavelength difference after the
+  sky-line offset, the fiber flat after spectrograph factors and gradient);
+- **bad fiber** / **bad flat**: masters that are bad in themselves — a
+  fiber whose wavelength solution wiggles by more than 0.1 Å, or fibers of
+  good status whose flat is below 0.2 or above 2, named.
+
+Positions are also taken relative to the other two spectrographs of the
+same channel, so a change in one spectrograph is not hidden by the
+instrument moving as a whole.  The scale for each series is the typical
+change between consecutive epochs; because those changes are heavy
+tailed, a flag must also exceed a minimum size for its quantity, listed
+in the report.  The report ranks the epochs by number of flags, lists the
+bad masters and all flags, and plots every quantity against epoch, one
+panel per camera, with the flagged epochs circled.
+
+For the DRP 1.3.0dev masters of the 43 epochs to MJD 61277 the epochs
+with the most flags are exactly those the epochs file records as started
+by an instrument intervention, a warm-up or the start of the survey; the
+census also found a twilight flat with four unmasked sky fibers near zero
+(epoch 60917, b) and wavelength solutions with single wiggling fibers,
+all in spectrograph 2.  A step in a position usually means the instrument
+changed; if it changed during the previous epoch, ``CalibDrift.py`` shows
+large corrections there.  ``CompareCalib.py`` on a flagged epoch and its
+neighbours gives the details.
+
+**Command line usage**::
+
+    CalibEpochs.py [-h] [-out outroot] [-calib DIR] [-epochs FILE] [-only bias,trace,wave,flat] [-thresh T]
+    CalibEpochs.py [-h] [-out outroot] [-thresh T] -table calib_epochs.txt
+
+    # all the epochs in $LVM_MASTER_DIR (about 13 minutes for 43 epochs)
+    CalibEpochs.py -out CalibEpochs_calib
+
+By default the masters are read from ``$LVM_MASTER_DIR`` and the epochs
+from ``$LVMCORE_DIR/calibrations/calibration-epochs.yaml``.  Requires
+lvmdrp.  See the script's ``-h`` for the options.
+
+**See Also:** :doc:`api/CalibEpochs/index`
 
 
 Reduction Bookkeeping

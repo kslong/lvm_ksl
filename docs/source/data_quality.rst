@@ -8,6 +8,12 @@ what they actually check rather than listed alphabetically:
 - **Wavelength calibration** — how much the wavelength solution drifts
   from fiber to fiber within an exposure (``fourier_offset.py``,
   ``fourier_offset_check.py``).
+- **Calibration masters** — how two sets of long-term master
+  calibrations differ, between DRP versions or between epochs, and how
+  much of that the science reduction removes (``CompareCalib.py``); and
+  how far the instrument drifts from the masters over the nights they
+  serve, from the corrections recorded in science frame headers
+  (``CalibDrift.py``).
 - **Reduction bookkeeping** — whether a batch of downloaded or locally
   reduced files is complete, current, and free of DRP errors
   (``CheckData.py``, ``CheckReduced.py``).
@@ -193,6 +199,98 @@ line wavelength, flux, and per-spectrograph offsets.
 
     # Custom line and offsets
     fourier_offset_check.py -wave 5007 -flux 1e-12 -off2 0.2 lvmCFrame-*.fits
+
+
+Calibration Masters
+-------------------
+
+Checks on the long-term master calibrations themselves (bias, fiber
+traces, wavelength and LSF solutions, twilight fiber flats): how two
+sets of masters differ, and how well a set of masters describes the
+instrument over the nights it is used for.
+
+CompareCalib.py — Compare Two Sets of Master Calibrations
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Compares two sets of long-term masters — two processings of the same
+epoch with different DRP versions, or two calibration epochs — product
+by product, and writes an HTML report (``outroot.html``) with its plots
+and tables in ``outroot/``, plus a short summary on the terminal.  The
+second set is the reference: ratios and differences are A/B and A-B.
+
+- **Provenance**: DRPVER, COMMIT, NFRAMES and the input frames of both
+  sets side by side.
+- **Bias**: pixel differences per camera, with the noise and the number
+  of pixels beyond 5 sigma per amplifier quadrant.
+- **Traces**: centroid and sigma differences, outlier fibers, the ratio
+  of the fiber models and the quadrant gains of both sets.
+- **Wavelengths and LSF**: offsets in Angstrom and km/s, outlier fibers
+  (with the set whose solution wiggles more relative to its neighbouring
+  fibers named as the suspect), the LSF ratio and the fit RMS values in
+  the headers.
+- **Twilight fiber flats**: the per-fiber ratio split into spectrograph
+  factors, a gradient across the science IFU and a fiber-to-fiber
+  residual, using the DRP's own routines in ``lvmdrp.qa.fiberflats``,
+  and the factors and gradient recorded in both headers.
+
+Outliers are found relative to the local trend across neighbouring
+fibers, so real shifts between epochs are not flagged while a single bad
+fiber is.  For traces and wavelengths the report also shows *what the
+science reduction does not remove*: the trace difference after one shift
+per block of 36 fibers, and the wavelength difference after a slit-smooth
+per-fiber offset measured at the reference sky lines — the two
+corrections the DRP applies to every science exposure.
+
+**Command line usage**::
+
+    CompareCalib.py [-h] [-out outroot] [-only bias,trace,wave,flat] [-labels labA,labB] A B
+
+    # a rebuild of epoch 60995 against the masters in $LVM_MASTER_DIR
+    CompareCalib.py ksl-wave1/60995 60995
+
+    # two epochs
+    CompareCalib.py 60995 61065
+
+Each of A and B is a directory of masters, an MJD (a directory in
+``$LVM_MASTER_DIR``), or ``version/MJD`` (the ``calib/`` directory of that
+version's reductions under ``$SAS_BASE_DIR``).  Requires lvmdrp.  See the
+script's ``-h`` for the options.
+
+**See Also:** :doc:`api/CompareCalib/index`
+
+CalibDrift.py — Drift From the Master Calibrations
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+For every science exposure the DRP shifts the master traces at
+extraction and removes a sky-line offset from the master wavelength
+solution, and records both in the lvmSFrame header, per camera
+(``<CAM> FIBER SHIFT`` in pixels, ``<CAM> WAVE SKYOFF`` in Angstrom); the
+COMMENT cards name the epoch of the masters used.  ``CalibDrift.py``
+collects these and plots them against MJD, with the epochs marked, and
+against the number of nights since the epoch, with statistics per camera
+and per epoch.  They measure how far the instrument had moved from the
+masters on each night.
+
+Only the primary headers are read, so the ancillary files of the
+reductions are not needed, and only numpy, astropy, matplotlib and
+``xhtml.py`` are required.  With ``-drpall`` the exposures come from the
+``location`` column of a drpall file, and its ``calib_mjd``, exposure
+time, focus and K-mirror positions and altitudes are added to the
+output table; this is the way to run it on all the exposures of a DRP
+version where the reductions are stored.
+
+**Command line usage**::
+
+    CalibDrift.py [-h] [-out outroot] dir [dir ...]
+    CalibDrift.py [-h] [-out outroot] [-base dir] [-every N] -drpall file
+
+    # all the exposures of DRP 1.3.2, where the reductions are stored
+    CalibDrift.py -out CalibDrift_1.3.2 -drpall drpall-1.3.2.fits
+
+    # a quick trial on every 50th exposure
+    CalibDrift.py -out CalibDrift_trial -every 50 -drpall drpall-1.3.2.fits
+
+**See Also:** :doc:`api/CalibDrift/index`
 
 
 Reduction Bookkeeping

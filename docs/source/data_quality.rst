@@ -265,15 +265,27 @@ For every science exposure the DRP shifts the master traces at
 extraction and removes a sky-line offset from the master wavelength
 solution, and records both in the lvmSFrame header, per camera
 (``<CAM> FIBER SHIFT`` in pixels, ``<CAM> WAVE SKYOFF`` in Angstrom); the
-COMMENT cards name the epoch of the masters used.  ``CalibDrift.py``
-collects these and plots them against MJD, with the epochs marked, and
-against the number of nights since the epoch, with statistics per camera
-and per epoch.  They measure how far the instrument had moved from the
-masters on each night.
+COMMENT cards name the epoch of the masters used.  The trace shift is
+across the fibers (perpendicular to the dispersion) and the sky line
+offset along the dispersion.  They measure how far the instrument had
+moved from the masters on each night.
+
+``CalibDrift.py`` collects these and writes an HTML report of interactive
+plotly figures, one panel per camera with shared axes: each correction
+against time, one point per exposure placed at its observation time
+(MJD + 0.3, whose integer part is the SDSS night), with the median of each
+epoch and the calibration epochs marked; and the nightly medians against
+the nights since the epoch.  Tables give statistics per camera, where the
+variation comes from (within a night, between the nights of an epoch,
+between epochs), the epochs in which one spectrograph departs from the
+other two, and the nights with failed or large corrections.  Nights are
+the SDSS MJD (``SMJD``), not the ``MJD`` keyword, which changes during the
+night at LCO.
 
 Only the primary headers are read, so the ancillary files of the
-reductions are not needed, and only numpy, astropy, matplotlib and
-``xhtml.py`` are required.  With ``-drpall`` the exposures come from the
+reductions are not needed, and only numpy, astropy, plotly and
+``xhtml.py`` are required (``plotly.min.js`` is written into the output
+directory, so the report works offline).  With ``-drpall`` the exposures come from the
 ``location`` column of a drpall file, and its ``calib_mjd``, exposure
 time, focus and K-mirror positions and altitudes are added to the
 output table; this is the way to run it on all the exposures of a DRP
@@ -281,14 +293,18 @@ version where the reductions are stored.
 
 **Command line usage**::
 
-    CalibDrift.py [-h] [-out outroot] dir [dir ...]
-    CalibDrift.py [-h] [-out outroot] [-base dir] [-every N] -drpall file
+    CalibDrift.py [-h] [-out outroot] [-minexp S] dir [dir ...]
+    CalibDrift.py [-h] [-out outroot] [-minexp S] [-base dir] [-every N] -drpall file
+    CalibDrift.py [-h] [-out outroot] [-minexp S] [-drpall file] -table calib_drift.txt
 
     # all the exposures of DRP 1.3.2, where the reductions are stored
     CalibDrift.py -out CalibDrift_1.3.2 -drpall drpall-1.3.2.fits
 
     # a quick trial on every 50th exposure
     CalibDrift.py -out CalibDrift_trial -every 50 -drpall drpall-1.3.2.fits
+
+    # remake the report from a table written by an earlier run
+    CalibDrift.py -out CalibDrift_1.3.2 -table CalibDrift_1.3.2/calib_drift.txt
 
 **See Also:** :doc:`api/CalibDrift/index`
 

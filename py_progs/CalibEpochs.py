@@ -51,7 +51,7 @@ Description::
     Wavelengths (lvm-mwave, -mlsf)
         wave_c        median wavelength at the central column
         wave_disp     median dispersion (A/pixel) between columns 200
-                      and 3885
+                      and 3886
         lsf_c         median LSF FWHM at the central column
         wave_nwiggle  number of fibers whose solution wiggles relative to
                       its neighbouring fibers (more than 5 times the
@@ -123,6 +123,9 @@ History::
 
     261101 ksl Coding begun, to find outlier epochs and steps in the
                long-term master calibrations of all the epochs
+    261104 ksl Report explains where the numbers come from (image
+               data, no headers) and how each quantity is measured;
+               axis labels on the plots; ASCII-only html
 
 '''
 
@@ -160,7 +163,7 @@ QUANTITIES = {
     'trace_nmasked': ('fibers', 'trace', 'fibers masked along their whole length'),
     'trace_left': ('pix', 'trace', 'rms change from the previous epoch left after one shift per fiber block'),
     'wave_c': ('A', 'wave', 'median wavelength at the central column'),
-    'wave_disp': ('A/pix', 'wave', 'median dispersion between columns 200 and 3885'),
+    'wave_disp': ('A/pix', 'wave', 'median dispersion between columns 200 and 3886'),
     'lsf_c': ('A', 'wave', 'median LSF FWHM at the central column'),
     'wave_nwiggle': ('fibers', 'wave', 'fibers whose solution wiggles relative to their neighbours'),
     'wave_maxwiggle': ('A', 'wave', 'largest wiggle of a fiber solution relative to its neighbours'),
@@ -482,6 +485,12 @@ def plot_quantity(xtab, q, flags, cams):
         fig.add_trace(go.Scatter(x=[None], y=[None], mode='markers', name=kind,
                                  marker=dict(size=11, color=color, symbol='circle-open', line=dict(width=2))))
     fig.update_xaxes(tickformat='d')
+    # axis labels: y on the left-hand panels (the y axes are shared), x on the bottom row
+    unit = _unit(q) or 'fraction'
+    for r in range(1, nrow + 1):
+        fig.update_yaxes(title_text='%s - median (%s)' % (q, unit), title_font=dict(size=11), row=r, col=1)
+    for c in range(1, ncol + 1):
+        fig.update_xaxes(title_text='epoch (MJD)', row=nrow, col=c)
     fig.update_layout(title='%s (%s): %s' % (q, _unit(q), _describe(q)), height=750 if ncol == 3 else 650,
                       margin=dict(l=60, r=20, t=80, b=40), legend=dict(orientation='h', y=1.08))
     return fig.to_html(full_html=False, include_plotlyjs=False)
@@ -496,7 +505,169 @@ def _plotly_js(outdir):
     return '<script src="%s"></script>\n' % jsfile
 
 
-EXPLAIN = """<p>Each epoch's long-term masters are reduced to a few numbers per camera (per channel for the
+PROVENANCE = """<h2>Where these numbers come from</h2>
+<p>Every number on this page was measured by <code>CalibEpochs.py</code> (in <code>lvm_ksl/py_progs</code>)
+from the <b>image data</b> of the team's long-term master calibrations: one directory of masters per
+calibration epoch in <code>$LVM_MASTER_DIR</code>, built with DRP 1.3.0dev and used for the DRP 1.3.2 science
+reductions. <b>No header keywords are used.</b> Besides the data arrays, the program reads only the
+<code>BADPIX</code> mask extensions, the <code>WAVE_TRACE</code> and <code>SLITMAP</code> tables of the twilight
+flats (their wavelengths, and each fiber's status and label), and the list of epochs from lvmcore's
+<code>calibration-epochs.yaml</code>. So the values do not depend on what the DRP wrote into the headers, some
+of which are known to be wrong (e.g. the 1.3.0dev wave masters record the LSF RMS where the wavelength RMS
+belongs).</p>
+<p>The masters themselves were made by the team, not by us. How each quantity is measured, and what it is
+sensitive to, is explained at the head of its section of plots below.</p>
+"""
+
+# detailed explanation at the head of each section of plots
+SECTION_EXPLAIN = {}
+
+SECTION_EXPLAIN['Traces'] = """
+<p><b>What the masters contain.</b> For each camera the trace masters describe where each of the 648 fibers
+falls on the detector. <code>lvm-mcentroids-&lt;camera&gt;.fits</code> gives the centre of each fiber's
+profile, as a detector row, at every column (an array of 648 fibers &times; 4086 columns);
+<code>lvm-msigmas-&lt;camera&gt;.fits</code> gives the width (Gaussian sigma, pixels) of the profile at the same
+places. Both are fitted by the DRP to the dome flats of the epoch's calibration sequence. Fibers or pixels
+marked in the centroid master's <code>BADPIX</code> mask are left out of everything below.</p>
+<p><b>What is measured, per camera and epoch:</b></p>
+<ul>
+<li><b>trace_pos</b> (pixels): the median centroid over all fibers in the 101 central columns (1993&ndash;2093),
+i.e. where the slit as a whole falls on the detector. Its absolute value is not meaningful; changes between
+epochs show how far the image of the slit moved along the detector columns (perpendicular to the
+dispersion).</li>
+<li><b>trace_tilt</b> (pixels): for each fiber, the median centroid in columns 3450&ndash;3550 minus that in
+columns 450&ndash;550; the median over fibers. It is the rise of the traces over about 3000 columns; a change
+means the slit image rotated or bent relative to the detector.</li>
+<li><b>trace_width</b> (pixels): the median sigma over all fibers in the central columns. A change means a
+change of focus, or of the fitted profile shape.</li>
+<li><b>trace_nmasked</b> (fibers): fibers masked along their whole length (dead or blocked fibers, or fibers
+the trace fit gave up on). A jump means fibers were lost, or the fit failed.</li>
+<li><b>trace_pos_rel, trace_tilt_rel</b> (pixels): the same, minus the mean of the other two spectrographs of
+the same channel at the same epoch. When the whole instrument shifts, all three spectrographs move together
+and these stay near zero; they change when <i>one</i> spectrograph moves on its own, which points to a problem
+in, or work on, a single spectrograph. These are the versions plotted and flagged.</li>
+<li><b>trace_left</b> (pixels): how much of the change since the previous epoch the science reduction would
+<i>not</i> remove. The centroid array minus the previous epoch's is taken fiber by fiber and column by column;
+the fibers are split into the 18 blocks of 36, and from each block the median of its difference over columns
+450&ndash;3050 is subtracted. That is the one constant shift per block that the DRP applies when it extracts a
+science frame (<code>_fix_fiber_thermal_shifts</code>, which cross-correlates at 11 columns between 500 and
+3000). The rms of what is left, over all fibers and columns, is trace_left. A whole-block shift, however large,
+gives trace_left &asymp; 0, because the DRP corrects it; what remains comes from single fibers that moved,
+shifts that differ within a block, or changes along the fibers (tilt or curvature), none of which the
+extraction corrects, so it goes straight into the science extraction. Typical values are 0.006&ndash;0.017
+pixels; r1 is persistently higher (median 0.046 pixels), because its traces are noisier from fiber to fiber
+(seen also in the <code>CompareCalib.py</code> comparisons of 60995 with 60985 and 61065).</li>
+</ul>
+<p><b>What is not done.</b> The traces are compared with each other, not with the flats they came from, so a
+fiber mis-traced in the same way in two epochs would not show up. Checking the fits against the flats
+themselves is done separately (<code>CompareCalib.py</code>, and our rebuild of 60995).</p>
+"""
+
+SECTION_EXPLAIN['Wavelengths and LSF'] = """
+<p><b>What the masters contain.</b> For each camera, <code>lvm-mwave-&lt;camera&gt;.fits</code> gives the
+wavelength (&Aring;) of every pixel of every fiber (648 fibers &times; 4086 columns), evaluated from the
+polynomial the DRP fits to the arc lines measured in each fiber; <code>lvm-mlsf-&lt;camera&gt;.fits</code> gives
+the line spread function width (FWHM) at the same places. Both come from the arc lamp exposures of the epoch's
+calibration sequence (in practice the twelve 10&nbsp;s arcs). Pixels marked in the wave master's
+<code>BADPIX</code> mask are left out.</p>
+<p><b>What is measured, per camera and epoch:</b></p>
+<ul>
+<li><b>wave_c</b> (&Aring;): the median wavelength over all fibers in the 101 central columns. Changes between
+epochs show how far the spectra moved along the dispersion.</li>
+<li><b>wave_disp</b> (&Aring;/pixel): for each fiber, the wavelength at column 3886 minus that at column 200,
+divided by the 3686 columns between them; the median over fibers. A change means the spectrum was stretched
+or compressed on the detector.</li>
+<li><b>lsf_c</b>: the median LSF FWHM over all fibers in the central columns. A change means a change of focus
+or resolution.</li>
+<li><b>wave_c_rel, wave_disp_rel, lsf_c_rel</b>: the same, minus the mean of the other two spectrographs of the
+same channel at the same epoch, as for the traces; these are the versions plotted and flagged. A step here
+means one spectrograph changed on its own.</li>
+<li><b>wave_maxwiggle</b> (&Aring;) and <b>wave_nwiggle</b> (fibers): a check on single fibers whose solution has
+gone wrong. Every 8th column, each fiber's wavelength minus the mean of its two neighbouring fibers is taken
+(a single neighbour for the first and last fiber); the median of that difference along the fiber is removed,
+so a constant offset does not count, and the scatter along the fiber that remains is the fiber's
+<i>wiggle</i>. Smooth changes across the slit cancel, so a fiber whose polynomial bends differently from its
+neighbours stands out. wave_maxwiggle is the largest wiggle in the camera (the fiber's row is given in the
+table of bad masters), and any value above 0.1&nbsp;&Aring; marks the epoch as bad in itself, whatever the other
+epochs. wave_nwiggle counts the fibers whose wiggle is more than 5 times the camera's median wiggle and more
+than 0.03&nbsp;&Aring;. Such fibers keep their error in the science spectra, since the sky line correction only
+removes a constant offset, smoothed along the slit.</li>
+<li><b>wave_left</b> (&Aring;): how much of the change since the previous epoch the science reduction would
+<i>not</i> remove. The wavelength array minus the previous epoch's is taken; for each fiber its value at the
+DRP's reference sky lines (b: 5577&nbsp;&Aring;; r: 6364, 7359, 7392&nbsp;&Aring;; z: 8399, 8988, 9553,
+9720&nbsp;&Aring;) is averaged (median) into one offset, the offsets are median filtered over 8 fibers and
+smoothed along the slit with a 10-knot spline, and the result is subtracted from every column, as
+<code>shift_wave_skylines</code> does to a science frame (if fewer than half the fibers have an offset, nothing
+is subtracted, as in the DRP). The rms of what is left, over all fibers and columns 200&ndash;3886 (the
+200 columns at each end, where the polynomials are least constrained, are left out), is wave_left. What
+remains is a change of dispersion, single fibers, or structure along the spectrum; in b, where the offset is
+measured at a single line, any change away from 5577&nbsp;&Aring; remains. Typical values are about
+0.02&nbsp;&Aring; in b and 0.003&ndash;0.007&nbsp;&Aring; in r and z.</li>
+</ul>
+<p><b>What is not done.</b> The solutions are compared with each other and with neighbouring fibers, not with
+the measured arc lines, so their absolute accuracy is not checked here; nor is their zero point against the
+sky lines (the <code>CalibDrift.py</code> report measures that in the science frames).</p>
+"""
+
+SECTION_EXPLAIN['Bias'] = """
+<p><b>What the masters contain.</b> <code>lvm-mbias-&lt;camera&gt;.fits</code> is the combined bias image of
+each camera, made from the biases of (normally) the 11 nights starting at the epoch, about 95 frames. For the
+numbers below the image is split into its four quadrants (the two halves in each direction), which are taken
+to be the four amplifiers.</p>
+<p><b>What is measured, per camera and epoch:</b></p>
+<ul>
+<li><b>bias_level</b> (e<sup>&minus;</sup>): the median of the whole image.</li>
+<li><b>bias_qrange</b> (e<sup>&minus;</sup>): the range (largest minus smallest) of the four quadrant
+medians, i.e. how unequal the amplifiers' residual levels are.</li>
+<li><b>bias_sigma</b> (e<sup>&minus;</sup>): for each quadrant, the robust sigma of its pixels (from every 7th
+pixel); the median over the quadrants. Since the master averages many frames, this is mostly fixed structure
+in the bias (patterns, columns, glow), not the read noise of a single frame. r1 is much higher than the other
+cameras (median 1.8 against 0.07&ndash;0.15&nbsp;e<sup>&minus;</sup>), from the glow-like pattern in its bias.</li>
+<li><b>bias_nhot</b> (pixels): pixels more than 10 sigma above their quadrant's median. Shown but not flagged,
+because it varies too much from epoch to epoch.</li>
+</ul>
+"""
+
+SECTION_EXPLAIN['Twilight fiber flats (ratio to the previous epoch)'] = """
+<p><b>What the masters contain.</b> <code>lvm-mfiberflat_twilight-&lt;channel&gt;.fits</code> is one file per
+channel (b, r, z) with all three spectrographs stacked (1944 fibers &times; 4086 pixels): the relative
+throughput of every fiber at every pixel, about 1, made from the 12 dusk twilight exposures of the epoch's
+sequence. The masters in <code>$LVM_MASTER_DIR</code> have also had the DRP's <code>fiberflat-corrections</code>
+step applied (spectrograph factors from sky lines in science frames). The wavelength of each pixel is taken
+from the file's <code>WAVE_TRACE</code> table, and each fiber's status, telescope and label from its
+<code>SLITMAP</code>; pixels marked in <code>BADPIX</code>, and non-positive values, are left out.</p>
+<p><b>What is measured, per channel and epoch:</b></p>
+<ul>
+<li><b>flat_nodd</b> (fibers): fibers of good status (<code>fibstatus</code> 0) whose median flat over
+wavelength is below 0.2 or above 2. Dividing a spectrum by such a value multiplies or divides it by a large
+factor, so any such fiber marks the epoch as bad in itself, whatever the other epochs (the fibers are listed,
+as fiberid(label), in the table of bad masters).</li>
+</ul>
+<p>The other quantities compare the flat with the previous epoch's. Both flats are resampled onto a common
+0.5&nbsp;&Aring; grid and medianed in 50&nbsp;&Aring; bins (lvmdrp's <code>bin_fiberflat</code>), so fibers with
+different wavelength solutions are compared at the same wavelengths; the ratio this epoch / previous epoch is
+taken bin by bin, and its median over the bins gives one ratio per fiber. Only fibers of the science and the
+two sky IFUs (not the standard-star fibers) with good status in both epochs are used. The per-fiber ratios,
+normalized by their median, are then fitted with lvmdrp's <code>decompose_ratio</code>, which is the DRP's own
+model for the fiber flat corrections (<code>fit_sky_gradient</code>): one factor per spectrograph times a
+linear gradient across each IFU.</p>
+<ul>
+<li><b>flat_sp1, flat_sp2, flat_sp3</b>: the fitted offset of each spectrograph (a fraction; 0.01 = 1%). A
+change in the overall throughput of one spectrograph, or in the spectrograph factors applied by
+<code>fiberflat-corrections</code>, shows up here. Typically below 0.05%, as most consecutive epochs carry the
+same factors.</li>
+<li><b>flat_grad</b>: the amplitude of the fitted linear gradient across the science IFU (a fraction): a change
+in how evenly the twilight sky illuminated the IFU, or in the gradient correction.</li>
+<li><b>flat_left</b>: the scatter over fibers of the ratio after dividing by the fitted spectrograph factors
+and gradient (a fraction): the genuine change of the fiber-to-fiber flat field. Typically 0.3&ndash;0.4%.</li>
+</ul>
+<p><b>What is not done.</b> Only the median over wavelength of each fiber's ratio is used, so a change in the
+shape of a fiber's flat with wavelength is not measured. How flat the sky comes out across fibers in reduced
+science frames, which is the real test of a fiber flat, is not checked here.</p>
+"""
+
+EXPLAIN = """<h2>How epochs are flagged</h2>
+<p>Each epoch's long-term masters are reduced to a few numbers per camera (per channel for the
 twilight flats), listed below, and each series of numbers over the epochs is searched for epochs that do
 not fit. The scale for a series is the typical change between consecutive epochs (the robust sigma of the
 differences), and with a threshold T (here %s):</p>
@@ -540,7 +711,7 @@ def doit(outroot='CalibEpochs', calib='', epochs_file='', only=None, table=None,
     os.makedirs(outroot, exist_ok=True)
     if table:
         xtab = Table.read(table, format='ascii.fixed_width_two_line')
-        source = table
+        source = 'the table %s, measured from the masters by an earlier run' % table
     else:
         calib = calib or os.getenv('LVM_MASTER_DIR', '')
         epochs_file = epochs_file or default_epochs_file()
@@ -554,7 +725,7 @@ def doit(outroot='CalibEpochs', calib='', epochs_file='', only=None, table=None,
             return
         print('CalibEpochs: measuring the masters of %d epochs in %s' % (len(epochs), calib))
         xtab = measure(epochs, calib, only or PRODUCTS)
-        source = '%s (%d epochs)' % (calib, len(epochs))
+        source = 'the masters in %s (%d epochs)' % (calib, len(epochs))
     xtab = add_relative(xtab)
     tabfile = os.path.join(outroot, 'calib_epochs.txt')
     xtab.write(tabfile, format='ascii.fixed_width_two_line', overwrite=True)
@@ -590,8 +761,9 @@ def doit(outroot='CalibEpochs', calib='', epochs_file='', only=None, table=None,
 
     js = _plotly_js(outroot)
     string = xhtml.begin('Census of the calibration epochs')
-    string += xhtml.add_list(['masters from %s' % source, '%d epochs, %d to %d' % (
+    string += xhtml.add_list(['numbers from %s' % source, '%d epochs, %d to %d' % (
         len(epochs_all), epochs_all[0], epochs_all[-1]), '%d flags on %d epochs' % (len(flags), len(erows) - 1)])
+    string += PROVENANCE
     string += EXPLAIN % (thresh, ABSOLUTE['wave_maxwiggle'])
     string += xhtml.table(qrows)
     string += xhtml.hline()
@@ -616,11 +788,14 @@ def doit(outroot='CalibEpochs', calib='', epochs_file='', only=None, table=None,
         if not qs:
             continue
         string += xhtml.h2(title)
+        string += SECTION_EXPLAIN.get(title, '')
         for q in qs:
             string += plot_quantity(xtab, q, flags, CAMERAS)
     fq = [q for q in FLAT_QUANTITIES if np.isfinite(np.asarray(xtab[q], float)).any()]
     if fq:
-        string += xhtml.h2('Twilight fiber flats (ratio to the previous epoch)')
+        title = 'Twilight fiber flats (ratio to the previous epoch)'
+        string += xhtml.h2(title)
+        string += SECTION_EXPLAIN.get(title, '')
         for q in fq:
             string += plot_quantity(xtab, q, flags, CHANNELS)
     string += xhtml.hline()

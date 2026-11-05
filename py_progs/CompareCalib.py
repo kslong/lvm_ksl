@@ -14,7 +14,7 @@ Synopsis:
 Command line usage (if any):
 
     usage: CompareCalib.py [-h] [-out outroot] [-only bias,trace,wave,flat]
-                           [-labels labA,labB] A B
+                           [-labels labA,labB] [-same] [-note text] A B
 
     Arguments::
 
@@ -39,6 +39,12 @@ Command line usage (if any):
                      of bias, trace, wave and flat
         -labels A,B  short names for the two sets in plots and tables;
                      default derived from A and B
+        -same        treat A and B as the same epoch whatever their MJD
+                     keywords say (a master carries the MJD of its first
+                     input frame, so e.g. two halves of one arc sequence
+                     can carry different MJDs)
+        -note text   a paragraph shown at the top of the report, e.g. to
+                     say how A and B were made
 
 Description::
 
@@ -115,6 +121,14 @@ History::
                provenance, bias, traces, wavelengths/LSF and twilight
                flats, outliers relative to the local trend, and what
                the science reduction does not remove
+    261104 ksl Report explains its sources (image data; the header
+               values used are marked), the ideas used, every table
+               column and figure, and what the science reduction does
+               not remove means; raw trace map on one fixed scale plus
+               a map minus the camera median; colour bars per panel
+               where the scale differs; ASCII-only html
+    261104 ksl -same and -note options, for comparing the two halves
+               of a split arc sequence
 
 '''
 
@@ -146,6 +160,8 @@ TRACE_LIMIT = 0.05   # pixels
 WAVE_LIMIT = 0.05    # Angstrom, inside EDGE columns of the ends of the detector
 WAVE_EDGE_LIMIT = 0.25   # Angstrom, within EDGE columns of the ends, where the polynomials are unconstrained
 EDGE = 200
+TRACE_RAW_SCALE = 1.0    # pixels, colour scale of the raw trace difference map
+TRACE_MED_SCALE = 0.1    # pixels, colour scale of the trace difference minus the camera median
 NWORST = 5
 
 
@@ -477,14 +493,15 @@ def compare_traces(a, b, laba, labb, outdir):
     if not cams:
         return None
     rows, outliers, drows = [], [], []
-    figr, axr = camera_grid('Trace centroids: %s - %s (pixels, scale per camera)' % (laba, labb))
+    figr, axr = camera_grid('Trace centroids: %s - %s (pixels)' % (laba, labb))
+    figm, axm = camera_grid('Trace centroids: %s - %s minus the camera median (pixels)' % (laba, labb))
     figc, axc = camera_grid('Trace centroids: %s - %s minus the local trend (pixels)' % (laba, labb))
     figs, axs = camera_grid('Trace sigmas: %s - %s (pixels)' % (laba, labb))
     figf, axf = plt.subplots(3, 3, figsize=(15, 10), sharex=True)
     figf.suptitle('Largest |centroid difference - local trend| along each fiber: %s - %s' % (laba, labb))
-    imc = ims = imr = None
-    for cam, a0, a1, a2, a3 in zip(CAMERAS, axr.flat, axc.flat, axs.flat, axf.flat):
-        for x in (a0, a1, a2, a3):
+    imc = ims = imr = imm = None
+    for cam, a0, am, a1, a2, a3 in zip(CAMERAS, axr.flat, axm.flat, axc.flat, axs.flat, axf.flat):
+        for x in (a0, am, a1, a2, a3):
             x.set_title(cam)
         if cam not in cams:
             continue
@@ -523,9 +540,13 @@ def compare_traces(a, b, laba, labb, outdir):
                              str(sm['fibstatus'][f]) if sm is not None else '--', '%.3f' % fmax[f],
                              '%d (%d-%d)' % (len(cols), cols.min(), cols.max()),
                              '%.3f' % np.nanmax(np.abs(ds[f])) if ds is not None else '--', '%.3f' % wa, '%.3f' % wb])
-        lim = max(0.02, np.nanpercentile(np.abs(draw), 99))
-        imr = a0.imshow(draw, aspect='auto', origin='lower', cmap='RdBu_r', vmin=-lim, vmax=lim, interpolation='nearest')
-        a0.set_title('%s (+-%.2f)' % (cam, lim))
+        # one fixed scale for all cameras, so the colours mean the same everywhere
+        imr = a0.imshow(draw, aspect='auto', origin='lower', cmap='RdBu_r', vmin=-TRACE_RAW_SCALE,
+                        vmax=TRACE_RAW_SCALE, interpolation='nearest')
+        dmed = np.nanmedian(draw)
+        imm = am.imshow(draw - dmed, aspect='auto', origin='lower', cmap='RdBu_r', vmin=-TRACE_MED_SCALE,
+                        vmax=TRACE_MED_SCALE, interpolation='nearest')
+        am.set_title('%s: median %+.3f' % (cam, dmed))
         imc = a1.imshow(dc, aspect='auto', origin='lower', cmap='RdBu_r', vmin=-0.02, vmax=0.02, interpolation='nearest')
         if ds is not None:
             ims = a2.imshow(ds, aspect='auto', origin='lower', cmap='RdBu_r', vmin=-0.02, vmax=0.02, interpolation='nearest')
@@ -535,7 +556,8 @@ def compare_traces(a, b, laba, labb, outdir):
         x.set_xlabel('fiber')
     for x in axf[:, 0]:
         x.set_ylabel('max |dcen - trend| (pix)')
-    f0 = save_grid(figr, axr, None, 'pixels', os.path.join(outdir, 'trace_centroid_raw.png'))
+    f0 = save_grid(figr, axr, imr, 'pixels', os.path.join(outdir, 'trace_centroid_raw.png'))
+    fm = save_grid(figm, axm, imm, 'pixels', os.path.join(outdir, 'trace_centroid_minus_median.png'))
     f1 = save_grid(figc, axc, imc, 'pixels', os.path.join(outdir, 'trace_centroid_diff.png'))
     f2 = save_grid(figs, axs, ims, 'pixels', os.path.join(outdir, 'trace_sigma_diff.png'))
     figf.savefig(os.path.join(outdir, 'trace_fiber_max.png'), dpi=80)
@@ -559,7 +581,7 @@ def compare_traces(a, b, laba, labb, outdir):
                                            fmt(max(float(r[1]) for r in rows), '%+.4f'), len(outliers), TRACE_LIMIT,
                                            fmt(max(float(r[5]) for r in rows), '%.3f'))
     return dict(rows=[colnames] + rows, outliers=[ocols] + outliers, drows=[dcols] + drows, drp_summary=drp_summary,
-                figs=[f0, f1, f2, os.path.join(outdir, 'trace_fiber_max.png')], tables=[t1, t2, t3], summary=summary)
+                figs=[f0, fm, f1, f2, os.path.join(outdir, 'trace_fiber_max.png')], tables=[t1, t2, t3], summary=summary)
 
 
 def rms_keywords(header, cam):
@@ -649,8 +671,9 @@ def compare_wave(a, b, laba, labb, outdir):
                              '%.3f' % imax[f], '%.3f' % emax[f], col, '%.3f' % frms[f], '%.3f' % wga, '%.3f' % wgb,
                              laba if wga > wgb else labb])
         lim = max(0.05, np.nanpercentile(np.abs(d - med), 99))
-        a0.imshow(d - med, aspect='auto', origin='lower', cmap='RdBu_r', vmin=-lim, vmax=lim, interpolation='nearest')
+        im0 = a0.imshow(d - med, aspect='auto', origin='lower', cmap='RdBu_r', vmin=-lim, vmax=lim, interpolation='nearest')
         a0.set_title('%s: median %+.3f, scale +-%.2f' % (cam, med, lim))
+        figr.colorbar(im0, ax=a0, label='Angstrom')   # each camera has its own scale, so its own colour bar
         imw = a1.imshow(dd, aspect='auto', origin='lower', cmap='RdBu_r', vmin=-0.05, vmax=0.05, interpolation='nearest')
         if lr is not None:
             iml = a2.imshow(lr, aspect='auto', origin='lower', cmap='RdBu_r', vmin=-0.05, vmax=0.05, interpolation='nearest')
@@ -787,44 +810,366 @@ def compare_flats(a, b, laba, labb, outdir, kind='mfiberflat_twilight', bin_widt
     return dict(rows=[colnames] + rows, hrows=[hcols] + hrows, figs=[f1, f2], tables=[t1, t2], summary=summary)
 
 
-trace_comment = '''The centroid and sigma maps use a fixed scale of +-0.02 pixels. The outlier table lists every
-fiber whose centroid difference departs from the local trend (the running median over 15 neighbouring fibers)
-by more than %.2f pixels somewhere along its length; the first map shows the raw difference and the second the
-difference minus the trend. The wiggle is the scatter
-along the fiber of its offset from its neighbours. Trace differences are usually near-constant offsets along
-the fiber, which the wiggle cannot see, so no suspect is named: deciding which set is right needs the flat
-itself. The model ratio follows the quadrant gains, which are listed for both sets.''' % TRACE_LIMIT
+# ---------------------------------------------------------------------------------------------------------
+# Explanations written into the html report.  The report declares ISO-8859-1 (xhtml.begin), so everything
+# here must be plain ASCII: special characters are written as html entities.
+# ---------------------------------------------------------------------------------------------------------
 
-wave_comment = '''The first map shows the difference minus the camera median (scale per camera); for two
-different epochs this is mostly a real thermal shift and stretch. The second shows the difference minus the
-local trend (the running median over 15 neighbouring fibers), on a fixed scale of +-0.05 A. The outlier table
-lists every fiber that departs from the local trend by more than %.2f A, or by more than %.2f A within
-%d columns of the ends of the detector, where the polynomials extrapolate past the last arc lines and two
-independent fits differ most; the suspect is the set whose solution wiggles more relative to its neighbouring
-fibers. Header fit RMS values are in pixels
-(median/max). Older versions wrote PIPE DISP RMS, which held the LSF RMS rather than the wavelength RMS.''' % (
-    WAVE_LIMIT, WAVE_EDGE_LIMIT, EDGE)
+INTRO = '''<h2>What this report is</h2>
+<p>This page compares two sets of LVM long-term master calibrations, A and B, made by
+<code>CompareCalib.py</code> (in <code>lvm_ksl/py_progs</code>). B is the reference: every difference is
+A&minus;B and every ratio is A/B. The two sets can be</p>
+<ul>
+<li><b>the same epoch processed twice</b> (e.g. our rebuild against the team's masters). The inputs are
+(nearly) the same raw frames, so any difference comes from the code, its settings or the choice of input
+frames, and ideally everything is close to zero;</li>
+<li><b>two different epochs</b>. Then the differences also contain real changes of the instrument between the
+two calibration sequences (the spectra and traces move by fractions of a pixel between epochs). What matters
+is not the raw difference but what remains after the corrections the DRP makes to every science exposure, and
+single fibers that behave differently from their neighbours.</li>
+</ul>
 
-flat_comment = '''The flats are binned on a common wavelength grid (50 A bins) with lvmdrp.qa.fiberflats.bin_fiberflat,
-and the per-fiber ratio (median over wavelength) is split with decompose_ratio into a factor per spectrograph and
-a plane across the science IFU (the pipeline's own gradient model) times a fiber to fiber residual. The
-spectrograph offsets and the gradient at the IFU edge are relative to the mean. The second table gives the
-spectrograph factors and gradient each flat records in its own header, i.e. the corrections the pipeline applied.'''
+<h2>Where the numbers come from</h2>
+<p>Almost everything is measured from the <b>image data</b> of the masters, compared pixel by pixel (bias,
+traces, wavelengths, LSF) or on a common wavelength grid (twilight flats). The fiber labels and status come
+from the <code>SLITMAP</code> table of each master, and pixels marked in the <code>BADPIX</code> masks are left
+out. <b>Header keywords are used only</b> in these places, each marked as such below:</p>
+<ul>
+<li>the <b>Provenance</b> table (MJD, DRPVER, COMMIT, NFRAMES, EXPOSURE and the <code>FRAMES</code>
+extension);</li>
+<li>the number of input frames (NFRAMES) in the bias table;</li>
+<li>the amplifier <b>gains</b> in the trace table;</li>
+<li>the fit <b>RMS</b> values in the wavelength table;</li>
+<li>the <b>corrections recorded in the flat headers</b> (SKYCORR, spectrograph factors, gradient).</li>
+</ul>
+<p>Header values are what the DRP says about itself and are not always right: the DRP 1.3.0dev wave masters,
+for example, record the LSF RMS where the wavelength RMS belongs.</p>
+
+<h2>Ideas used throughout</h2>
+<ul>
+<li><b>Local trend.</b> For traces and wavelengths the difference A&minus;B is an array of 648 fibers &times;
+4086 columns per camera. At every 16th column the running median over 15 neighbouring fibers (along the slit)
+is taken and interpolated along the columns: that is the local trend. Smooth changes along the slit and along
+the spectrum, such as a thermal shift between epochs, are part of the trend; a single fiber that differs from
+its neighbours is not, because one fiber cannot move the median of 15. So <i>difference minus trend</i>
+isolates single bad fibers.</li>
+<li><b>Outlier fibers</b> are fibers whose difference minus trend exceeds a limit somewhere along their length:
+%(trace)s pixels for traces; %(wave)s &Aring; for wavelengths inside the detector, and %(edge_lim)s &Aring;
+within %(edge)d columns of either end, where the polynomials extrapolate past the last arc lines and two
+independent fits always differ most.</li>
+<li><b>Wiggle.</b> For a fiber, its value minus the mean of its two neighbouring fibers, along the fiber
+(one neighbour for the first and last fiber); the median of that is removed, so a constant offset does not
+count, and the scatter that remains is the wiggle. It is computed separately for A and for B, so it says which
+of the two has a fiber that bends differently from its neighbours.</li>
+<li><b>What the science reduction does not remove.</b> Every science exposure is corrected for some changes
+since the masters were made: the traces by one shift per block of 36 fibers, the wavelengths by one offset per
+fiber, smooth along the slit, measured from sky lines. Differences of that form between A and B do not matter
+for science data. Each of those corrections is applied here to A&minus;B, and what is left is what would reach
+the science spectra.</li>
+</ul>
+''' % dict(trace='%.2f' % TRACE_LIMIT, wave='%.2f' % WAVE_LIMIT, edge_lim='%.2f' % WAVE_EDGE_LIMIT, edge=EDGE)
+
+PROVENANCE_EXPLAIN = '''<p><b>From the headers.</b> For the first file of each kind of master (camera b1, or
+channel b for the twilight flat; the other cameras are not checked) the table gives the header keywords MJD
+(the epoch), DRPVER (the version <i>label</i> the masters were made under, i.e. the environment variable
+<code>LVMDRP_VERSION</code>, not the installed package version), COMMIT (the DRP git commit), NFRAMES (the
+number of input exposures per camera) and EXPOSURE (one exposure number, which is not used consistently by the
+different products). The last column summarizes the <code>FRAMES</code> extension, the list of input exposures,
+as count: first&ndash;last; masters from older DRP versions have no such extension (&quot;not recorded&quot;),
+so their inputs cannot be checked. When both sets list their frames and the lists differ, the exposures found
+in only one set are listed below the table.</p>
+'''
+
+SECTION_EXPLAIN = {}
+
+SECTION_EXPLAIN['bias'] = '''<p><b>What is compared.</b> <code>lvm-mbias-&lt;camera&gt;.fits</code> is the
+combined bias image of each camera (normally about 95 frames from the 11 nights starting at the epoch). The
+two images are subtracted pixel by pixel. The image is split into its four quadrants (the two halves in each
+direction), taken to be the four amplifiers, which differ in noise, so the noise of the difference and the
+count of discrepant pixels are worked out per quadrant.</p>
+<p><b>Columns of the table.</b></p>
+<ul>
+<li><b>NFRAMES A/B</b>: number of input frames, from the headers.</li>
+<li><b>median A, median B</b>: median of each master image (e<sup>&minus;</sup>).</li>
+<li><b>median diff</b>: median of A&minus;B over the image: a change of the overall bias level.</li>
+<li><b>robust sigma diff</b>: 1.4826 &times; the median absolute deviation of A&minus;B over the whole image:
+how different the two images are pixel to pixel.</li>
+<li><b>robust sigma by quadrant</b>: the same for each quadrant (lower left, lower right, upper left, upper
+right).</li>
+<li><b>n pixels &gt;5 sigma</b>, <b>%% pixels</b>: pixels whose difference departs from its quadrant's median
+by more than 5 of that quadrant's robust sigmas: structure (columns, glow, edges) that is in one master and
+not the other.</li>
+<li><b>max |diff|</b>: the largest absolute difference.</li>
+<li><b>equal</b>: <i>exact</i> if the two images are identical, <i>rounding</i> if they differ by less than
+10<sup>&minus;4</sup>&nbsp;e<sup>&minus;</sup> everywhere (single-precision rounding), <i>no</i> otherwise.</li>
+</ul>
+<p><b>How to read it.</b> Two processings of the same bias frames with the same code should be equal to
+rounding. Between epochs the difference has real structure (in particular a glow-like pattern in r1, a bad
+column and the edges in b2), so a few percent of pixels beyond 5 sigma is normal.</p>
+'''
+
+SECTION_EXPLAIN['trace'] = '''<p><b>What is compared.</b> For each camera the trace masters describe where
+each of the 648 fibers falls on the detector: <code>lvm-mcentroids</code> gives the centre of each fiber's
+profile (a detector row) at every column, <code>lvm-msigmas</code> its width (Gaussian sigma), and
+<code>lvm-mmodel</code> a model image of the whole flat built from the fitted profiles. All are fitted by the
+DRP to the dome flats of the epoch's calibration sequence. The centroid and sigma arrays (fibers &times;
+columns, pixels) of A and B are subtracted element by element; <i>dcen</i> and <i>dsig</i> below are those
+differences. The model images are compared as a ratio, A/B, over the pixels where B's model exceeds 1000
+counts, i.e. on the fibers.</p>
+<p><b>Columns of the first table.</b></p>
+<ul>
+<li><b>median dcen</b>: median of A&minus;B over all fibers and columns: the overall shift of the traces
+(for two epochs mostly a real shift of the instrument).</li>
+<li><b>rms dcen</b>: the scatter of A&minus;B, including any smooth pattern.</li>
+<li><b>rms dcen-trend</b>, <b>p99 |dcen-trend|</b>, <b>max |dcen-trend|</b>: the scatter, 99th percentile and
+largest value of the difference after the local trend is removed: fiber-to-fiber differences only.</li>
+<li><b>n fibers &gt;%(trace)s</b> and <b>worst fibers</b>: the fibers whose |dcen&minus;trend| exceeds
+%(trace)s pixels somewhere, and the worst five as fiber(IFU label):largest value. Fibers are numbered by their
+row in the camera, 0&ndash;647.</li>
+<li><b>rms dsig</b>: the scatter of the difference in profile width.</li>
+<li><b>model median |A/B-1|</b>, <b>model p99 |A/B-1|</b>: how different the model images are, as a fraction.
+The model is in counts, so it scales with the gain used to convert the flats.</li>
+<li><b>gains A/B (amp1-4)</b>: <i>from the headers</i>, the gain of each of the four amplifiers in A and in
+B. A change of gain between the two sets shows up directly in the model ratio, but does not move the
+centroids.</li>
+</ul>
+'''
+
+SECTION_EXPLAIN['wave'] = '''<p><b>What is compared.</b> <code>lvm-mwave-&lt;camera&gt;.fits</code> gives the
+wavelength (&Aring;) of every pixel of every fiber (648 fibers &times; 4086 columns), evaluated from the
+polynomial the DRP fits to the arc lines of each fiber; <code>lvm-mlsf-&lt;camera&gt;.fits</code> gives the line
+spread function width (FWHM) at the same places. Both come from the arc exposures of the epoch's calibration
+sequence. The arrays of A and B are subtracted element by element (<i>dwave</i>, &Aring;; also as a velocity,
+<i>dv</i> = dwave / &lambda; &times; c), with the pixels masked in either set's <code>BADPIX</code> left out; the
+LSF is compared as the ratio A/B&minus;1. &quot;Inside&quot; means columns %(edge)d&ndash;%(edge_hi)d; &quot;edges&quot;
+means the first and last %(edge)d columns.</p>
+<p><b>Columns of the first table.</b></p>
+<ul>
+<li><b>median dwave</b>, <b>median dv</b>: the overall shift of the wavelength scale, in &Aring; and km/s.</li>
+<li><b>rms dwave</b>: the scatter of A&minus;B, including smooth patterns (for two epochs mostly a real shift and
+stretch of the spectra).</li>
+<li><b>median per-fiber rms about trend</b>: for each fiber the rms of dwave&minus;trend along the fiber; the
+median over fibers. The typical fiber-to-fiber disagreement.</li>
+<li><b>p99 / max |dwave-trend| inside</b>, <b>max |dwave-trend| edges</b>: the 99th percentile and the
+largest departure from the local trend, inside the detector and at its ends.</li>
+<li><b>n fibers &gt;%(wave)s A inside or &gt;%(edge_lim)s A at edges</b> and <b>worst flagged fibers</b>: the outlier fibers (more than %(wave)s &Aring; from
+the trend inside, or %(edge_lim)s &Aring; at the edges), and the worst five as fiber(IFU label):largest
+value.</li>
+<li><b>LSF median A/B-1</b>, <b>LSF p99 |A/B-1|</b>: the overall change of the LSF width, and its spread, as a
+fraction.</li>
+<li><b>wave RMS A, wave RMS B, FWHM RMS A, FWHM RMS B</b>: <i>from the headers</i>, the RMS of the DRP's fits of
+the wavelength and of the LSF width to the arc lines, in pixels, as median/maximum over fibers (keywords
+<code>&lt;CAM&gt; WAVE DISP RMS</code> and <code>&lt;CAM&gt; WAVE FWHM RMS</code>). Older versions wrote only
+<code>PIPE DISP RMS</code>, shown as &quot;PIPE&quot; under FWHM, because it actually held the LSF RMS: the
+wavelength RMS was overwritten, so for those masters it is unknown.</li>
+</ul>
+'''
+
+SECTION_EXPLAIN['flat'] = '''<p><b>What is compared.</b> <code>lvm-mfiberflat_twilight-&lt;channel&gt;.fits</code>
+is one file per channel (b, r, z), all three spectrographs stacked (1944 fibers): the relative throughput of
+every fiber at every pixel, about 1, made from the dusk twilight exposures. The two flats can have different
+wavelength solutions, so they are not compared pixel by pixel: each fiber of each flat is resampled onto a
+common 0.5&nbsp;&Aring; grid and medianed in 50&nbsp;&Aring; bins (lvmdrp's <code>bin_fiberflat</code>), and the
+ratio A/B is taken bin by bin. Its median over the bins gives one ratio per fiber. Only fibers of the science
+and the two sky IFUs (not the standard-star fibers) with good status (<code>fibstatus</code> 0) in both flats
+are used.</p>
+<p>The per-fiber ratios, divided by their median (the <i>level</i>), are then fitted with lvmdrp's
+<code>decompose_ratio</code>, the DRP's own model for the fiber flat corrections
+(<code>fit_sky_gradient</code>): one factor per spectrograph times a linear gradient across each IFU. The fit
+splits the ratio into large-scale parts, which the DRP's <code>fiberflat-corrections</code> step adjusts
+anyway, and a fiber-to-fiber residual, which is the real change of the flat field.</p>
+<p><b>Columns of the first table.</b></p>
+<ul>
+<li><b>n values</b>: number of fiber &times; bin ratios used.</li>
+<li><b>median ratio</b>, <b>robust sigma</b>, <b>frac off &gt;1%%</b>: median and robust scatter of all those
+ratios, and the fraction that differ from 1 by more than 1%%.</li>
+<li><b>per-fiber std</b>: the scatter over fibers of the per-fiber ratio divided by the level.</li>
+<li><b>level</b>: the median per-fiber ratio, i.e. the overall normalization of A relative to B.</li>
+<li><b>spectrograph offsets sp1 sp2 sp3</b>: the fitted factor of each spectrograph, relative to the mean (a
+fraction; 0.01 = 1%%).</li>
+<li><b>IFU gradient gx, gy, amplitude</b>: the fitted linear gradient across the science IFU, its two components
+and its size at the edge of the IFU relative to the mean.</li>
+<li><b>per-fiber std after model</b>, <b>robust sigma after model</b>, <b>frac off &gt;1%% after model</b>: the
+same statistics after dividing by the fitted spectrograph factors and gradient: the fiber-to-fiber change.</li>
+</ul>
+<p><b>Second table, from the headers.</b> What each flat says was applied to it by
+<code>fiberflat-corrections</code>: <b>SKYCORR</b> (whether the step was run), the <b>spectrograph factors</b>
+(and the same relative to their mean), and the recorded <b>IFU gradient</b> (gx, gy and the coefficients
+GCOEFF1&ndash;4). If only one set has SKYCORR = True, the spectrograph offsets in the ratio should match its
+factors, with the sign reversed if it is B. In DRP 1.3.2 the gradient was recorded but never applied to the
+flat (lvmdrp issue #268), so it does not appear in the ratio.</p>
+'''
+for _k in ('trace', 'wave', 'flat'):
+    SECTION_EXPLAIN[_k] = SECTION_EXPLAIN[_k] % dict(trace='%.2f' % TRACE_LIMIT, wave='%.2f' % WAVE_LIMIT,
+                                                     edge_lim='%.2f' % WAVE_EDGE_LIMIT, edge=EDGE,
+                                                     edge_hi=4085 - EDGE)
+SECTION_EXPLAIN['bias'] = SECTION_EXPLAIN['bias'].replace('%%', '%')
+
+DRP_MEANING = {
+    'trace': '''<div style="border-left: 4px solid #888; padding-left: 10px;">
+<p><b>What this section answers.</b> Suppose the instrument on some night was in exactly the state that A
+describes, but its science frames were extracted with B's traces (or the other way round). The DRP would shift
+B's traces by one constant per 36-fiber block, measured from the science frame, and extract. The numbers and
+the map below are how far the extraction positions would then still be off, in pixels: the error in trace
+position that would reach the science spectra.</p>
+<p><b>How to read it.</b></p>
+<ul>
+<li><b>It is a disagreement between two masters, not an error against the truth.</b> It assumes one of the two
+describes the night correctly. In practice the instrument on a given night is in some third state, close to but
+not identical with either.</li>
+<li><b>It is a best case for the correction.</b> In a real exposure the block shifts are measured by
+cross-correlating the traces with the science frame at 11 columns, with noise, and blocks whose shift looks
+pathological are replaced by the median. Here each block shift is the median of the noiseless difference of
+the two masters. Real residuals will be somewhat larger.</li>
+<li><b>It covers only what the correction cannot do:</b> single fibers that moved, shifts that differ within a
+block, and changes along the fibers (tilt or curvature). A shift of a whole block, however large, is
+removed.</li>
+</ul></div>
+''',
+    'wave': '''<div style="border-left: 4px solid #888; padding-left: 10px;">
+<p><b>What this section answers.</b> Suppose the instrument on some night was in exactly the state that A
+describes, but its science frames were reduced with B's wavelength solution (or the other way round). The DRP
+would measure each fiber's offset from the sky lines in the science frame and shift that fiber's wavelengths by
+a constant. The numbers and the map below are the wavelength error that would then still be left in the
+science spectra, in &Aring; (and km/s at the detector ends).</p>
+<p><b>How to read it.</b></p>
+<ul>
+<li><b>It is a disagreement between two masters, not an error against the truth.</b> It assumes one of the two
+describes the night correctly. In practice the instrument on a given night is in some third state, close to but
+not identical with either.</li>
+<li><b>It is a best case for the correction.</b> In a real exposure the per-fiber offsets are measured from sky
+lines with noise; fibers with S/N below 10 or failed fits are skipped, and in b a single line (5577&nbsp;&Aring;)
+is used. Here the offsets are read exactly off the noiseless difference of the two masters at the sky-line
+wavelengths, then smoothed as the DRP does. Real residuals will be larger, by the sky-line measurement
+noise.</li>
+<li><b>It covers only what the correction cannot do.</b> The DRP shifts each fiber by a constant, so what
+remains is a stretch or bend along the spectrum, or a single fiber whose fit went wrong. In b, where the offset
+is pinned at 5577&nbsp;&Aring;, anything that grows away from that line stays.</li>
+<li><b>The ends of the detector are reported separately.</b> The rms leaves out the first and last %d columns,
+where the polynomials extrapolate; the blue-end and red-end columns of the table give what is left there. A
+stretch of the wavelength scale shows up as opposite signs at the two ends.</li>
+</ul></div>
+''' % EDGE}
+
+DRP_EXPLAIN = {
+    'trace': '''<p><b>The correction.</b> When a science frame is extracted, the DRP cross-correlates the
+master traces with the frame at 11 columns between 500 and 3000 and shifts each block of 36 fibers by one
+constant, the median of its measured shifts (<code>_fix_fiber_thermal_shifts</code>). Here the same is done to
+A&minus;B: for each of the 18 blocks the median of the difference over columns 450&ndash;3050 is subtracted.
+A shift of a whole block, however large, is removed; what is left (single fibers, shifts that differ within a
+block, changes along the fibers) would change the extraction of science frames.</p>
+<p><b>Columns.</b> <b>block shift min/max</b>: the range of the 18 block shifts removed (pixels).
+<b>rms left</b>, <b>p99 |left|</b>, <b>max |left|</b>: the scatter, 99th percentile and largest value of what is
+left, over all fibers and columns. <b>n fibers &gt;%(trace)s left</b>: fibers still off by more than %(trace)s
+pixels somewhere.</p>
+''' % dict(trace='%.2f' % TRACE_LIMIT),
+    'wave': '''<p><b>The correction.</b> In every science exposure the DRP measures each fiber's offset from
+the reference sky lines (b: 5577&nbsp;&Aring;; r: 6364, 7359, 7392&nbsp;&Aring;; z: 8399, 8988, 9553,
+9720&nbsp;&Aring;), median filters the offsets over 8 fibers, fits a spline with 10 knots along the slit, and
+subtracts the result from the wavelengths as a constant per fiber (<code>shift_wave_skylines</code>). Here the
+same is done to A&minus;B: the difference at those lines gives the per-fiber offset, smoothed in the same way
+(if fewer than half the fibers have an offset nothing is removed, as in the DRP). A constant, slit-smooth shift
+is removed; what is left (a stretch or bend along the spectrum, a single bad fiber) stays in the science
+spectra. In b, where the offset comes from one line, any change away from 5577&nbsp;&Aring; is left.</p>
+<p><b>Columns.</b> <b>sky offset removed min/max</b>: the range of the per-fiber offset removed (&Aring;).
+<b>rms left inside</b>, <b>p99 |left| inside</b>: the scatter and 99th percentile of what is left, over columns
+%(edge)d&ndash;%(edge_hi)d. <b>median left, blue/red end</b>: for each fiber the median of what is left over the
+first (blue) or last (red) %(edge)d columns, and the median of that over fibers, in &Aring; and km/s: a
+stretch of the wavelength scale shows up as opposite signs at the two ends. <b>n fibers &gt;%(wave)s A left
+inside</b>: fibers still off by more than %(wave)s &Aring; inside. The map shows what is left, on a scale of
+&plusmn;0.1&nbsp;&Aring;.</p>
+''' % dict(wave='%.2f' % WAVE_LIMIT, edge=EDGE, edge_hi=4085 - EDGE)}
+
+OUTLIER_EXPLAIN = {
+    'trace': '''<p>Every fiber whose |dcen&minus;trend| exceeds %(trace)s pixels somewhere along its length,
+worst first. <b>fiber</b>: row in the camera (0&ndash;647); <b>ifulabel</b>, <b>fibstatus</b>: from the
+<code>SLITMAP</code> of A (fibstatus 0 is a good fiber). <b>max |dcen-trend|</b>: the largest departure
+(pixels). <b>columns &gt;limit</b>: how many columns exceed the limit, and the first&ndash;last of them; a
+number near 4086 means the whole fiber is offset. <b>max |dsig|</b>: the largest width difference.
+<b>wiggle A</b>, <b>wiggle B</b>: the wiggle of the fiber's centroid in each set. Trace differences are usually
+near-constant offsets along the whole fiber, which the wiggle cannot see, so no suspect is named: deciding
+which set is right needs a comparison with the flat itself.</p>
+''' % dict(trace='%.2f' % TRACE_LIMIT),
+    'wave': '''<p>Every fiber that departs from the local trend by more than %(wave)s &Aring; inside, or
+%(edge_lim)s &Aring; at the edges, worst first. <b>fiber</b>: row in the camera (0&ndash;647);
+<b>ifulabel</b>: from the <code>SLITMAP</code> of A's trace master. <b>max |dwave-trend| inside</b>, <b>max at
+edges</b>: the largest departure in each region (&Aring;). <b>column of max</b>: where along the fiber the
+largest departure is. <b>rms about trend</b>: the rms of the departure along the fiber. <b>wiggle A</b>,
+<b>wiggle B</b>: the wiggle of the fiber's wavelength solution in each set. <b>suspect</b>: the set with the
+larger wiggle, i.e. the one whose solution bends differently from its neighbouring fibers, and so probably
+the one whose fit went wrong. A wiggle of a few hundredths of an &Aring;ngstr&ouml;m is normal; a few tenths
+is a failed fit.</p>
+''' % dict(wave='%.2f' % WAVE_LIMIT, edge_lim='%.2f' % WAVE_EDGE_LIMIT)}
+
+# captions for the figures, by file name
+FIG_CAPTION = {
+    'bias_diff.png': '''Bias A&minus;B, one panel per camera (rows against columns), each on a scale of
+&plusmn;5 times its own robust sigma, so structure shows whatever the noise level.''',
+    'trace_centroid_raw.png': '''Trace centroid difference A&minus;B (pixels), i.e. the change of each fiber's
+position across the dispersion, fibers against columns: D(f,x) = c<sub>A</sub>(f,x) &minus; c<sub>B</sub>(f,x),
+where c is the centroid (detector row) of fiber f at column x. All cameras share one fixed scale of
+&plusmn;1 pixel and one colour bar: white is no change, red means the fiber is at a higher row in A, blue
+a lower row. For two epochs this is mostly a real shift of the whole camera, and a camera that has shifted as a
+whole is a uniform colour.''',
+    'trace_centroid_minus_median.png': '''The same difference minus the camera's median shift,
+D(f,x) &minus; median(D), the median (over all fibers and columns of the camera) being given in each panel
+title. All cameras share one fixed scale of &plusmn;0.1 pixels. With the overall shift removed, this shows
+how the fibers vary around it: whole 36-fiber blocks that moved more or less than the rest appear as bands,
+and noisy or mis-traced fibers as thin lines. The DRP removes block shifts at extraction (see &quot;What the
+science reduction does not remove&quot;), but not differences within a block.''',
+    'trace_centroid_diff.png': '''The trace centroid difference A&minus;B minus the local trend (pixels), fibers
+against columns, on a fixed scale of &plusmn;0.02 pixels for all cameras, so one colour bar serves all panels.
+<br><b>What &quot;minus the local trend&quot; means.</b> The trend is worked out separately for each camera
+from the difference image itself (648 fibers &times; 4086 columns). At every 16th column, each fiber's trend
+value is the <i>median</i> of the difference over the 15 fibers centred on it (itself and 7 on each side, with
+the fibers reflected at the ends of the slit); these values are interpolated linearly along the columns and
+subtracted. So each fiber is compared with its 15 nearest neighbours on the slit, and anything the
+neighbours share disappears: a whole block shifting, a smooth change along the slit, a slow change along the
+columns such as a tilt. What is left is how much a single fiber differs from its neighbours. One bad fiber
+cannot move the median of 15, so it stays and shows up as a thin horizontal line. At a block boundary, the
+last fiber of a block still has 8 of its 15 window fibers in its own block, so the median follows its own block
+and clean steps between blocks leave no false residual. The limitation: a group of more than about 7 adjacent
+fibers that all changed together looks like part of the trend.''',
+    'trace_sigma_diff.png': '''Profile width difference A&minus;B (pixels), on a fixed scale of
+&plusmn;0.02 pixels.''',
+    'trace_fiber_max.png': '''For each fiber (row in the camera), the largest |dcen&minus;trend| along its
+length, on a logarithmic scale. The red line is the %.2f pixel limit for outliers.''' % TRACE_LIMIT,
+    'wave_drp_residual.png': '''What is left of the wavelength difference after the sky-line correction
+(&Aring;), fibers against columns, on a scale of &plusmn;0.1&nbsp;&Aring;.''',
+    'wave_raw.png': '''Wavelength difference A&minus;B minus the camera's median (&Aring;), fibers against
+columns; the median is in the panel title. As for the first trace map, the colours are centred on zero but each
+camera has its own range, shown by its own colour bar and in its title, so the same colour can mean different
+amounts in different panels. For two epochs this is mostly a real shift and stretch of the spectra.''',
+    'wave_diff.png': '''The wavelength difference A&minus;B minus the local trend (&Aring;), fibers against
+columns, on a fixed scale of &plusmn;0.05&nbsp;&Aring; for all cameras. The strongest differences normally sit at
+the two ends, where the polynomials extrapolate.
+<br><b>What &quot;minus the local trend&quot; means.</b> The trend is worked out separately for each camera
+from the difference image itself (648 fibers &times; 4086 columns). At every 16th column, each fiber's trend
+value is the <i>median</i> of the difference over the 15 fibers centred on it (itself and 7 on each side, with
+the fibers reflected at the ends of the slit); these values are interpolated linearly along the columns and
+subtracted. So each fiber is compared with its 15 nearest neighbours on the slit, and anything the
+neighbours share disappears: a whole block shifting, a smooth change along the slit, a slow change along the
+columns such as a tilt. What is left is how much a single fiber differs from its neighbours. One bad fiber
+cannot move the median of 15, so it stays and shows up as a thin horizontal line. At a block boundary, the
+last fiber of a block still has 8 of its 15 window fibers in its own block, so the median follows its own block
+and clean steps between blocks leave no false residual. The limitation: a group of more than about 7 adjacent
+fibers that all changed together looks like part of the trend.''',
+    'lsf_ratio.png': '''LSF width ratio A/B&minus;1, fibers against columns, on a scale of &plusmn;5%.''',
+    'wave_fiber_max.png': '''For each fiber (row in the camera), the largest |dwave&minus;trend| anywhere along
+its length, on a logarithmic scale. The red line is the %.2f&nbsp;&Aring; limit used inside the detector; the
+limit at the edges is %.2f&nbsp;&Aring;, so points between the two may come from the edges only.''' % (
+        WAVE_LIMIT, WAVE_EDGE_LIMIT),
+    'flat_ifu.png': '''The science IFU, one hexagon per fiber at its position, one row per channel. Left: the
+per-fiber ratio A/B divided by the level. Middle: the fitted model, spectrograph factors times gradient. Right:
+the residual, ratio divided by model, i.e. the fiber-to-fiber change. All three panels of a row share one
+colour scale (&plusmn;3 times the scatter of the ratio, at least 1%), centred on 1.''',
+    'flat_slit.png': '''The per-fiber ratio A/B divided by the level against the fiber's row in the flat (the
+order along the slit), coloured by spectrograph: a step between spectrographs is a spectrograph factor; steps
+within one spectrograph can come from the amplifiers (a gain change).''',
+}
 
 
-drp_comment = {
-    'trace': '''At extraction the science reduction shifts the master traces by one constant per block of 36
-fibers, measured by cross-correlation at columns 500-3000 (_fix_fiber_thermal_shifts). The same is done here to
-the difference of the two masters (median over each block and columns 450-3050); what is left would change
-the extraction of science frames.''',
-    'wave': '''The science reduction measures each fiber's offset at the reference sky lines (b 5577 A; r and z
-three or four lines), median filters it over 8 fibers, fits a spline along the slit and subtracts it as a
-constant (shift_wave_skylines). The same is done here to the difference of the two masters; what is left,
-a stretch along the spectrum or a single bad fiber, stays in the science spectra. The blue and red end columns
-give the median left in the first and last 200 columns.'''}
-
-
-def doit(spec_a, spec_b, outroot='', only=None, labels=None):
+def doit(spec_a, spec_b, outroot='', only=None, labels=None, same=False, note=''):
     '''
     Compare two sets of masters and write outroot.html with its plots
     and tables in outroot/
@@ -833,7 +1178,8 @@ def doit(spec_a, spec_b, outroot='', only=None, labels=None):
 
         spec_a and spec_b are resolved with resolve(); B is the
         reference.  only is a list of the products to compare, by
-        default all of bias, trace, wave and flat
+        default all of bias, trace, wave and flat.  same forces the
+        same-epoch wording; note is a paragraph shown at the top
 
     History::
 
@@ -864,23 +1210,37 @@ def doit(spec_a, spec_b, outroot='', only=None, labels=None):
                 mjd = fits.getheader(os.path.join(folder, f)).get('MJD', '--')
                 break
         mjds.append(mjd)
-    mode = 'the same epoch (%s)' % mjds[0] if mjds[0] == mjds[1] else 'two different epochs (%s and %s)' % tuple(mjds)
+    if same and mjds[0] != mjds[1]:
+        mode = 'the same epoch (the MJD keywords say %s and %s, the MJDs of the first input frames)' % tuple(mjds)
+    elif mjds[0] == mjds[1]:
+        mode = 'the same epoch (%s)' % mjds[0]
+    else:
+        mode = 'two different epochs (%s and %s)' % tuple(mjds)
 
     string = xhtml.begin('Calibration comparison: %s vs %s' % (laba, labb))
     string += xhtml.add_list(['A = %s: %s' % (laba, a), 'B = %s: %s (reference)' % (labb, b),
                               'Comparing %s; ratios and differences are A/B and A-B' % mode])
+    if note:
+        string += '<p style="border-left:4px solid #888;padding-left:8px"><b>Note:</b> %s</p>\n' % note
+    string += INTRO
     string += xhtml.hline()
     string += xhtml.h2('Provenance')
+    string += PROVENANCE_EXPLAIN
     prov_rows, prov_notes = compare_provenance(a, b, laba, labb)
     string += xhtml.table(prov_rows)
     if prov_notes:
         string += xhtml.add_list(prov_notes)
 
+    def add_figure(fig):
+        shape = plt.imread(fig).shape
+        caption = FIG_CAPTION.get(os.path.basename(fig))
+        out = '<p><i>%s</i></p>\n' % caption if caption else ''
+        return out + xhtml.image(fig, width=1200, height=1200 * shape[0] // shape[1])
+
     summaries = []
-    sections = [('bias', 'Bias', compare_bias, None), ('trace', 'Traces', compare_traces, trace_comment),
-                ('wave', 'Wavelengths and LSF', compare_wave, wave_comment),
-                ('flat', 'Twilight fiber flats', compare_flats, flat_comment)]
-    for key, title, func, comment in sections:
+    sections = [('bias', 'Bias', compare_bias), ('trace', 'Traces', compare_traces),
+                ('wave', 'Wavelengths and LSF', compare_wave), ('flat', 'Twilight fiber flats', compare_flats)]
+    for key, title, func in sections:
         if key not in only:
             continue
         print('Comparing %s' % title.lower())
@@ -897,26 +1257,28 @@ def doit(spec_a, spec_b, outroot='', only=None, labels=None):
             summaries.append('%s: not present in both sets' % key)
             continue
         summaries.append(result['summary'])
-        string += xhtml.paragraph(result['summary'])
-        if comment:
-            string += xhtml.paragraph(comment)
+        string += xhtml.paragraph('<b>Summary:</b> ' + result['summary'])
+        string += SECTION_EXPLAIN.get(key, '')
         string += xhtml.table(result['rows'])
-        if 'drows' in result:
-            string += xhtml.h3('What the science reduction does not remove')
-            string += xhtml.paragraph(result['drp_summary'] + '. ' + drp_comment[key])
-            string += xhtml.table(result['drows'])
-            for fig in result.get('dfigs', []):
-                shape = plt.imread(fig).shape
-                string += xhtml.image(fig, width=1200, height=1200 * shape[0] // shape[1])
-            summaries.append('  ' + result['drp_summary'])
         if 'hrows' in result:
             string += xhtml.h3('Corrections recorded in the flat headers')
             string += xhtml.table(result['hrows'])
+        if 'drows' in result:
+            string += xhtml.h3('What the science reduction does not remove')
+            string += DRP_MEANING.get(key, '')
+            string += xhtml.paragraph('<b>Summary:</b> ' + result['drp_summary'])
+            string += DRP_EXPLAIN.get(key, '')
+            string += xhtml.table(result['drows'])
+            for fig in result.get('dfigs', []):
+                string += add_figure(fig)
+            summaries.append('  ' + result['drp_summary'])
+        if result['figs']:
+            string += xhtml.h3('Maps and plots')
         for fig in result['figs']:
-            shape = plt.imread(fig).shape
-            string += xhtml.image(fig, width=1200, height=1200 * shape[0] // shape[1])
+            string += add_figure(fig)
         if 'outliers' in result:
             string += xhtml.h3('Outlier fibers (%d), largest first' % (len(result['outliers']) - 1))
+            string += OUTLIER_EXPLAIN.get(key, '')
             string += xhtml.table(result['outliers'][:41])
             if len(result['outliers']) > 41:
                 string += xhtml.paragraph('First 40 shown; all are in the table file below')
@@ -942,6 +1304,8 @@ def steer(argv):
     outroot = ''
     only = None
     labels = None
+    same = False
+    note = ''
     specs = []
     i = 1
     while i < len(argv):
@@ -964,6 +1328,11 @@ def steer(argv):
             if len(labels) != 2:
                 print('CompareCalib: -labels needs two names separated by a comma')
                 return
+        elif argv[i] == '-same':
+            same = True
+        elif argv[i] == '-note':
+            i += 1
+            note = argv[i]
         elif argv[i][0] == '-':
             print('Error: unknown option %s' % argv[i])
             print(_USAGE)
@@ -974,7 +1343,7 @@ def steer(argv):
     if len(specs) != 2:
         print(_USAGE)
         return
-    doit(specs[0], specs[1], outroot=outroot, only=only, labels=labels)
+    doit(specs[0], specs[1], outroot=outroot, only=only, labels=labels, same=same, note=note)
 
 
 if __name__ == '__main__':

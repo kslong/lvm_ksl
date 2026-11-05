@@ -57,7 +57,7 @@ Other docstring RST gotchas:
 | Astrometry | `fib2radec.py` (fiber → RA/Dec conversion) |
 | Imaging | `kslmap.py`, `quick_map.py`, `line_map.py` |
 | Spectrum overview plots | `PlotSpec.py`, `PlotSpec3.py`, `PlotSpecI.py` (interactive/Plotly) |
-| Data quality | `CheckReduced.py`, `CheckData.py`, `FixFlatGradient.py` (corrects DRP 1.3.2 CFrames for the dropped flat-field gradient), `CompareCalib.py` (compares two sets of long-term master calibrations), `CalibDrift.py` (drift from the masters, from science frame headers) |
+| Data quality | `CheckReduced.py`, `CheckData.py`, `FixFlatGradient.py` (corrects DRP 1.3.2 CFrames for the dropped flat-field gradient), `CompareCalib.py` (compares two sets of long-term master calibrations), `CalibDrift.py` (drift from the masters, from science frame headers), `CalibEpochs.py` (census of the masters of all epochs: outliers, steps, bad fibers) |
 
 ### Key Dependencies
 

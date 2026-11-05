@@ -14,7 +14,7 @@ Synopsis:
 Command line usage (if any):
 
     usage: CompareCalib.py [-h] [-out outroot] [-only bias,trace,wave,flat]
-                           [-labels labA,labB] A B
+                           [-labels labA,labB] [-same] [-note text] A B
 
     Arguments::
 
@@ -39,6 +39,12 @@ Command line usage (if any):
                      of bias, trace, wave and flat
         -labels A,B  short names for the two sets in plots and tables;
                      default derived from A and B
+        -same        treat A and B as the same epoch whatever their MJD
+                     keywords say (a master carries the MJD of its first
+                     input frame, so e.g. two halves of one arc sequence
+                     can carry different MJDs)
+        -note text   a paragraph shown at the top of the report, e.g. to
+                     say how A and B were made
 
 Description::
 
@@ -121,6 +127,8 @@ History::
                not remove means; raw trace map on one fixed scale plus
                a map minus the camera median; colour bars per panel
                where the scale differs; ASCII-only html
+    261104 ksl -same and -note options, for comparing the two halves
+               of a split arc sequence
 
 '''
 
@@ -1161,7 +1169,7 @@ within one spectrograph can come from the amplifiers (a gain change).''',
 }
 
 
-def doit(spec_a, spec_b, outroot='', only=None, labels=None):
+def doit(spec_a, spec_b, outroot='', only=None, labels=None, same=False, note=''):
     '''
     Compare two sets of masters and write outroot.html with its plots
     and tables in outroot/
@@ -1170,7 +1178,8 @@ def doit(spec_a, spec_b, outroot='', only=None, labels=None):
 
         spec_a and spec_b are resolved with resolve(); B is the
         reference.  only is a list of the products to compare, by
-        default all of bias, trace, wave and flat
+        default all of bias, trace, wave and flat.  same forces the
+        same-epoch wording; note is a paragraph shown at the top
 
     History::
 
@@ -1201,11 +1210,18 @@ def doit(spec_a, spec_b, outroot='', only=None, labels=None):
                 mjd = fits.getheader(os.path.join(folder, f)).get('MJD', '--')
                 break
         mjds.append(mjd)
-    mode = 'the same epoch (%s)' % mjds[0] if mjds[0] == mjds[1] else 'two different epochs (%s and %s)' % tuple(mjds)
+    if same and mjds[0] != mjds[1]:
+        mode = 'the same epoch (the MJD keywords say %s and %s, the MJDs of the first input frames)' % tuple(mjds)
+    elif mjds[0] == mjds[1]:
+        mode = 'the same epoch (%s)' % mjds[0]
+    else:
+        mode = 'two different epochs (%s and %s)' % tuple(mjds)
 
     string = xhtml.begin('Calibration comparison: %s vs %s' % (laba, labb))
     string += xhtml.add_list(['A = %s: %s' % (laba, a), 'B = %s: %s (reference)' % (labb, b),
                               'Comparing %s; ratios and differences are A/B and A-B' % mode])
+    if note:
+        string += '<p style="border-left:4px solid #888;padding-left:8px"><b>Note:</b> %s</p>\n' % note
     string += INTRO
     string += xhtml.hline()
     string += xhtml.h2('Provenance')
@@ -1288,6 +1304,8 @@ def steer(argv):
     outroot = ''
     only = None
     labels = None
+    same = False
+    note = ''
     specs = []
     i = 1
     while i < len(argv):
@@ -1310,6 +1328,11 @@ def steer(argv):
             if len(labels) != 2:
                 print('CompareCalib: -labels needs two names separated by a comma')
                 return
+        elif argv[i] == '-same':
+            same = True
+        elif argv[i] == '-note':
+            i += 1
+            note = argv[i]
         elif argv[i][0] == '-':
             print('Error: unknown option %s' % argv[i])
             print(_USAGE)
@@ -1320,7 +1343,7 @@ def steer(argv):
     if len(specs) != 2:
         print(_USAGE)
         return
-    doit(specs[0], specs[1], outroot=outroot, only=only, labels=labels)
+    doit(specs[0], specs[1], outroot=outroot, only=only, labels=labels, same=same, note=note)
 
 
 if __name__ == '__main__':

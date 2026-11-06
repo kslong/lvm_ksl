@@ -115,6 +115,7 @@ History::
 
     261105 ksl Coding begun (pilot as FlatCorr_analysis/skyline_plane.py),
                moved to lvm_ksl so it can run at Utah; -drpall added
+    261106 ksl Header keywords with no value are written as NaN, not None
 
 '''
 
@@ -232,6 +233,16 @@ def calib_epoch(header, epochs):
     return -1 if e is None else e
 
 
+def _num(header, key):
+    '''
+    A header value as a float, NaN if missing, empty or not a number
+    '''
+    try:
+        return float(header[key])
+    except (KeyError, TypeError, ValueError):
+        return np.nan
+
+
 def measure(fname, calib, epochs, gcache):
     '''
     One table row (a dict) for one CFrame
@@ -249,13 +260,13 @@ def measure(fname, calib, epochs, gcache):
         row.update(expnum=int(h.get('EXPOSURE', -1)), mjd=int(h.get('MJD', -1)), smjd=int(h.get('SMJD', -1)),
                    tile=int(h.get('TILE_ID', -1)), drpqual=int(h.get('DRPQUAL', -1)),
                    drpver=str(h.get('DRPVER', '')), gradfix=bool(h.get('FGRADFIX', False)),
-                   fluxcal=str(h.get('FLUXCAL', '')), exptime=h.get('EXPTIME', np.nan),
-                   pa=h.get('POSCIPA', np.nan), kmir=h.get('TESCIKM', np.nan),
-                   focus=h.get('TESCIFO', np.nan), skye_focus=h.get('TESKYEFO', np.nan),
-                   skyw_focus=h.get('TESKYWFO', np.nan), alt=h.get('SCIALT', np.nan),
-                   labtemp=h.get('LABTEMP', np.nan), ccdtemp=h.get('CCDTEMP1', np.nan),
-                   moon_fli=h.get('SKY MOON_FLI', np.nan), moon_alt=h.get('SKY MOON_ALT', np.nan),
-                   moon_sep=h.get('SKY SCI_MOON_SEP', np.nan), sun_alt=h.get('SKY SUN_ALT', np.nan))
+                   fluxcal=str(h.get('FLUXCAL', '')), exptime=_num(h, 'EXPTIME'),
+                   pa=_num(h, 'POSCIPA'), kmir=_num(h, 'TESCIKM'),
+                   focus=_num(h, 'TESCIFO'), skye_focus=_num(h, 'TESKYEFO'),
+                   skyw_focus=_num(h, 'TESKYWFO'), alt=_num(h, 'SCIALT'),
+                   labtemp=_num(h, 'LABTEMP'), ccdtemp=_num(h, 'CCDTEMP1'),
+                   moon_fli=_num(h, 'SKY MOON_FLI'), moon_alt=_num(h, 'SKY MOON_ALT'),
+                   moon_sep=_num(h, 'SKY SCI_MOON_SEP'), sun_alt=_num(h, 'SKY SUN_ALT'))
         try:
             row['glat'] = SkyCoord(h['SCIRA'] * u.deg, h['SCIDEC'] * u.deg).galactic.b.deg
         except (KeyError, ValueError, TypeError):

@@ -70,6 +70,22 @@ Description::
     8.  at bright Moon only, compares the continuum plane with the line
         plane (a check that the effect is a throughput change)
 
+    If the table has the held-out lines and tracers (SkyLinePlane.py
+    261106), these sections use all latitudes (no -minglat cut, no outlier
+    clipping):
+
+    9.  the fitted plane against held-out sky lines in the same exposure
+        (8399 vs each z OH line and their sum; 5577 vs the z OH sum;
+        6364 and the r OH sum vs the z OH sum), epoch medians removed,
+        per |b| bin, with the rms expected from the formal errors
+    10. the nebular tracers: brightness and gradient in % of the sky
+        line, and whether the 5577 - z OH and 8399 - z OH differences
+        follow the tracer gradients near the plane
+    11. a per-exposure guard: the fraction of exposures whose 5577 or
+        8399 plane differs from the z OH plane by more than 1-3 % per
+        10 mm, per |b| bin; those above 1.5 are listed in
+        outroot/flags.txt
+
     Exposures are dropped if their DRPQUAL is not 0, they are shorter
     than -minexp, |b| < -minglat, fewer than 500 fibers were fitted, or
     the residual is more than 6 MAD from the median of its arm (listed
@@ -96,6 +112,8 @@ History::
     261106 ksl Text columns holding numbers (None for empty header
                keywords) are converted to float, and placeholders
                such as -999 set to NaN
+    261106 ksl Sections 9-11 for the held-out sky lines and nebular
+               tracers of the extended SkyLinePlane.py tables
 
 '''
 
@@ -180,7 +198,7 @@ def to_numeric(xtab, keep=('file', 'drpver', 'fluxcal', 'gradfix', 'why')):
     return xtab
 
 
-def prepare(xtab, minexp, minglat, keep_all):
+def prepare(xtab, minexp, minglat, keep_all, clip=True):
     '''
     Add the night, ffactor epoch, dt, focus and the residual components;
     returns the selected table and the dropped exposures with reasons
@@ -231,7 +249,7 @@ def prepare(xtab, minexp, minglat, keep_all):
         flag(~(np.asarray(xtab[arm + '_n'], float) >= 500), 'nfib_' + arm)
         flag(~np.isfinite(np.asarray(xtab[arm + '_dx'], float)), 'nan_' + arm)
     ok = np.array([w == '' for w in why])
-    for arm in ARMS:
+    for arm in (ARMS if clip else ''):
         for c in ('_dx', '_dy'):
             v = np.asarray(xtab[arm + c], float)
             med, sig = np.median(v[ok]), _robust_sigma(v[ok])
@@ -426,6 +444,185 @@ def plot_balance(xtab, outdir):
     plt.close(fig)
 
 
+HBINS = [(0, 5), (5, 15), (15, 30), (30, 90)]
+Z_HOLDOUT = ['oh8344', 'oh8430', 'oh8465', 'oh8827', 'oh8886', 'oh8920']
+R_HOLDOUT = ['oh6864', 'oh6923', 'oh7316', 'oh7341']
+TRACERS = [('hb', 'b'), ('oiii', 'b'), ('oi6300', 'r'), ('ha', 'r'), ('nii', 'r'), ('sii', 'r')]
+
+
+def _epoch_demean(t, v):
+    '''
+    v minus its median in each calibration epoch (removes static, line- or
+    arm-specific offsets, which change between epochs)
+    '''
+    v = np.array(v, float)
+    ep = np.asarray(t['epoch'])
+    for e in np.unique(ep):
+        m = ep == e
+        v[m] -= np.nanmedian(v[m])
+    return v
+
+
+def _plane(t, name):
+    '''
+    x, y components (% per 10 mm) of a fitted plane: an arm (b, r, z) or a held-out line
+    '''
+    if name in ARMS:
+        return np.asarray(t[name + '_mx'], float), np.asarray(t[name + '_my'], float)
+    return np.asarray(t[name + '_gx'], float), np.asarray(t[name + '_gy'], float)
+
+
+def _egrad(t, name):
+    return np.asarray(t[name + '_egrad'], float)
+
+
+def heldout_sections(t, outdir):
+    '''
+    Sections 9-11 (tables with the held-out lines and tracers of
+    SkyLinePlane.py 261106): the html text, and the per-exposure
+    contamination statistics written to outdir/flags.txt
+    '''
+    glat = np.abs(np.asarray(t['glat'], float))
+    page = xhtml.hline() + xhtml.h2('9. Held-out sky lines: does the fitted plane agree with lines not used in the fit?')
+    page += xhtml.paragraph(
+        'Differences between two planes measured in the same exposure, with the median of each calibration epoch '
+        'removed (the static part differs between lines and arms). Robust rms of the x / y components in %% per 10 mm, '
+        'per |b| bin (N = %d exposures, all latitudes). "noise" is the rms expected from the formal errors of the two '
+        'planes. A target contaminating one of the lines would make the rms grow toward the Galactic plane. b has no '
+        'second usable airglow line, so it is compared with the z OH lines through the achromatic changing part; '
+        'the r OH lines sit in telluric bands and are compared with z to tell whether they or 6364 are at fault.' % len(t))
+    comps = [('z: 8399 vs z OH sum', 'z', 'z_oh')] + [('z: 8399 vs %s' % h, 'z', h) for h in Z_HOLDOUT] + \
+        [('b: 5577 vs z OH sum', 'b', 'z_oh'), ('r: 6364 vs z OH sum', 'r', 'z_oh'), ('r: r OH sum vs z OH sum', 'r_oh', 'z_oh'),
+         ('r: 6364 vs r OH sum', 'r', 'r_oh')]
+    rows = [['comparison'] + ['|b| %d-%d' % b for b in HBINS] + ['noise (all)', 'r(x), r(y) before epoch medians removed']]
+    dstat = {}
+    for label, a, b in comps:
+        ax, ay = _plane(t, a)
+        bx, by = _plane(t, b)
+        dx, dy = _epoch_demean(t, ax - bx), _epoch_demean(t, ay - by)
+        dstat[(a, b)] = (dx, dy)
+        row = [label]
+        for lo, hi in HBINS:
+            m = (glat >= lo) & (glat < hi)
+            row.append('%s / %s (%d)' % (_f(_robust_sigma(dx[m])), _f(_robust_sigma(dy[m])), np.isfinite(dx[m]).sum()))
+        ea, eb = _egrad(t, a), _egrad(t, b)
+        row.append(_f(np.sqrt(np.nanmedian(ea) ** 2 + np.nanmedian(eb) ** 2)))
+        g = np.isfinite(ax) & np.isfinite(bx)
+        row.append('%s, %s' % (_f(np.corrcoef(ax[g], bx[g])[0, 1]), _f(np.corrcoef(ay[g], by[g])[0, 1])))
+        rows.append(row)
+    page += xhtml.table(rows)
+
+    # 10. tracers
+    db = np.hypot(*dstat[('b', 'z_oh')])
+    dz = np.hypot(*dstat[('z', 'z_oh')])
+    page += xhtml.hline() + xhtml.h2('10. Nebular tracers: does the difference follow the target emission?')
+    page += xhtml.paragraph(
+        'Tracers are line fluxes of the science fibers minus the DRP-weighted sky. Brightness = median excess in % '
+        'of the sky line fitted in the same arm (5577, 6364, 8399); gradient = linear fit of the excess across the '
+        'IFU, in % of that sky line per 10 mm, i.e. the units of the planes. The science fibers see the sky part of '
+        'a line through the flat error and the sky reference does not, so the expected sky part (the sky flux of the '
+        'tracer in % of the arm\'s sky line, times the arm\'s measured plane) is subtracted from the gradient; this '
+        'matters for [OI] 6300 and Ha, which have strong sky emission. t5577 and t8399 are the excess at the fitted '
+        'lines themselves, the most direct measure of contamination; only their brightness is meaningful (their '
+        'gradient is the fitted plane), and it also contains real airglow differences between the science field '
+        'and the sky fields, degrees away (several %, up to ~12% at the 95th percentile at high latitude), so only an '
+        'excess that grows toward the Galactic plane points to contamination. The correlations are of the b and z differences of section 9 (5577 - z OH, '
+        '8399 - z OH; x with x, y with y) with the tracer gradient, for |b| &lt; 15.')
+    trows = [['tracer', 'brightness median / 95th pct, |b| &lt; 5', 'brightness median / 95th pct, |b| &gt; 30',
+              '|gradient| median / 95th pct, |b| &lt; 5', 'r(5577 - z OH, tracer grad) x, y',
+              'r(8399 - z OH, tracer grad) x, y']]
+    low = glat < 15
+    tr_bright = {}
+    for name, arm in TRACERS + [('t5577', 'b'), ('t8399', 'z')]:
+        if name + '_exc' not in t.colnames:
+            continue
+        ref = np.asarray(t[arm + '_line'], float)
+        br = 100 * np.asarray(t[name + '_exc'], float) / ref
+        skyfrac = np.asarray(t[name + '_sky'], float) / ref
+        px, py = _plane(t, arm)
+        gx = 100 * np.asarray(t[name + '_gx'], float) / ref - skyfrac * px
+        gy = 100 * np.asarray(t[name + '_gy'], float) / ref - skyfrac * py
+        tr_bright[name] = br
+        if name.startswith('t'):
+            gx = gy = np.full(len(t), np.nan)
+        cell = []
+        for m in (glat < 5, glat > 30):
+            v = br[m & np.isfinite(br)]
+            cell.append('%s / %s' % (_f(np.median(v)), _f(np.percentile(v, 95))) if len(v) > 5 else '-')
+        gm = np.hypot(gx, gy)[(glat < 5) & np.isfinite(gx)]
+        cell.append('%s / %s' % (_f(np.median(gm)), _f(np.percentile(gm, 95))) if len(gm) > 5 else '-')
+        for key in (('b', 'z_oh'), ('z', 'z_oh')):
+            dx, dy = dstat[key]
+            out = []
+            for d, gg in ((dx, gx), (dy, gy)):
+                g = low & np.isfinite(d) & np.isfinite(gg)
+                out.append(_f(np.corrcoef(d[g], gg[g])[0, 1]) if g.sum() > 10 else '-')
+            cell.append(', '.join(out))
+        trows.append([name] + cell)
+    page += xhtml.table(trows)
+
+    # 11. flags
+    F = np.fmax(db, dz)
+    page += xhtml.hline() + xhtml.h2('11. A per-exposure guard: how many exposures would fall back to the model?')
+    page += xhtml.paragraph(
+        'Statistic = the larger of |5577 - z OH| and |8399 - z OH| (vector, %% per 10 mm, epoch medians removed). '
+        'An exposure above the threshold would use the best model instead of its direct fit. Fractions per |b| bin; '
+        'all exposures above 1.5 are listed in <a href="%s/flags.txt">flags.txt</a>.' % outdir)
+    frows = [['threshold'] + ['|b| %d-%d' % b for b in HBINS] + ['all']]
+    for thr in (1.0, 1.5, 2.0, 3.0):
+        row = ['> %.1f' % thr]
+        for lo, hi in HBINS + [(0, 91)]:
+            m = (glat >= lo) & (glat < hi) & np.isfinite(F)
+            row.append('%.2f%% (%d)' % (100 * np.mean(F[m] > thr), np.sum(F[m] > thr)) if m.any() else '-')
+        frows.append(row)
+    page += xhtml.table(frows)
+    o = np.argsort(-np.nan_to_num(F, nan=-1))
+    cols = ['expnum', 'tile', 'mjd']
+    lines = ['%8s %9s %6s %6s %6s %6s %6s %6s %8s %8s %8s %8s' % ('expnum', 'tile', 'mjd', '|b|', 'D5577', 'D8399', 'b_rms',
+                                                                 'z_rms', 'oiii%', 'sii%', 't5577%', 't8399%')]
+    for i in o:
+        if not F[i] > 1.5:
+            break
+        lines.append('%8d %9d %6d %6.1f %6.2f %6.2f %6.2f %6.2f %8.2f %8.2f %8.2f %8.2f'
+                     % tuple([t[c][i] for c in cols] + [glat[i], db[i], dz[i], t['b_rms'][i], t['z_rms'][i]] +
+                             [tr_bright.get(k, np.full(len(t), np.nan))[i] for k in ('oiii', 'sii', 't5577', 't8399')]))
+    with open(os.path.join(outdir, 'flags.txt'), 'w') as f:
+        f.write('\n'.join(lines) + '\n')
+    page += xhtml.h3('The 20 exposures with the largest statistic')
+    page += '<pre>\n' + '\n'.join(lines[:21]) + '\n</pre>\n'
+
+    # plot
+    fig, ax = plt.subplots(2, 3, figsize=(16, 9), layout='constrained')
+    for k, c in enumerate('xy'):
+        a = _plane(t, 'z')[k]
+        h = _plane(t, 'z_oh')[k]
+        sc = ax[0, k].scatter(a, h, c=glat, s=2, cmap='viridis', vmin=0, vmax=60)
+        lim = np.nanpercentile(np.r_[a, h], [0.5, 99.5])
+        ax[0, k].plot(lim, lim, 'k-', lw=0.5)
+        ax[0, k].set_xlabel('8399 plane %s (%% / 10 mm)' % c)
+        ax[0, k].set_ylabel('z OH plane %s (%% / 10 mm)' % c)
+    fig.colorbar(sc, ax=ax[0, :2].tolist(), label='|b| (deg)')
+    ax[0, 2].plot(glat, db, '.', ms=1, label='5577 - z OH')
+    ax[0, 2].plot(glat, dz, '.', ms=1, label='8399 - z OH')
+    ax[0, 2].set_xlabel('|b| (deg)')
+    ax[0, 2].set_ylabel('|difference| (% / 10 mm)')
+    ax[0, 2].legend(markerscale=8, fontsize=8)
+    for k, (name, d, lab) in enumerate((('oiii', db, '5577 - z OH'), ('sii', dz, '8399 - z OH'), ('t5577', db, '5577 - z OH'))):
+        if name in tr_bright:
+            ax[1, k].plot(tr_bright[name], d, '.', ms=1)
+            ax[1, k].set_xscale('symlog', linthresh=1)
+        ax[1, k].set_xlabel('%s brightness (%% of the sky line)' % name)
+        ax[1, k].set_ylabel('|%s| (%% / 10 mm)' % lab)
+    for a in ax.ravel():
+        a.grid(alpha=0.3)
+    fig.savefig(os.path.join(outdir, 'heldout.png'), dpi=90)
+    plt.close(fig)
+    page += xhtml.image('%s/heldout.png' % outdir, width=1400, height=790)
+    print('SkyLinePlaneAnalysis: held-out lines and tracers: statistic > 1.5 in %.2f%% of %d exposures'
+          % (100 * np.nanmean(F > 1.5), np.isfinite(F).sum()))
+    return page
+
+
 def _f(x, fmt='%.2f'):
     return fmt % x if np.isfinite(x) else '-'
 
@@ -452,6 +649,9 @@ def doit(table, outroot='SkyLinePlaneAnalysis', minexp=300., minglat=15., keep_a
                 xtab[c][bad] = np.nan
                 print('SkyLinePlaneAnalysis: column %s: %d placeholder values (<= -900) set to NaN' % (c, bad.sum()))
     sel, dropped, gradfix = prepare(xtab, minexp, minglat, keep_all)
+    sall = None
+    if 'z_oh_gx' in xtab.colnames:
+        sall, _, _ = prepare(xtab, minexp, 0., keep_all, clip=False)
     outdir = outroot
     os.makedirs(outdir, exist_ok=True)
     if len(dropped):
@@ -465,7 +665,13 @@ def doit(table, outroot='SkyLinePlaneAnalysis', minexp=300., minglat=15., keep_a
         nd[w.split('_')[0]] = nd.get(w.split('_')[0], 0) + 1
     print('SkyLinePlaneAnalysis: %d exposures, %d used, dropped %s' % (len(xtab), len(sel), nd))
     if len(sel) < 10:
-        print('SkyLinePlaneAnalysis: too few exposures to analyse')
+        print('SkyLinePlaneAnalysis: too few exposures for sections 1-8')
+        if sall is not None and len(sall) >= 10:
+            page = xhtml.begin('Per-exposure fiber-flat planes from sky lines: held-out lines and tracers')
+            page += heldout_sections(sall, outdir) + xhtml.end()
+            with open(outroot + '.html', 'w', encoding='ascii', errors='xmlcharrefreplace') as f:
+                f.write(page)
+            print('SkyLinePlaneAnalysis: wrote %s.html (sections 9-11 only)' % outroot)
         return
 
     page = xhtml.begin('Per-exposure fiber-flat planes from sky lines')
@@ -629,6 +835,8 @@ def doit(table, outroot='SkyLinePlaneAnalysis', minexp=300., minglat=15., keep_a
                             'effect is a throughput change, not a property of the airglow. Moonlight has a weak '
                             'gradient of its own, so exact agreement is not expected.')
     page += xhtml.table(crows)
+    if sall is not None:
+        page += heldout_sections(sall, outdir)
     page += xhtml.end()
     with open(outroot + '.html', 'w', encoding='ascii', errors='xmlcharrefreplace') as f:
         f.write(page)

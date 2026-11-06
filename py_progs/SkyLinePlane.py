@@ -13,8 +13,8 @@ Synopsis:
 
 Command line usage (if any):
 
-    usage: SkyLinePlane.py [-h] [-out table.txt] [-calib DIR] [-list FILE] cframe ...
-           SkyLinePlane.py [-h] [-out table.txt] [-calib DIR] [-base DIR] [-every N] -drpall file
+    usage: SkyLinePlane.py [-h] [-out table.txt] [-calib DIR] [-notracers] [-list FILE] cframe ...
+           SkyLinePlane.py [-h] [-out table.txt] [-calib DIR] [-notracers] [-base DIR] [-every N] -drpall file
 
     Arguments::
 
@@ -40,6 +40,8 @@ Command line usage (if any):
                      $SAS_BASE_DIR
         -every N     read only every Nth exposure of the drpall file,
                      for a quick trial
+        -notracers   skip the nebular tracers (which need the SKY_EAST
+                     and SKY_WEST extensions, about 3x the reading)
 
 Description::
 
@@ -75,6 +77,26 @@ Description::
     7.  the same fit to the continuum (c prefix), only a check, and only
         meaningful at bright Moon (otherwise stars and nebulae dominate)
 
+    8.  held-out sky lines, not used in the fit, to test it: the same
+        plane fit, per line, to OH lines in r (6864, 6923, 7316, 7341)
+        and z (8344, 8430, 8465, 8827, 8886, 8920), to their sums per arm
+        (r_oh, z_oh); b has no other usable airglow line (Hg 5461 has a
+        per-fiber rms of ~70%), so its held-out test is z_oh, through the
+        achromatic changing part; the r OH lines sit in the telluric O2 B
+        and H2O bands, so their side bands are poorer than those in z;
+        written as <line>_gx, _gy (the plane as x, y components, % per
+        10 mm), _egrad, _rms, _n
+    9.  nebular tracers (unless -notracers): line flux of the science
+        fibers minus that of the sky (SKYEW*SKY_EAST + SKYWW*SKY_WEST, as
+        the DRP weights them) for Hb, [OIII] 5007, [OI] 6300, Ha,
+        [NII] 6583, [SII] 6717+6731 and, as a direct measure of target
+        emission in the fitted lines, 5577, 6364 and 8399 themselves
+        (t5577, t6364, t8399); written as <tracer>_sci, _sky (medians
+        over the Sci fibers), _exc (median of science - sky), _srms
+        (robust rms over the fibers of science - sky) and _gx, _gy (a
+        plain linear fit of science - sky across the IFU, flux per 10
+        mm), in the units of the line fluxes
+
     Per exposure it also records MJD, tile, DRPQUAL, FGRADFIX, the
     calibration epoch, the field PA (POSCIPA), the K-mirror angle
     (TESCIKM), the focus of the three telescopes (TESCIFO etc.), the
@@ -95,9 +117,11 @@ Notes::
 
         SkyLinePlane.py -out SkyLinePlane_1.3.2.txt -drpall drpall-1.3.2.fits
 
-    About 0.2 s per CFrame on a local disk (only ~1% of the file is
-    read); the CFrames must not be compressed, or each file has to be
-    decompressed in full.
+    Each row of a CFrame spans only a few disk pages, so reading any set
+    of windows reads nearly all of FLUX (89 MB); the tracers also read
+    SKY_EAST and SKY_WEST.  About 0.2 s per CFrame on a local disk
+    without the tracers, roughly 3x that with them.  The CFrames must not
+    be compressed, or each file has to be decompressed in full.
 
     The calibration epoch is taken from the mwave master named in the
     COMMENT cards of the header, else from lvmcore
@@ -116,6 +140,11 @@ History::
     261105 ksl Coding begun (pilot as FlatCorr_analysis/skyline_plane.py),
                moved to lvm_ksl so it can run at Utah; -drpall added
     261106 ksl Header keywords with no value are written as NaN, not None
+    261106 ksl Held-out sky lines (OH in r and z) and nebular
+               tracers (science minus sky at Hb, [OIII], [OI] 6300, Ha,
+               [NII], [SII] and the fitted lines), to test the direct
+               fit on all observations; -notracers; the Sci rows of
+               FLUX are now read once per file
 
 '''
 
@@ -140,6 +169,29 @@ CONT = {'b': 4600.0, 'r': 6760.0, 'z': 8170.0}
 CONT_HALF = 25.0
 STAR_Q = (5, 97)
 CLIP = 4.0
+# held-out sky lines: name -> (arm whose star mask is used, line window, side bands)
+HOLDOUT = {'oh6864': ('r', (6861.0, 6867.0), ((6852.0, 6858.0), (6874.0, 6878.0))),
+           'oh6923': ('r', (6920.0, 6926.5), ((6916.0, 6918.5), (6929.0, 6935.0))),
+           'oh7316': ('r', (7313.0, 7319.5), ((7307.0, 7310.0), (7321.0, 7325.0))),
+           'oh7341': ('r', (7337.5, 7344.0), ((7332.0, 7335.5), (7347.0, 7354.0))),
+           'oh8344': ('z', (8341.5, 8347.5), ((8335.0, 8339.0), (8357.0, 8362.0))),
+           'oh8430': ('z', (8427.0, 8433.5), ((8420.5, 8424.0), (8436.0, 8442.0))),
+           'oh8465': ('z', (8462.0, 8469.0), ((8456.0, 8459.5), (8471.0, 8478.0))),
+           'oh8827': ('z', (8824.0, 8830.5), ((8815.0, 8821.0), (8840.0, 8846.0))),
+           'oh8886': ('z', (8882.5, 8889.0), ((8874.0, 8880.0), (8892.0, 8899.0))),
+           'oh8920': ('z', (8916.0, 8923.0), ((8907.0, 8913.0), (8926.0, 8933.0)))}
+OH_GROUPS = {'r_oh': ['oh6864', 'oh6923', 'oh7316', 'oh7341'],
+             'z_oh': ['oh8344', 'oh8430', 'oh8465', 'oh8827', 'oh8886', 'oh8920']}
+# nebular tracers, measured as science minus sky: name -> (arm whose star mask is used, window, side bands)
+TRACERS = {'hb': ('b', (4857.5, 4865.0), ((4845.0, 4852.0), (4870.0, 4877.0))),
+           'oiii': ('b', (5003.0, 5011.0), ((4990.0, 4997.0), (5015.0, 5022.0))),
+           't5577': ('b', (5577.35 - 4.0, 5577.35 + 4.0), ((5566.0, 5573.0), (5582.0, 5586.0))),
+           'oi6300': ('r', (6296.5, 6304.5), ((6288.0, 6294.0), (6307.0, 6313.0))),
+           't6364': ('r', (6363.78 - 4.0, 6363.78 + 4.0), ((6350.0, 6355.0), (6366.5, 6378.0))),
+           'ha': ('r', (6559.5, 6566.0), ((6528.0, 6538.0), (6608.0, 6618.0))),
+           'nii': ('r', (6580.0, 6587.0), ((6528.0, 6538.0), (6608.0, 6618.0))),
+           'sii': ('r', (6712.5, 6735.0), ((6684.0, 6692.0), (6752.0, 6760.0))),
+           't8399': ('z', (8399.18 - 4.0, 8399.18 + 4.0), ((8393.0, 8396.5), (8402.5, 8412.5)))}
 DRPALL_COLUMNS = ['calib_mjd', 'tileid', 'exptime', 'sci_alt', 'sci_kmpos', 'sci_focpos', 'skye_focpos',
                   'skyw_focpos', 'sun_alt', 'moon_alt']
 
@@ -207,6 +259,39 @@ def _cols(wave, lo, hi):
     return i[0], i[-1] + 1
 
 
+def line_flux(arr, wave, window, sides):
+    '''
+    Line flux of each row of arr (fibers x wavelength): the sum over the
+    window minus the median of the side bands, NaN if the window has a
+    non-finite pixel
+    '''
+    i0, i1 = _cols(wave, *window)
+    line = arr[:, i0:i1].astype(float)
+    side = np.hstack([arr[:, slice(*_cols(wave, lo, hi))] for lo, hi in sides]).astype(float)
+    cont = np.nanmedian(side, axis=1)
+    z = np.nansum(line - cont[:, None], axis=1) * np.median(np.diff(wave))
+    z[~np.all(np.isfinite(line), axis=1)] = np.nan
+    return z
+
+
+def _rob(a):
+    a = a[np.isfinite(a)]
+    return 1.4826 * np.median(np.abs(a - np.median(a))) if len(a) > 10 else np.nan
+
+
+def _plane_cols(row, name, r):
+    '''
+    Write the held-out plane fit r (from plane_fit) as x, y components
+    '''
+    if r:
+        d = np.radians(r['dir'])
+        row.update({name + '_gx': r['grad'] * np.cos(d), name + '_gy': r['grad'] * np.sin(d),
+                    name + '_egrad': r['egrad'], name + '_rms': r['rms'], name + '_n': r['n']})
+    else:
+        row.update({name + '_gx': np.nan, name + '_gy': np.nan, name + '_egrad': np.nan,
+                    name + '_rms': np.nan, name + '_n': 0})
+
+
 def read_gcoeff(calib, epoch, arm):
     '''
     GCOEFF1-4 of the master twilight flat of an epoch and arm, or None
@@ -243,7 +328,7 @@ def _num(header, key):
         return np.nan
 
 
-def measure(fname, calib, epochs, gcache):
+def measure(fname, calib, epochs, gcache, tracers=True):
     '''
     One table row (a dict) for one CFrame
     '''
@@ -256,7 +341,7 @@ def measure(fname, calib, epochs, gcache):
         x = np.asarray(sm['xpmm'], float)[sci]
         y = np.asarray(sm['ypmm'], float)[sci]
         spec = np.asarray(sm['spectrographid'], int)[sci]
-        flux = f['FLUX'].data
+        flux = np.asarray(f['FLUX'].data[sci], dtype=np.float32)
         row.update(expnum=int(h.get('EXPOSURE', -1)), mjd=int(h.get('MJD', -1)), smjd=int(h.get('SMJD', -1)),
                    tile=int(h.get('TILE_ID', -1)), drpqual=int(h.get('DRPQUAL', -1)),
                    drpver=str(h.get('DRPVER', '')), gradfix=bool(h.get('FGRADFIX', False)),
@@ -273,18 +358,15 @@ def measure(fname, calib, epochs, gcache):
             row['glat'] = np.nan
         epoch = calib_epoch(h, epochs)
         row['epoch'] = epoch
+        stars = {}
         for arm in 'brz':
-            i0, i1 = _cols(wave, LINES[arm] - HALF, LINES[arm] + HALF)
-            line = np.asarray(flux[sci, i0:i1], float)
-            side = [np.asarray(flux[sci, slice(*_cols(wave, lo, hi))], float) for lo, hi in SIDES[arm]]
-            cont_l = np.nanmedian(np.hstack(side), axis=1)
-            z = np.nansum(line - cont_l[:, None], axis=1) * np.median(np.diff(wave))
-            z[~np.all(np.isfinite(line), axis=1)] = np.nan
+            z = line_flux(flux, wave, (LINES[arm] - HALF, LINES[arm] + HALF), SIDES[arm])
             k0, k1 = _cols(wave, CONT[arm] - CONT_HALF, CONT[arm] + CONT_HALF)
-            cont = np.nanmedian(np.asarray(flux[sci, k0:k1], float), axis=1)
+            cont = np.nanmedian(flux[:, k0:k1].astype(float), axis=1)
             ok = np.isfinite(cont)
             qlo, qhi = np.percentile(cont[ok], STAR_Q)
             star = ~ok | (cont < qlo) | (cont > qhi)
+            stars[arm] = star
             zl = np.where(star, np.nan, z)
             row['%s_cont' % arm] = np.median(cont[ok])
             row['%s_line' % arm] = np.nanmedian(zl)
@@ -305,6 +387,35 @@ def measure(fname, calib, epochs, gcache):
             r = gcache[key]
             for k in ('grad', 'dir', 'sp1', 'sp3'):
                 row['%s_p%s' % (arm, k)] = r[k] if r else np.nan
+        # held-out sky lines, singly and summed per arm
+        hz = {}
+        for name, (arm, window, sides) in HOLDOUT.items():
+            hz[name] = np.where(stars[arm], np.nan, line_flux(flux, wave, window, sides))
+            _plane_cols(row, name, plane_fit(x, y, hz[name], spec))
+        for name, members in OH_GROUPS.items():
+            _plane_cols(row, name, plane_fit(x, y, np.sum([hz[m] for m in members], axis=0), spec))
+        # nebular tracers: science minus sky
+        if tracers:
+            we, ww = _num(h, 'SKYEW'), _num(h, 'SKYWW')
+            if not (np.isfinite(we) and np.isfinite(ww)) or we + ww <= 0:
+                we = ww = 0.5
+            sky = we * np.asarray(f['SKY_EAST'].data[sci], dtype=np.float32) + \
+                ww * np.asarray(f['SKY_WEST'].data[sci], dtype=np.float32)
+            for name, (arm, window, sides) in TRACERS.items():
+                ls = line_flux(flux, wave, window, sides)
+                lk = line_flux(sky, wave, window, sides)
+                neb = np.where(stars[arm], np.nan, ls - lk)
+                g = np.isfinite(neb)
+                row[name + '_sci'] = np.nanmedian(np.where(stars[arm], np.nan, ls))
+                row[name + '_sky'] = np.nanmedian(np.where(stars[arm], np.nan, lk))
+                row[name + '_exc'] = np.nanmedian(neb) if g.any() else np.nan
+                row[name + '_srms'] = _rob(neb)
+                if g.sum() > 100:
+                    A = np.vstack([np.ones(g.sum()), x[g], y[g]]).T
+                    c, *_ = np.linalg.lstsq(A, neb[g], rcond=None)
+                    row[name + '_gx'], row[name + '_gy'] = 10 * c[1], 10 * c[2]
+                else:
+                    row[name + '_gx'] = row[name + '_gy'] = np.nan
     return row
 
 
@@ -348,7 +459,7 @@ def _write(rows, out, drpall_tab):
     return xtab
 
 
-def doit(files, out='SkyLinePlane.txt', calib='', drpall_tab=None):
+def doit(files, out='SkyLinePlane.txt', calib='', drpall_tab=None, tracers=True):
     '''
     Description:
         Measure each CFrame in files and write the table to out
@@ -374,7 +485,7 @@ def doit(files, out='SkyLinePlane.txt', calib='', drpall_tab=None):
             failed.append((fn, 'missing'))
             continue
         try:
-            rows.append(measure(fn, calib, epochs, gcache))
+            rows.append(measure(fn, calib, epochs, gcache, tracers))
         except Exception as err:
             failed.append((fn, str(err)))
             print('SkyLinePlane: failed on %s: %s' % (fn, err))
@@ -398,7 +509,7 @@ def steer(argv):
     '''
     Parse the command line and run doit
     '''
-    files, out, calib, listfile, drpall, base, every = [], 'SkyLinePlane.txt', '', '', '', '', 1
+    files, out, calib, listfile, drpall, base, every, tracers = [], 'SkyLinePlane.txt', '', '', '', '', 1, True
     i = 1
     while i < len(argv):
         if argv[i] == '-h':
@@ -419,6 +530,8 @@ def steer(argv):
         elif argv[i] == '-base':
             i += 1
             base = argv[i]
+        elif argv[i] == '-notracers':
+            tracers = False
         elif argv[i] == '-every':
             i += 1
             every = int(argv[i])
@@ -439,7 +552,7 @@ def steer(argv):
     if not files:
         print(_USAGE)
         return
-    doit(files, out, calib, drpall_tab)
+    doit(files, out, calib, drpall_tab, tracers)
 
 
 if __name__ == '__main__':

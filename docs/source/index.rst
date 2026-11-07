@@ -28,6 +28,7 @@ are experimwenatls.  Those that have detailed documantion are the most reliable.
    data_retrieval
    summarize
    data_quality
+   flat_field
    sky_subtraction
    spectral_fitting
    visualization

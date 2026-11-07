@@ -58,6 +58,7 @@ Other docstring RST gotchas:
 | Imaging | `kslmap.py`, `quick_map.py`, `line_map.py` |
 | Spectrum overview plots | `PlotSpec.py`, `PlotSpec3.py`, `PlotSpecI.py` (interactive/Plotly) |
 | Data quality | `CheckReduced.py`, `CheckData.py`, `FixFlatGradient.py` (corrects DRP 1.3.2 CFrames for the dropped flat-field gradient), `CompareCalib.py` (compares two sets of long-term master calibrations), `CalibDrift.py` (drift from the masters, from science frame headers), `CalibEpochs.py` (census of the masters of all epochs: outliers, steps, bad fibers) |
+| Large-scale flat field | `SkyLinePlane.py` (per-exposure spectrograph factors + IFU plane from sky lines in CFrames, with held-out OH lines and nebular tracers; runs at Utah from a drpall file), `SkyLinePlaneAnalysis.py` (html report on its table), `FitFlatModel.py` (fits the factors and plane vs focus, K-mirror angle and time; writes coefficients), `ApplyFlatModel.py` (applies the model to 1.3.2 CFrames, optional direct residual fit); see `docs/source/flat_field.rst` |
 
 ### Key Dependencies
 

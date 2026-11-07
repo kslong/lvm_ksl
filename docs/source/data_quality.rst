@@ -31,7 +31,9 @@ what they actually check rather than listed alphabetically:
   and whether that pattern repeats between exposures (``sky_gaussfit.py``
   on CFrames, ``SkyLineFlatness.py``; see Instrument Flatness below),
   and a correction for the flat-field gradient that DRP 1.3.2 left out
-  (``FixFlatGradient.py``).
+  (``FixFlatGradient.py``).  The per-exposure measurement, model and
+  correction of the large-scale flat field have their own page,
+  :doc:`flat_field`.
 - **Flux calibration** — how well calibrated standard-star spectra
   (STD/MOD methods) and Gaia-matched field stars (SCI method) agree
   with their Gaia reference spectra, and how well the three
@@ -245,7 +247,7 @@ corrections the DRP applies to every science exposure.
 
 **Command line usage**::
 
-    CompareCalib.py [-h] [-out outroot] [-only bias,trace,wave,flat] [-labels labA,labB] A B
+    CompareCalib.py [-h] [-out outroot] [-only bias,trace,wave,flat] [-labels labA,labB] [-same] [-note text] A B
 
     # a rebuild of epoch 60995 against the masters in $LVM_MASTER_DIR
     CompareCalib.py ksl-wave1/60995 60995
@@ -255,8 +257,12 @@ corrections the DRP applies to every science exposure.
 
 Each of A and B is a directory of masters, an MJD (a directory in
 ``$LVM_MASTER_DIR``), or ``version/MJD`` (the ``calib/`` directory of that
-version's reductions under ``$SAS_BASE_DIR``).  Requires lvmdrp.  See the
-script's ``-h`` for the options.
+version's reductions under ``$SAS_BASE_DIR``).  ``-same`` tells the report
+that A and B belong to the same epoch even when their MJD keywords differ
+(a master carries the MJD of its first input frame, so masters built from
+different subsets of one epoch's frames, as in a split-half noise test,
+look like two epochs); ``-note`` adds a highlighted note at the top of
+the report.  Requires lvmdrp.  See the script's ``-h`` for the options.
 
 **See Also:** :doc:`api/CompareCalib/index`
 
@@ -663,6 +669,12 @@ flux; fiber-to-fiber and spectrograph-to-spectrograph differences in that
 flux measure throughput and fiber-flat errors.  A pattern that repeats in
 every exposure is instrumental, not sky.
 
+The tools here look at the fiber-to-fiber pattern of a set of exposures.
+For the large-scale part (the spectrograph factors and a gradient across
+the IFU) measured in every science exposure, how it depends on the
+telescope focus and K-mirror angle, and a model-based correction that
+follows it, see :doc:`flat_field`.
+
 **Typical workflow** (uses only lvmCFrame files)::
 
     # 1. Fit the airglow lines in every science fiber of each CFrame
@@ -774,7 +786,9 @@ Notes:
 - The correction removes the error made in building the flats.  It does
   not follow changes of the gradient within an ffactor epoch, which the
   DRP cannot either: late in a long epoch about 1-1.5% remains between
-  spectrographs 1 and 3.
+  spectrographs 1 and 3.  The gradient changes from exposure to exposure
+  with the telescope focus and the K-mirror angle; ``ApplyFlatModel.py``
+  (see :doc:`flat_field`) follows that, and halves the error left.
 - For files flux-calibrated with the SCI method, the sensitivity came from
   field stars in the uncorrected science IFU, so a small zero-point error
   remains; the script warns about such files.
@@ -1233,6 +1247,7 @@ See Also
 - :doc:`api/check_sky_positions/index` - API documentation
 - :doc:`api/QualSFrame/index` - API documentation
 - :doc:`api/QualCFrame/index` - API documentation
+- :doc:`flat_field` - Per-exposure measurement, model and correction of the large-scale flat field
 - :doc:`summarize` - Tools for cataloging and summarizing exposures
 - :doc:`spectral_fitting_local` - ``sky_gaussfit.py`` produces the input tables for ``plot_sky_gaussfit.py``
 - :doc:`plotting_outputs` - ``radec_plot.py``, which ``plot_sky_gaussfit.py`` now uses for its spatial rendering

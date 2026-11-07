@@ -5,3 +5,4 @@ This is a directory that contains data associated with LVM and used in the vario
 * solar.txt is a file that contains the solar fluxes for a given date.  (It can be recreated/updated with getSolar.py)
 * lmc\_snr\_observed.txt  list of LMC observations of SNRs
 * smc\_snr\_observed.txt list of SMC observations of SNRs
+* flat\_model\_coeffs\_1.3.2.ecsv  coefficients of the large-scale flat-field model for DRP 1.3.2 (FitFlatModel.py on the 22,482-exposure Utah SkyLinePlane.py table, 2026-11-06/07), to be used with ApplyFlatModel.py -model; see docs flat\_field.rst

@@ -82,6 +82,7 @@ Workflow
     FitFlatModel.py -out flat_model_coeffs.ecsv SkyLinePlane_1.3.2.txt
 
     # 4. Correct CFrames with the model, optionally followed by a direct fit
+    #    (the fitted 1.3.2 model is kept in data/flat_model_coeffs_1.3.2.ecsv)
     ApplyFlatModel.py -model flat_model_coeffs.ecsv -direct -outdir cframes_fm lvmCFrame-000*.fits
 
     # 5. Check: measure the corrected CFrames again
@@ -235,17 +236,24 @@ calibration epoch; and divides the science fibers' FLUX by the model
 over the applied factors (IVAR by its square), arm by arm, joining the
 arms as ``FixFlatGradient.py`` does.
 
-With ``-direct`` it then fits the plane and factors left in 5577 (b) and
-8399 (z) of the corrected exposure and applies them if the two agree to
-within ``-guard`` (default 1.5% per 10 mm); r gets the mean of b and z,
-since the changing part is achromatic and 6364 can carry [OI] from the
-target.  Otherwise the model alone is kept.  Everything applied is
-recorded in the primary header (``FMODEL``, the model values per arm,
-the 1.3.2 factors removed, ``FMDIRECT`` and the guard value).
+With ``-direct`` it then fits the plane and factors left in the
+corrected exposure: in 5577 (b), 8399 (z) and the sum of the OH lines
+6864, 6923, 7316 and 7341 (r).  If the b and z planes agree to within
+``-guard`` (default 1.5% per 10 mm), b and z get their own residual, and
+r gets the average of its OH residual and the mean of b and z, provided
+the two agree to within ``-rguard`` (default 1.5); otherwise r gets the
+mean of b and z alone.  6364 is not used in the direct step: in the
+held-out tests on the full Utah table it was no better than the model,
+while the r OH lines and the b+z mean each left about 0.3-0.4% per 10 mm
+and their average less.  If the b and z guard fails, the model alone is
+kept.  Everything applied is recorded in the primary header
+(``FMODEL``, the model values per arm, the 1.3.2 factors removed,
+``FMDIRECT``, the guard values ``FMDGUARD`` and ``FMDRGRD``, the
+residual planes, and ``FMDRMODE``, how r was corrected).
 
 **Command line usage**::
 
-    ApplyFlatModel.py [-h] -model coeffs.ecsv [-outdir DIR] [-calib DIR] [-direct] [-guard X] [-list FILE] cframe ...
+    ApplyFlatModel.py [-h] -model coeffs.ecsv [-outdir DIR] [-calib DIR] [-direct] [-guard X] [-rguard X] [-list FILE] cframe ...
 
 Each output is the input's name with ``.flatmodel`` inserted before
 ``.fits``.
@@ -255,7 +263,17 @@ latitude 0), the large-scale error left is about 0.37% (b, z) and 0.67%
 (r) with the model alone.  The sky lines used by neither step confirm
 both: the plane of the z OH lines drops from about 6.8% per 10 mm in the
 released frames to 1.0 with the model and 0.37 with ``-direct``, and
-that of the r OH lines from 9.2 to 1.0 and 0.42.
+that of the r OH lines from 9.2 to 1.0 and 0.42 (with r taken from the
+b+z mean alone, so that the r OH lines were still held out).
+
+Over the full Utah table (about 21,800 exposures, model predictions
+cross-validated by night) the plane left in the z OH lines is 2.8% per
+10 mm (y, robust rms) as released, 1.7 with GCOEFF, 0.72 with the model
+and 0.17 with the direct step, the same at all Galactic latitudes.  In
+r, splitting the four OH lines into a fitted and a held-out pair, the
+direct step from 6364 leaves 0.6-0.7, from the b+z mean 0.34-0.42, from
+the other OH pair 0.39-0.41, and from the average of the last two
+0.31-0.38.
 
 **See Also:** :doc:`api/ApplyFlatModel/index`
 

@@ -14,7 +14,7 @@ Synopsis:
 Command line usage (if any):
 
     usage: ApplyFlatModel.py [-h] -model coeffs.ecsv [-outdir DIR] [-calib DIR]
-                             [-direct] [-guard X] [-list FILE] cframe ...
+                             [-direct] [-guard X] [-rguard X] [-list FILE] cframe ...
 
     Arguments::
 
@@ -25,7 +25,7 @@ Command line usage (if any):
 
         -h           print this help and exit
         -model FILE  the model coefficients (flat_model_coeffs.ecsv, from
-                     FlatCorr_analysis/flat_model_fit.py); required
+                     FitFlatModel.py); required
         -outdir DIR  where the corrected copies go (default .), written as
                      <name>.flatmodel.fits
         -calib DIR   directory holding <epoch>/lvm-mfiberflat_twilight-<arm>.fits,
@@ -37,6 +37,9 @@ Command line usage (if any):
         -guard X     largest allowed difference, in % per 10 mm, between
                      the residual planes from 5577 (b) and 8399 (z) for the
                      direct step to be applied (default 1.5)
+        -rguard X    largest allowed difference, in % per 10 mm, between
+                     the r OH residual plane and the mean of b and z for
+                     the r OH lines to be used in r (default 1.5)
         -list FILE   read CFrame names from FILE (one per line), in
                      addition to those on the command line
 
@@ -72,11 +75,16 @@ Description::
         multiplied by its square; the arms are joined with the linear
         ramps across the overlaps of FixFlatGradient.py
     4.  with -direct, the plane and factors left in the corrected
-        exposure are fitted to 5577 (b) and 8399 (z) as in
-        SkyLinePlane.py; if the two planes agree to within -guard, b and z
-        get their own residual and r the mean of the two (the changing
-        part is achromatic, and 6364 is affected by [OI] from targets);
-        otherwise the model alone is kept
+        exposure are fitted to 5577 (b), 8399 (z) and the sum of the r OH
+        lines 6864, 6923, 7316 and 7341 (r), as in SkyLinePlane.py.  If
+        the b and z planes agree to within -guard, b and z get their own
+        residual.  r gets the average of its r OH residual and the mean of
+        the b and z residuals, if the r OH plane agrees with that mean to
+        within -rguard; otherwise r gets the mean of b and z alone.  6364
+        is not used: in the v2 held-out tests it was no better than the
+        model, while r OH and the b+z mean each left about 0.3-0.4 %/10 mm
+        and their average less.  If the b and z guard fails, the model
+        alone is kept in all arms
     5.  the model values, the applied factors removed, and the direct
         step (whether applied, its guard value and its planes) are
         recorded in the primary header
@@ -107,6 +115,8 @@ Notes::
 History::
 
     261106 ksl Coding begun
+    261107 ksl r direct step from the r OH lines averaged with the b+z
+               mean, instead of the b+z mean alone; -rguard
 
 '''
 
@@ -120,7 +130,7 @@ from numpy.polynomial import legendre
 
 from FixFlatGradient import arm_weights, load_epochs, default_epochs_file
 from SkyLinePlane import (plane_fit, line_flux, calib_epoch, LINES, HALF, SIDES, CONT, CONT_HALF, STAR_Q,
-                          _num, _cols)
+                          HOLDOUT, OH_GROUPS, _num, _cols)
 
 COMP = ['F1', 'F2', 'F3', 'gx', 'gy']
 
@@ -201,12 +211,16 @@ def arm_correction(F, gx, gy, x, y, spec):
 
 def residual_fit(flux, wave, x, y, spec):
     '''
-    The plane (gx, gy) and factors left in the sky lines of 5577 and 8399
-    of corrected Sci-fiber spectra, {arm: dict or None}
+    The plane (gx, gy) and factors left in corrected Sci-fiber spectra:
+    in 5577 (b), 8399 (z) and the sum of the r OH lines (r), as
+    {arm: dict or None}
     '''
     out = {}
-    for arm in 'bz':
-        z = line_flux(flux, wave, (LINES[arm] - HALF, LINES[arm] + HALF), SIDES[arm])
+    for arm in 'bzr':
+        if arm == 'r':
+            z = np.sum([line_flux(flux, wave, HOLDOUT[m][1], HOLDOUT[m][2]) for m in OH_GROUPS['r_oh']], axis=0)
+        else:
+            z = line_flux(flux, wave, (LINES[arm] - HALF, LINES[arm] + HALF), SIDES[arm])
         k0, k1 = _cols(wave, CONT[arm] - CONT_HALF, CONT[arm] + CONT_HALF)
         cont = np.nanmedian(flux[:, k0:k1].astype(float), axis=1)
         ok = np.isfinite(cont)
@@ -221,7 +235,7 @@ def residual_fit(flux, wave, x, y, spec):
 
 
 def apply_model(filename, coef, focus0, ranges, outdir='.', calib='', epochs=None, direct=False, guard=1.5,
-                modelname=''):
+                modelname='', rguard=1.5):
     '''
     Write a model-corrected copy of one CFrame; returns the output name or None
     '''
@@ -270,7 +284,7 @@ def apply_model(filename, coef, focus0, ranges, outdir='.', calib='', epochs=Non
     flux, ivar = x['FLUX'].data, x['IVAR'].data
     fs = (flux[sci] / corr).astype(np.float32)
 
-    used_direct, gval, res = False, np.nan, None
+    used_direct, gval, res, rval, rmode = False, np.nan, None, np.nan, 'none'
     if direct:
         good = np.isfinite(fs)
         fs_clean = np.where(good, fs, np.nan)
@@ -284,7 +298,15 @@ def apply_model(filename, coef, focus0, ranges, outdir='.', calib='', epochs=Non
                 for arm in 'bz':
                     r = res[arm]
                     kres[arm] = arm_correction(np.array([r['f1'], r['f2'], r['f3']]), r['gx'], r['gy'], xp, yp, spec)
-                rm = {k: 0.5 * (res['b'][k] + res['z'][k]) for k in ('f1', 'f2', 'f3', 'gx', 'gy')}
+                keys = ('f1', 'f2', 'f3', 'gx', 'gy')
+                rm = {k: 0.5 * (res['b'][k] + res['z'][k]) for k in keys}
+                rmode = 'bz'
+                ro = res['r']
+                if ro is not None:
+                    rval = float(np.hypot(ro['gx'] - rm['gx'], ro['gy'] - rm['gy']))
+                    if rval <= rguard and ro['n'] >= 0.7 * nmin:
+                        rm = {k: 0.5 * (ro[k] + rm[k]) for k in keys}
+                        rmode = 'oh+bz'
                 kres['r'] = arm_correction(np.array([rm['f1'], rm['f2'], rm['f3']]), rm['gx'], rm['gy'], xp, yp, spec)
                 cres = sum(kres[arm][:, None] * w[arm][None, :] for arm in 'brz')
                 corr = corr * cres
@@ -306,10 +328,13 @@ def apply_model(filename, coef, focus0, ranges, outdir='.', calib='', epochs=Non
     hdr['FMDIRECT'] = (used_direct, 'direct residual fit applied')
     if direct:
         hdr['FMDGUARD'] = (round(gval, 3) if np.isfinite(gval) else -1., '|5577 - 8399| residual plane (%/10mm)')
-        for arm in 'bz':
+        for arm in 'bzr':
             r = res[arm] if res else None
-            hdr['FMD%sGX' % arm.upper()] = (round(r['gx'], 3) if r else -999., '%s residual plane x (%%/10mm)' % arm)
-            hdr['FMD%sGY' % arm.upper()] = (round(r['gy'], 3) if r else -999., '%s residual plane y (%%/10mm)' % arm)
+            what = 'r OH' if arm == 'r' else arm
+            hdr['FMD%sGX' % arm.upper()] = (round(r['gx'], 3) if r else -999., '%s residual plane x (%%/10mm)' % what)
+            hdr['FMD%sGY' % arm.upper()] = (round(r['gy'], 3) if r else -999., '%s residual plane y (%%/10mm)' % what)
+        hdr['FMDRGRD'] = (round(rval, 3) if np.isfinite(rval) else -1., '|r OH - mean(b,z)| residual plane (%/10mm)')
+        hdr['FMDRMODE'] = (rmode, 'r direct: oh+bz, bz (b+z mean only) or none')
     hdr.add_history('ApplyFlatModel: Sci FLUX/IVAR corrected with the large-scale flat model (ffactor epoch %d)%s'
                     % (ff, '; direct residual fit applied' if used_direct else ''))
 
@@ -319,12 +344,13 @@ def apply_model(filename, coef, focus0, ranges, outdir='.', calib='', epochs=Non
     x.close()
     print('ApplyFlatModel: %s -> %s  ff %d cal %d  model planes b %.1f,%.1f r %.1f,%.1f z %.1f,%.1f  direct %s%s'
           % (base, outname, ff, epoch, val['b']['gx'], val['b']['gy'], val['r']['gx'], val['r']['gy'],
-             val['z']['gx'], val['z']['gy'], used_direct, (' (guard %.2f)' % gval) if direct else ''))
+             val['z']['gx'], val['z']['gy'], used_direct,
+             (' (guard %.2f, r %s %.2f)' % (gval, rmode, rval)) if direct else ''))
     return outname
 
 
 
-def doit(files, model, outdir='.', calib='', direct=False, guard=1.5):
+def doit(files, model, outdir='.', calib='', direct=False, guard=1.5, rguard=1.5):
     '''
     Description:
         Apply the model to each CFrame in files
@@ -343,7 +369,7 @@ def doit(files, model, outdir='.', calib='', direct=False, guard=1.5):
     os.makedirs(outdir, exist_ok=True)
     n = 0
     for fn in files:
-        if apply_model(fn, coef, focus0, ranges, outdir, calib, epochs, direct, guard, model):
+        if apply_model(fn, coef, focus0, ranges, outdir, calib, epochs, direct, guard, model, rguard):
             n += 1
     print('ApplyFlatModel: corrected %d of %d files' % (n, len(files)))
 
@@ -352,7 +378,7 @@ def steer(argv):
     '''
     Parse the command line and run doit
     '''
-    files, model, outdir, calib, direct, guard, listfile = [], '', '.', '', False, 1.5, ''
+    files, model, outdir, calib, direct, guard, rguard, listfile = [], '', '.', '', False, 1.5, 1.5, ''
     i = 1
     while i < len(argv):
         if argv[i] == '-h':
@@ -372,6 +398,9 @@ def steer(argv):
         elif argv[i] == '-guard':
             i += 1
             guard = float(argv[i])
+        elif argv[i] == '-rguard':
+            i += 1
+            rguard = float(argv[i])
         elif argv[i] == '-list':
             i += 1
             listfile = argv[i]
@@ -388,7 +417,7 @@ def steer(argv):
     if not files or not model:
         print(_USAGE)
         return
-    doit(files, model, outdir, calib, direct, guard)
+    doit(files, model, outdir, calib, direct, guard, rguard)
 
 
 if __name__ == '__main__':

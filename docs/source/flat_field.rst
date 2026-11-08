@@ -3,7 +3,8 @@ Large-Scale Flat Field
 
 These routines measure, model and correct the *large-scale* part of the
 fiber flat field of the science IFU: the relative throughput of the three
-spectrographs and a smooth gradient across the IFU.  They grew out of
+spectrographs and the instrument's throughput gradient across the IFU
+(see `Terms`_).  They grew out of
 the spectrograph asymmetries seen in the sky lines of DRP 1.3.2 data
 (GitHub issue `sdss/lvmdrp#268 <https://github.com/sdss/lvmdrp/issues/268>`_),
 and they work on existing lvmCFrame files, without rerunning the
@@ -17,14 +18,58 @@ been run on all 1.3.2 science exposures; the model (``FitFlatModel.py``,
 Background
 ----------
 
+.. _Terms:
+
+**Terms.**  "Gradient" alone is ambiguous: it can mean real sky light or
+the instrument.  These pages keep the two apart:
+
+Throughput gradient (I)
+    A large-scale change in the *instrument's throughput* across the
+    science IFU: a property of how the instrument processes light, not of
+    the sky.  It is fixed to the IFU and changes with telescope focus
+    (``TESCIFO``) and K-mirror angle (``TESCIKM``).  It is what stage 1
+    removes from the flats, what ``GCOEFF`` was meant to put back, and
+    what ``FitFlatModel.py`` models.  Alfredo's lvmdrp branch
+    ``ifu-instrument-gradient`` calls it the *instrument gradient*.
+
+Sky gradient (S)
+    A *real change in sky brightness* across the field, always named by
+    its source: the *twilight sky gradient* (toward the Sun), the
+    *airglow gradient* (toward the horizon, about 0.5 x cot(altitude) %
+    per 10 mm) or the *moonlight gradient*.
+
+Measured gradient (g)
+    The plane fitted to one exposure, in general the sum of the two: in a
+    twilight, the throughput gradient plus the twilight sky gradient; in
+    the science sky lines, the flat-field error plus the airglow gradient.
+
+Flat-field error
+    The part of the throughput gradient that the flat failed to include,
+    as seen in a flat-fielded science frame.  1.3.2 removed the whole
+    throughput gradient in stage 1 and never put it back, so relative to
+    the stage-1 flat this residual is the full throughput gradient.
+
+I_twi, I_sci
+    The throughput gradient measured from the twilights (after removing
+    the twilight sky gradient) and from the science sky lines: two
+    measurements of the same instrumental quantity, not a "twilight
+    gradient" and a "science gradient".
+
+The throughput gradient is instrumental: it is fixed to the IFU, it
+depends on focus, which cannot change the sky brightness, and on the
+K-mirror angle in a form no sky geometry gives, and it has the same sign
+and nearly the same size in the twilights and in the science sky lines.
+The real sky part, the airglow gradient, is small in comparison.
+
 **How DRP 1.3.2 builds the flat field.**  It is done in two stages:
 
 1. *Stage 1, fiber to fiber, from the twilights.*  Each twilight flat is
    extracted and each fiber's spectrum is compared with a reference fiber.
    Before that, a plane across the IFU and three spectrograph factors are
-   fitted to the twilight and removed, because the twilight sky has a
-   real gradient of its own (toward the Sun and the horizon) that changes
-   from exposure to exposure.  The master flat of each calibration epoch
+   fitted to the twilight and removed, because the twilight sky gradient
+   (toward the Sun and the horizon) changes from exposure to exposure and
+   cannot be separated there from the throughput gradient; both are
+   removed.  The master flat of each calibration epoch
    therefore has the right fiber-to-fiber structure, but its large-scale
    part is deliberately left undetermined.
 2. *Stage 2, the large scale, from the science sky lines.*  For each
@@ -36,10 +81,12 @@ Background
    The values are recorded in the flat headers (``FACTOR1-3``,
    ``GCOEFF1-4``).
 
-In 1.3.2 only the factors are multiplied into the flats; the gradient is
-recorded but never applied (``run_twilights.do_ffactor_correction``).
+In 1.3.2 only the factors are multiplied into the flats; the throughput
+gradient (``GCOEFF``) is recorded but never applied
+(``run_twilights.do_ffactor_correction``), so the science frames carry a
+flat-field error equal to the throughput gradient.
 ``FixFlatGradient.py`` (see :doc:`data_quality`) applies the recorded
-gradient to existing CFrames.
+``GCOEFF`` to existing CFrames.
 
 **What the per-exposure measurements show.**  Measuring the factors and
 the plane in every science exposure (``SkyLinePlane.py``, 22,482
@@ -47,11 +94,11 @@ exposures) shows that the large-scale throughput is not fixed for an
 epoch, so a correction measured once per epoch cannot be exact even
 when it is applied correctly:
 
-- The gradient follows the **telescope focus** (``TESCIFO``): about
+- The throughput gradient follows the **telescope focus** (``TESCIFO``): about
   -4% per 10 mm per unit of focus along y.  The same slope is found from
   the focus changes within a night, so this is the focus and not the
   season.  Focus ranges over about 34-37, so this term alone moves the
-  gradient by more than the whole recorded gradient.
+  throughput gradient by more than the whole recorded ``GCOEFF``.
 - It follows the **K-mirror angle** (``TESCIKM``): about 1.4% per 10 mm
   in x and 2% per 10 mm in y.  Its size does not change with altitude,
   so it is instrumental.
@@ -59,11 +106,12 @@ when it is applied correctly:
 - The changing part is the same in all three arms; the static part
   differs between arms.
 - It is not put in by the twilight flats: the master flats carry only a
-  small static plane, and the science gradient does not jump when the
-  master flat changes.
-- The airglow itself has a small gradient toward the zenith, about
-  0.5 x cot(altitude) % per 10 mm, as expected for a layer brightening
-  toward the horizon.  That is sky, not flat field.
+  small static plane, and the flat-field error in the science frames
+  does not jump when the master flat changes.
+- Separately, there is a real sky gradient, the **airglow gradient**:
+  about 0.5 x cot(altitude) % per 10 mm along the zenith direction,
+  brighter toward the horizon, as expected for an emitting layer.  That
+  is sky, not flat field.
 
 Workflow
 --------
@@ -142,7 +190,7 @@ Writes an html report with plots and tables:
 
 1. a check of the method: inside the ffactor windows the measured plane
    should match the ``GCOEFF`` prediction on average;
-2. the measured and predicted gradient and the residual against time;
+2. the measured and predicted (``GCOEFF``) planes and the residual against time;
 3. nested linear models of the residual (focus, K-mirror, time since the
    window, one constant per epoch);
 4. focus or season: the focus slope from the focus changes within a
@@ -221,8 +269,8 @@ Direct fit in each exposure (measurement noise)          0.11          0.26     
 =======================================================  ============  ============  ============
 
 In r the released 1.3.2 flat is worse than no large-scale correction at
-all: its factors were fitted together with the gradient, so they are
-wrong without it.
+all: its factors were fitted together with the throughput gradient, so
+they are wrong without it.
 
 **See Also:** :doc:`api/FitFlatModel/index`
 

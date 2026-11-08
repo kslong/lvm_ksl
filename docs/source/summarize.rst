@@ -74,7 +74,7 @@ row records the science telescope focus (``Focus``, ``TESCIFO``), the
 K-mirror angle (``KMirror``, ``TESCIKM``), the airmass (``Airmass``,
 ``TESCIAM``) and the lab temperature (``LabTemp``, ``LABTEMP``), with
 -999 where a keyword is missing.  The focus and K-mirror angle change
-the IFU throughput gradient (see :doc:`flat_field`).  These columns were
+the IFU instrument gradient (see :doc:`flat_field`).  These columns were
 added on 2026-11-08; summary tables made earlier lack them, so rerun
 those MJDs (or ``-all -redo``).
 

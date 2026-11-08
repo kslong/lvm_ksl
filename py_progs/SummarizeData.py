@@ -54,9 +54,7 @@ History:
 
 231003 ksl Coding begun
 240406 ksl Reworked to add more info, and hopefully be more robust
-261108 ksl Added Focus, KMirror, Airmass and LabTemp (TESCIFO, TESCIKM,
-           TESCIAM, LABTEMP), e.g. for the focus of the twilight flats.
-           Sum files made earlier lack these columns; rerun with -redo.
+261108 ksl Added Focus, KMirror, Airmass, LabTemp (TESCIFO, TESCIKM, TESCIAM, LABTEMP); older Sum files need -redo
 
 '''
 
@@ -377,7 +375,7 @@ def do_summary(directory='60202'):
         pa_w.append(value)
 
         # science telescope focus and K-mirror angle, which change the
-        # IFU throughput gradient (see flat_field.rst), its airmass and
+        # IFU instrument gradient (see flat_field.rst), its airmass and
         # the lab temperature
         focus.append(get_header_value(head,'TESCIFO',-999.))
         kmirror.append(get_header_value(head,'TESCIKM',-999.))

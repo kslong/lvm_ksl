@@ -27,6 +27,12 @@ Description:
     and produces and astopy table for each.  It then stacks these tables so that one has all of the
     the files summarized as sell
 
+    Besides the pointing, PA, Moon and exposure values, the table records
+    the science telescope focus (Focus, TESCIFO), the K-mirror angle
+    (KMirror, TESCIKM), the science telescope airmass (Airmass, TESCIAM) and
+    the lab temperature (LabTemp, LABTEMP); -999 where a keyword is
+    missing.
+
 Primary routines:
 
     do_summay produces the table for a single day
@@ -48,6 +54,9 @@ History:
 
 231003 ksl Coding begun
 240406 ksl Reworked to add more info, and hopefully be more robust
+261108 ksl Added Focus, KMirror, Airmass and LabTemp (TESCIFO, TESCIKM,
+           TESCIAM, LABTEMP), e.g. for the focus of the twilight flats.
+           Sum files made earlier lack these columns; rerun with -redo.
 
 '''
 
@@ -259,6 +268,11 @@ def do_summary(directory='60202'):
 
     tile=[]
 
+    focus=[]
+    kmirror=[]
+    sci_am=[]
+    labtemp=[]
+
 
     for one_file in xfiles:
         smjd.append(directory)
@@ -362,6 +376,14 @@ def do_summary(directory='60202'):
         value=get_header_value(head,'POSKYWPA',-999.)
         pa_w.append(value)
 
+        # science telescope focus and K-mirror angle, which change the
+        # IFU throughput gradient (see flat_field.rst), its airmass and
+        # the lab temperature
+        focus.append(get_header_value(head,'TESCIFO',-999.))
+        kmirror.append(get_header_value(head,'TESCIKM',-999.))
+        sci_am.append(get_header_value(head,'TESCIAM',-999.))
+        labtemp.append(get_header_value(head,'LABTEMP',-999.))
+
 
         
         keys=list(head.keys())
@@ -394,8 +416,10 @@ def do_summary(directory='60202'):
     # xtab=Table([exposure,nspec,xtype,name,mjd,xtime,ra,dec,pa_sci,ra_e,dec_e,pa_e,ra_w,dec_w, pa_w,nstandards,moon_alt,moon_phase,exptime,xobject],
     #            names=['Exposure','NSpec','Type','FileUsed','MJD','Time','RA','Dec','PA','RA_E', 'Dec_E','PA_E','RA_W','Dec_W','PA_W','NStandards','MoonAlt','MoonPhas','Exptime','Object'])
     
-    xtab=Table([exposure,tile,mjd,smjd,nspec,xtype,name,xtime,ra,dec,pa_sci,ra_e,dec_e,pa_e,ra_w,dec_w, pa_w,nstandards,moon_ra,moon_dec,moon_alt,moon_phase,moon_ill,exptime,xobject],
-                names=['expnum','tileid','mjd','smjd','NSpec','Type','FileUsed','Time','RA','Dec','PA','RA_E', 'Dec_E','PA_E','RA_W','Dec_W','PA_W','NStandards','MoonRA','MoonDec','MoonAlt','MoonPhas','MoonIll','exptime','Object'])
+    xtab=Table([exposure,tile,mjd,smjd,nspec,xtype,name,xtime,ra,dec,pa_sci,ra_e,dec_e,pa_e,ra_w,dec_w, pa_w,nstandards,moon_ra,moon_dec,moon_alt,moon_phase,moon_ill,exptime,xobject,
+                focus,kmirror,sci_am,labtemp],
+                names=['expnum','tileid','mjd','smjd','NSpec','Type','FileUsed','Time','RA','Dec','PA','RA_E', 'Dec_E','PA_E','RA_W','Dec_W','PA_W','NStandards','MoonRA','MoonDec','MoonAlt','MoonPhas','MoonIll','exptime','Object',
+                       'Focus','KMirror','Airmass','LabTemp'])
     
     xtab.sort(['expnum'])
     
@@ -436,6 +460,10 @@ def stack():
     x['MoonAlt'].format='.2f'
     x['MoonPhas'].format='.2f'
     x['MoonIll'].format='.2f'
+    # columns added 261108; Sum files made before then lack them (rerun with -redo)
+    for col,fmt in (('Focus','.3f'),('KMirror','.3f'),('Airmass','.3f'),('LabTemp','.2f')):
+        if col in x.colnames:
+            x[col].format=fmt
     x.sort('expnum')
     x.write('All_Data.txt',format='ascii.fixed_width_two_line',overwrite=True)
     return

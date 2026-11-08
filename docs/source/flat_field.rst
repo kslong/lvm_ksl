@@ -180,7 +180,15 @@ To test the fit, it also measures:
 - **nebular tracers** (unless ``-notracers``): the line flux of the
   science fibers minus that of the sky for Hb, [OIII] 5007, [OI] 6300,
   Ha, [NII] 6583 and [SII] 6717+6731, and at the fitted lines themselves,
-  which measures any target emission in them.
+  which measures any target emission in them;
+- **spectrograph factors from the sky fibers**: for SkyE and SkyW
+  separately (about 20 fibers per spectrograph each), the median line
+  flux per spectrograph over the mean of the three, for 5577, 6364, 8399
+  and the OH sums.  The sky is uniform across each small sky IFU, so
+  these are pure spectrograph factors with no IFU gradient.  They test
+  how much of the science-fiber factors, which can trade off against the
+  IFU plane, should also be applied to the sky and standard-star fibers
+  (columns ``<ifu>_<line>_f1``-``f3``, ``_ef``, ``_n``).
 
 **Command line usage**::
 

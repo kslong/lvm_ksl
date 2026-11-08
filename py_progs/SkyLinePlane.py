@@ -96,6 +96,19 @@ Description::
         (robust rms over the fibers of science - sky) and _gx, _gy (a
         plain linear fit of science - sky across the IFU, flux per 10
         mm), in the units of the line fluxes
+    10. spectrograph factors from the sky fibers: for SkyE and SkyW
+        separately, the line flux (5577, 6364, 8399 and the r_oh and
+        z_oh sums) of each good sky fiber, fibers whose continuum is an
+        outlier (4 x MAD, e.g. a star) rejected; the median per
+        spectrograph divided by the mean of the three medians.  The sky
+        is uniform across each small sky IFU, so these are pure
+        spectrograph factors with no IFU gradient, to compare with the
+        factors of the science-fiber fit (which can trade off against
+        the IFU plane).  Like those, they are relative to the flat the
+        CFrame was reduced with (in 1.3.2 the stage-2 factors were
+        applied to all fibers).  Written as <ifu>_<line>_f1, _f2, _f3,
+        _ef (the mean error of a factor) and _n (fibers used), with ifu
+        skye or skyw and line b, r, z, r_oh or z_oh
 
     Per exposure it also records MJD, tile, DRPQUAL, FGRADFIX, the
     calibration epoch, the field PA (POSCIPA), the K-mirror angle
@@ -145,6 +158,7 @@ History::
                [NII], [SII] and the fitted lines), to test the direct
                fit on all observations; -notracers; the Sci rows of
                FLUX are now read once per file
+    261108 ksl Spectrograph factors from the SkyE and SkyW sky fibers
 
 '''
 
@@ -192,6 +206,8 @@ TRACERS = {'hb': ('b', (4857.5, 4865.0), ((4845.0, 4852.0), (4870.0, 4877.0))),
            'nii': ('r', (6580.0, 6587.0), ((6528.0, 6538.0), (6608.0, 6618.0))),
            'sii': ('r', (6712.5, 6735.0), ((6684.0, 6692.0), (6752.0, 6760.0))),
            't8399': ('z', (8399.18 - 4.0, 8399.18 + 4.0), ((8393.0, 8396.5), (8402.5, 8412.5)))}
+SKY_IFUS = {'skye': 'SkyE', 'skyw': 'SkyW'}
+SKY_MIN = 5   # fewest good fibers per spectrograph for a sky-fiber factor
 DRPALL_COLUMNS = ['calib_mjd', 'tileid', 'exptime', 'sci_alt', 'sci_kmpos', 'sci_focpos', 'skye_focpos',
                   'skyw_focpos', 'sun_alt', 'moon_alt']
 
@@ -290,6 +306,35 @@ def _plane_cols(row, name, r):
     else:
         row.update({name + '_gx': np.nan, name + '_gy': np.nan, name + '_egrad': np.nan,
                     name + '_rms': np.nan, name + '_n': 0})
+
+
+def sky_factors(z, cont, spec):
+    '''
+    Spectrograph factors from the fibers of one sky IFU: z the line
+    flux, cont their continuum (for rejecting outliers such as stars),
+    spec the spectrograph of each fiber.  The median of z per
+    spectrograph divided by the mean of the three; a dict with f1-f3,
+    ef (the mean error of a factor) and n, NaN if a spectrograph has
+    fewer than SKY_MIN usable fibers
+    '''
+    out = {'f1': np.nan, 'f2': np.nan, 'f3': np.nan, 'ef': np.nan, 'n': 0}
+    ok = np.isfinite(z) & np.isfinite(cont) & (z > 0)
+    if ok.sum() < 3 * SKY_MIN:
+        return out
+    c = cont[ok]
+    mad = 1.4826 * np.median(np.abs(c - np.median(c)))
+    if mad > 0:
+        ok[ok] = np.abs(c - np.median(c)) < CLIP * mad
+    med, err = [], []
+    for s in (1, 2, 3):
+        zs = z[ok & (spec == s)]
+        if len(zs) < SKY_MIN:
+            return out
+        med.append(np.median(zs))
+        err.append(1.2533 * 1.4826 * np.median(np.abs(zs - np.median(zs))) / np.sqrt(len(zs)))
+    mean = np.mean(med)
+    out.update(f1=med[0] / mean, f2=med[1] / mean, f3=med[2] / mean, ef=float(np.mean(err)) / mean, n=int(ok.sum()))
+    return out
 
 
 def read_gcoeff(calib, epoch, arm):
@@ -394,6 +439,25 @@ def measure(fname, calib, epochs, gcache, tracers=True):
             _plane_cols(row, name, plane_fit(x, y, hz[name], spec))
         for name, members in OH_GROUPS.items():
             _plane_cols(row, name, plane_fit(x, y, np.sum([hz[m] for m in members], axis=0), spec))
+        # spectrograph factors from the sky fibers of each sky IFU
+        for ifu, tel in SKY_IFUS.items():
+            sk = np.where((sm['telescope'] == tel) & (sm['fibstatus'] == 0))[0]
+            sflux = np.asarray(f['FLUX'].data[sk], dtype=np.float32) if len(sk) else None
+            sspec = np.asarray(sm['spectrographid'], int)[sk]
+            for name in ('b', 'r', 'z', 'r_oh', 'z_oh'):
+                if sflux is None:
+                    r = sky_factors(np.array([]), np.array([]), np.array([], int))
+                else:
+                    arm = name[0]
+                    k0, k1 = _cols(wave, CONT[arm] - CONT_HALF, CONT[arm] + CONT_HALF)
+                    scont = np.nanmedian(sflux[:, k0:k1].astype(float), axis=1)
+                    if name in LINES:
+                        zz = line_flux(sflux, wave, (LINES[name] - HALF, LINES[name] + HALF), SIDES[name])
+                    else:
+                        zz = np.sum([line_flux(sflux, wave, HOLDOUT[m][1], HOLDOUT[m][2]) for m in OH_GROUPS[name]], axis=0)
+                    r = sky_factors(zz, scont, sspec)
+                for k in ('f1', 'f2', 'f3', 'ef', 'n'):
+                    row['%s_%s_%s' % (ifu, name, k)] = r[k]
         # nebular tracers: science minus sky
         if tracers:
             we, ww = _num(h, 'SKYEW'), _num(h, 'SKYWW')

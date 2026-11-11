@@ -31,7 +31,13 @@ Description:
     the science telescope focus (Focus, TESCIFO), the K-mirror angle
     (KMirror, TESCIKM), the science telescope airmass (Airmass, TESCIAM) and
     the lab temperature (LabTemp, LABTEMP); -999 where a keyword is
-    missing.
+    missing. It also records the temperature outside the science telescope
+    (SciTemp, TEMPSCI) and, for exposures with a science-telescope agcam
+    coadd (science exposures, not twilights), the science telescope bench
+    temperatures (BenchTempO, BenchTempI: BENTEMPO, BENTEMPI in the coadd
+    header). These telescope temperatures are only recorded from about
+    MJD 60726. The coadds are looked for in $LVMAGCAM_DIR, or else in
+    $SAS_BASE_DIR/sdsswork/data/agcam/lco.
 
 Primary routines:
 
@@ -55,6 +61,9 @@ History:
 231003 ksl Coding begun
 240406 ksl Reworked to add more info, and hopefully be more robust
 261108 ksl Added Focus, KMirror, Airmass, LabTemp (TESCIFO, TESCIKM, TESCIAM, LABTEMP); older Sum files need -redo
+261111 ksl Added SciTemp (TEMPSCI) and BenchTempO, BenchTempI (BENTEMPO, BENTEMPI from the
+    agcam sci coadd), to test whether the IFU instrument gradient follows the telescope
+    temperature rather than the focus; older Sum files need -redo
 
 '''
 
@@ -225,6 +234,30 @@ def get_header_value(header, key, default_value=-999.0, verbose=False):
         value = default_value
     return value
 
+def get_bench_temps(smjd, expnum):
+    '''
+    Return the science telescope bench temperatures (BENTEMPO, BENTEMPI)
+    from the agcam sci coadd of an exposure, or -999 if there is no coadd
+    (e.g. for twilights) or the keywords are missing.
+    '''
+    agcam_dir=os.environ.get('LVMAGCAM_DIR')
+    if agcam_dir==None and os.environ.get('SAS_BASE_DIR')!=None:
+        agcam_dir=os.path.join(os.environ['SAS_BASE_DIR'],'sdsswork/data/agcam/lco')
+    if agcam_dir==None:
+        return -999.,-999.
+    try:
+        xfile=os.path.join(agcam_dir,str(smjd),'coadds','lvm.sci.coadd_s%08d.fits' % int(expnum))
+    except (TypeError,ValueError):
+        return -999.,-999.
+    if os.path.isfile(xfile)==False:
+        return -999.,-999.
+    try:
+        head=fits.getheader(xfile,1)
+    except Exception:
+        return -999.,-999.
+    return get_header_value(head,'BENTEMPO',-999.),get_header_value(head,'BENTEMPI',-999.)
+
+
 def do_summary(directory='60202'):
     '''
     Create a summary for a single directory
@@ -270,6 +303,9 @@ def do_summary(directory='60202'):
     kmirror=[]
     sci_am=[]
     labtemp=[]
+    scitemp=[]
+    bench_o=[]
+    bench_i=[]
 
 
     for one_file in xfiles:
@@ -381,6 +417,12 @@ def do_summary(directory='60202'):
         kmirror.append(get_header_value(head,'TESCIKM',-999.))
         sci_am.append(get_header_value(head,'TESCIAM',-999.))
         labtemp.append(get_header_value(head,'LABTEMP',-999.))
+        # telescope temperatures: outside the science telescope (raw header),
+        # and the bench (agcam sci coadd, science exposures only)
+        scitemp.append(get_header_value(head,'TEMPSCI',-999.))
+        xbench_o,xbench_i=get_bench_temps(directory.split('/')[-1],exposure[-1])
+        bench_o.append(xbench_o)
+        bench_i.append(xbench_i)
 
 
         
@@ -415,9 +457,9 @@ def do_summary(directory='60202'):
     #            names=['Exposure','NSpec','Type','FileUsed','MJD','Time','RA','Dec','PA','RA_E', 'Dec_E','PA_E','RA_W','Dec_W','PA_W','NStandards','MoonAlt','MoonPhas','Exptime','Object'])
     
     xtab=Table([exposure,tile,mjd,smjd,nspec,xtype,name,xtime,ra,dec,pa_sci,ra_e,dec_e,pa_e,ra_w,dec_w, pa_w,nstandards,moon_ra,moon_dec,moon_alt,moon_phase,moon_ill,exptime,xobject,
-                focus,kmirror,sci_am,labtemp],
+                focus,kmirror,sci_am,labtemp,scitemp,bench_o,bench_i],
                 names=['expnum','tileid','mjd','smjd','NSpec','Type','FileUsed','Time','RA','Dec','PA','RA_E', 'Dec_E','PA_E','RA_W','Dec_W','PA_W','NStandards','MoonRA','MoonDec','MoonAlt','MoonPhas','MoonIll','exptime','Object',
-                       'Focus','KMirror','Airmass','LabTemp'])
+                       'Focus','KMirror','Airmass','LabTemp','SciTemp','BenchTempO','BenchTempI'])
     
     xtab.sort(['expnum'])
     
@@ -459,7 +501,8 @@ def stack():
     x['MoonPhas'].format='.2f'
     x['MoonIll'].format='.2f'
     # columns added 261108; Sum files made before then lack them (rerun with -redo)
-    for col,fmt in (('Focus','.3f'),('KMirror','.3f'),('Airmass','.3f'),('LabTemp','.2f')):
+    for col,fmt in (('Focus','.3f'),('KMirror','.3f'),('Airmass','.3f'),('LabTemp','.2f'),
+                    ('SciTemp','.2f'),('BenchTempO','.2f'),('BenchTempI','.2f')):
         if col in x.colnames:
             x[col].format=fmt
     x.sort('expnum')

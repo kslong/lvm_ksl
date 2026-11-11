@@ -10,7 +10,7 @@ Reduce one or more  LVM datasets from one or more MJDs
 
 Command line usage (if any):
 
-    usage: Reduce.py [-h] [-keep] [-cp] [-np N] [-get] [-force] exposures_to_process
+    usage: Reduce.py [-h] [-keep] [-cp] [-np N] [-get] [-force] [-calib DIR] exposures_to_process
 
     where -h prints this help message, -keep retains the ancillary files which are otherwise
     deleted (the default is to delete these files to save disk space), -cp causes the routine
@@ -20,7 +20,9 @@ Command line usage (if any):
     pre-staging data ahead of time; -keep/-cp/-np are ignored in this mode), and -force
     attempts the reduction even when raw spectrograph frames or the science-telescope
     astrometry (agcam coadd) are missing -- by default such exposures are not reduced, and
-    the reason is written to xlog/log_<exposure>.txt instead.
+    the reason is written to xlog/log_<exposure>.txt instead. -calib DIR reduces with the
+    calibration directory DIR (laid out like $LVM_MASTER_DIR) instead of the default one, by
+    passing --calib-dir DIR to drp run.
 
     The exposures_to_process is a string of words interpreted as follows: a word greater than
     50000 is treated as an MJD, a word less than 500 means process this exposure, 500-510 means
@@ -139,6 +141,15 @@ History::
     to a single "Beginning retrieval for ..." line, since they cluttered
     the top of every run without adding information beyond what the
     user just typed.
+    261111 ksl Added -calib DIR, passed to `drp run --calib-dir DIR`
+    (sdss/lvmdrp#272). Setting LVM_MASTER_DIR before running Reduce.py does
+    not work: the sdss_access Access() objects created here reset
+    LVM_MASTER_DIR to the default sandbox in this process, and every `drp
+    run` started from it inherits that, so all exposures were silently
+    reduced with the default calibrations. --calib-dir takes precedence over
+    the environment. The directory is passed down as an argument (not a
+    global), since on macOS the multiprocessing workers start as fresh
+    processes and would not see a global set in steer().
 
 '''
 
@@ -196,7 +207,7 @@ def clean_and_count_lines_with_keywords(filename):
 def format_number(number):
     return "{:08d}".format(number)
 
-def process_one(mjd,i,clean):
+def process_one(mjd,i,clean,calib_dir=None):
 
         # Regenerate metadata
         # metadata_process = subprocess.run(["drp", "metadata", "regenerate", "-m", mjd])
@@ -212,6 +223,8 @@ def process_one(mjd,i,clean):
             if clean==True:
                 # xcommand=["drp", "run", "-c","-m",str(mjd),"-e", str(i)]
                 xcommand=["drp", "run", "-c","-e", str(i)]
+            if calib_dir:
+                xcommand+=["--calib-dir", calib_dir]
 
             print("Begin processing of ",i,"with command: ",xcommand)
             start_time = timeit.default_timer()
@@ -398,7 +411,7 @@ def write_skip_log(exp,reason_lines):
     print('Reason for not processing %s written to %s' % (exp,logname))
 
 
-def do_one(mjd,exp,clean=True,xcopy=True,get_only=False,force=False):
+def do_one(mjd,exp,clean=True,xcopy=True,get_only=False,force=False,calib_dir=None):
     '''
     mjd is a string, as is qmjd
 
@@ -435,7 +448,7 @@ def do_one(mjd,exp,clean=True,xcopy=True,get_only=False,force=False):
     if blocked and force:
         print('WARNING: -force set -- attempting reduction of %s despite the missing data noted above' % str(exp))
 
-    process_one(mjd,exp,clean)
+    process_one(mjd,exp,clean,calib_dir)
 
 
 
@@ -460,7 +473,7 @@ def get_no_jobs(jobs):
             njobs+=1
     return njobs
 
-def do_many(xtab,clean=True,xcopy=True,nproc=8,get_only=False,force=False):
+def do_many(xtab,clean=True,xcopy=True,nproc=8,get_only=False,force=False,calib_dir=None):
     '''
     A routine to run the lvmdrp in parallel
 
@@ -498,7 +511,7 @@ def do_many(xtab,clean=True,xcopy=True,nproc=8,get_only=False,force=False):
         if not get_only and int(one['MJD']) < 60177:
             print('WARNING: THESE DATA ARE UNLIKELY BE CALIBRATABLE WITHOUT SPECIAL EFFORT, AS THEY WERE OBTAINED BEFORE MJD 60177')
 
-        p=multiprocessing.Process(target=do_one,args=[one['MJD'],one['ExpNo'],clean,xcopy,get_only,force])
+        p=multiprocessing.Process(target=do_one,args=[one['MJD'],one['ExpNo'],clean,xcopy,get_only,force,calib_dir])
         jobs.append(p)
 
     i=0
@@ -629,6 +642,7 @@ def steer(argv):
     nproc=1
     get_only=False
     force=False
+    calib_dir=None
 
     words=[]
 
@@ -647,6 +661,12 @@ def steer(argv):
             get_only=True
         elif argv[i]=='-force':
             force=True
+        elif argv[i]=='-calib':
+            i+=1
+            calib_dir=os.path.abspath(os.path.expanduser(argv[i]))
+            if os.path.isdir(calib_dir)==False:
+                print('Error: calibration directory %s not found' % calib_dir)
+                return
         elif argv[i][0]=='-':
             print('Error: Could not parse command line: ', argv)
             return
@@ -655,6 +675,8 @@ def steer(argv):
         i+=1
 
     print('Beginning retrieval for %s' % ' '.join(words))
+    if calib_dir:
+        print('Reducing with the calibration directory %s' % calib_dir)
 
     xtab=parse(words)
 
@@ -667,9 +689,9 @@ def steer(argv):
             os.mkdir('./xlog')
 
         for one in xtab:
-            do_one(one['MJD'],one['ExpNo'],clean,get_only=get_only,force=force)
+            do_one(one['MJD'],one['ExpNo'],clean,get_only=get_only,force=force,calib_dir=calib_dir)
     else:
-        do_many(xtab,clean,xcopy,nproc,get_only,force)
+        do_many(xtab,clean,xcopy,nproc,get_only,force,calib_dir)
 
 if __name__ == "__main__":
     import sys

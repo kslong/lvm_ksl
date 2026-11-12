@@ -13,8 +13,10 @@ Synopsis:
 
 Command line usage (if any):
 
-    usage: ApplyFlatModel.py [-h] -model coeffs.ecsv [-outdir DIR] [-calib DIR]
-                             [-direct] [-guard X] [-rguard X] [-list FILE] cframe ...
+    usage: ApplyFlatModel.py [-h] -model coeffs.ecsv [-outdir DIR | -outroot DIR]
+                             [-calib DIR] [-direct] [-guard X] [-rguard X]
+                             [-list FILE] [-drpall FILE] [-base DIR] [-mjd LO-HI]
+                             [-np N] [-part I/N] [-redo] [-summary FILE] [cframe ...]
 
     Arguments::
 
@@ -25,9 +27,32 @@ Command line usage (if any):
 
         -h           print this help and exit
         -model FILE  the model coefficients (flat_model_coeffs.ecsv, from
-                     FitFlatModel.py); required
+                     FitFlatModel.py; the 1.3.2 model is
+                     data/flat_model_coeffs_1.3.2.ecsv); required
         -outdir DIR  where the corrected copies go (default .), written as
                      <name>.flatmodel.fits
+        -outroot DIR write the corrected copies under DIR with the same
+                     <tilegrp>/<tileid>/<mjd>/lvmCFrame-<expnum>.fits path
+                     and name as the originals have under their redux
+                     version directory; default with -drpall:
+                     $SAS_BASE_DIR/sdsswork/lvm/spectro/redux/knox.  An
+                     original is never overwritten
+        -drpall FILE take the exposures from a drpall file (fits or h5):
+                     the lvmCFrame next to each lvmSFrame in its location
+                     column (relative to $SAS_BASE_DIR, or to -base)
+        -base DIR    resolve the drpall locations under DIR instead of
+                     $SAS_BASE_DIR
+        -mjd LO-HI   with -drpall, only the exposures with LO <= MJD <= HI
+        -np N        correct N files at a time (default 1)
+        -part I/N    correct only part I of N (I = 1..N) of the files:
+                     every Nth file of the sorted list, starting at the
+                     Ith, so N jobs (e.g. one per node) share a run.
+                     The summary default becomes
+                     ApplyFlatModel_summary_I_of_N.txt
+        -redo        with -outroot, redo exposures whose output exists
+                     (default: skip them, so a run can be restarted)
+        -summary FILE one row per exposure: status, output, model planes,
+                     direct step (default ApplyFlatModel_summary.txt)
         -calib DIR   directory holding <epoch>/lvm-mfiberflat_twilight-<arm>.fits,
                      for the factors 1.3.2 applied (default
                      $LVM_MASTER_DIR, else $SAS_BASE_DIR/sdsswork/lvm/sandbox/calib)
@@ -87,7 +112,19 @@ Description::
         alone is kept in all arms
     5.  the model values, the applied factors removed, and the direct
         step (whether applied, its guard value and its planes) are
-        recorded in the primary header
+        recorded in the primary header, with the original file and the
+        lvm_ksl commit
+
+    For a large run, e.g. of all of 1.3.2 at Utah:
+
+        ApplyFlatModel.py -model data/flat_model_coeffs_1.3.2.ecsv -direct \
+            -drpall drpall-1.3.2.h5 -np 8
+
+    reads the 1.3.2 CFrames where the drpall says they are and writes
+    the corrected ones to redux/knox/<tilegrp>/<tileid>/<mjd>/.  To
+    spread it over several nodes, run the same command in N jobs with
+    -part 1/N ... -part N/N (e.g. a Slurm job array with
+    -part ${SLURM_ARRAY_TASK_ID}/N); each writes its own summary.
 
 Primary routines:
 
@@ -117,11 +154,16 @@ History::
     261106 ksl Coding begun
     261107 ksl r direct step from the r OH lines averaged with the b+z
                mean, instead of the b+z mean alone; -rguard
+    261112 ksl -drpall, -outroot (same tree layout as the originals,
+               default redux/knox), -mjd, -np, -part, -redo, -summary;
+               original file and lvm_ksl commit in the header
 
 '''
 
+import multiprocessing
 import os
 import re
+import subprocess
 import sys
 import numpy as np
 from astropy.io import fits
@@ -130,9 +172,34 @@ from numpy.polynomial import legendre
 
 from FixFlatGradient import arm_weights, load_epochs, default_epochs_file
 from SkyLinePlane import (plane_fit, line_flux, calib_epoch, LINES, HALF, SIDES, CONT, CONT_HALF, STAR_Q,
-                          HOLDOUT, OH_GROUPS, _num, _cols)
+                          HOLDOUT, OH_GROUPS, _num, _cols, read_drpall)
 
 COMP = ['F1', 'F2', 'F3', 'gx', 'gy']
+DEFAULT_OUTROOT = 'sdsswork/lvm/spectro/redux/knox'   # under $SAS_BASE_DIR
+
+
+def code_version():
+    '''
+    The lvm_ksl commit of this script (with -dirty if modified), or unknown
+    '''
+    here = os.path.dirname(os.path.abspath(__file__))
+    try:
+        h = subprocess.run(['git', '-C', here, 'rev-parse', '--short=10', 'HEAD'],
+                           capture_output=True, text=True, check=True).stdout.strip()
+        dirty = subprocess.run(['git', '-C', here, 'diff', '--quiet', 'HEAD', '--', os.path.basename(__file__)]).returncode
+        return h + ('-dirty' if dirty else '')
+    except Exception:
+        return 'unknown'
+
+
+def tree_path(filename, outroot):
+    '''
+    The path of filename under outroot with the same last four parts,
+    <tilegrp>/<tileid>/<mjd>/<name>, as the original under its redux
+    version directory
+    '''
+    parts = os.path.normpath(os.path.abspath(filename)).split(os.sep)
+    return os.path.join(outroot, *parts[-4:])
 
 
 def _usage_from_doc(doc):
@@ -235,34 +302,42 @@ def residual_fit(flux, wave, x, y, spec):
 
 
 def apply_model(filename, coef, focus0, ranges, outdir='.', calib='', epochs=None, direct=False, guard=1.5,
-                modelname='', rguard=1.5):
+                modelname='', rguard=1.5, outname='', version=''):
     '''
-    Write a model-corrected copy of one CFrame; returns the output name or None
+    Write a model-corrected copy of one CFrame, to outname if given, else
+    to outdir as <name>.flatmodel.fits.  Returns a summary row (dict) with
+    'status' 'ok' or the reason it was skipped
     '''
+    info = {'file': filename, 'out': '', 'status': ''}
     try:
         x = fits.open(filename)
     except Exception as err:
         print('ApplyFlatModel: could not open %s (%s)' % (filename, err))
-        return None
+        info['status'] = 'unreadable'
+        return info
     hdr = x['PRIMARY'].header
     base = os.path.basename(filename)
     if hdr.get('FGRADFIX', False) or hdr.get('FMODEL', False):
         print('ApplyFlatModel: %s already corrected (FGRADFIX or FMODEL), skipped' % base)
-        return None
+        info['status'] = 'already_corrected'
+        return info
     if not str(hdr.get('DRPVER', '')).startswith('1.3.2'):
         print('ApplyFlatModel: warning: %s has DRPVER %s; the model was made for 1.3.2' % (base, hdr.get('DRPVER')))
     mjd, focus, kmir = _num(hdr, 'MJD'), _num(hdr, 'TESCIFO'), _num(hdr, 'TESCIKM')
     if not (np.isfinite(mjd) and np.isfinite(focus) and np.isfinite(kmir) and focus > -900 and kmir > -900):
         print('ApplyFlatModel: %s lacks MJD, TESCIFO or TESCIKM, skipped' % base)
-        return None
+        info['status'] = 'no_focus_or_kmirror'
+        return info
     epoch = calib_epoch(hdr, epochs)
     if epoch < 0:
         print('ApplyFlatModel: no calibration epoch for %s, skipped' % base)
-        return None
+        info['status'] = 'no_calib_epoch'
+        return info
     app = {arm: applied_factors(calib, epoch, arm) for arm in 'brz'}
     if any(a is None for a in app.values()):
         print('ApplyFlatModel: applied factors of epoch %d not found in %s, skipped' % (epoch, calib))
-        return None
+        info['status'] = 'no_factors'
+        return info
 
     terms, ff = model_terms(mjd, focus, kmir, focus0, ranges)
     val = evaluate(coef, terms)
@@ -335,43 +410,137 @@ def apply_model(filename, coef, focus0, ranges, outdir='.', calib='', epochs=Non
             hdr['FMD%sGY' % arm.upper()] = (round(r['gy'], 3) if r else -999., '%s residual plane y (%%/10mm)' % what)
         hdr['FMDRGRD'] = (round(rval, 3) if np.isfinite(rval) else -1., '|r OH - mean(b,z)| residual plane (%/10mm)')
         hdr['FMDRMODE'] = (rmode, 'r direct: oh+bz, bz (b+z mean only) or none')
+    hdr['FMODCODE'] = ((version or code_version())[:40], 'lvm_ksl commit of ApplyFlatModel.py')
+    hdr['FMODORIG'] = (os.path.abspath(filename), 'original lvmCFrame')
     hdr.add_history('ApplyFlatModel: Sci FLUX/IVAR corrected with the large-scale flat model (ffactor epoch %d)%s'
                     % (ff, '; direct residual fit applied' if used_direct else ''))
 
-    root = base[:-5] if base.endswith('.fits') else base
-    outname = os.path.join(outdir, root + '.flatmodel.fits')
+    if not outname:
+        root = base[:-5] if base.endswith('.fits') else base
+        outname = os.path.join(outdir, root + '.flatmodel.fits')
+    if os.path.exists(outname) and os.path.samefile(outname, filename):
+        print('ApplyFlatModel: %s would overwrite the original, skipped' % base)
+        x.close()
+        info['status'] = 'would_overwrite'
+        return info
+    os.makedirs(os.path.dirname(os.path.abspath(outname)), exist_ok=True)
     x.writeto(outname, overwrite=True)
     x.close()
     print('ApplyFlatModel: %s -> %s  ff %d cal %d  model planes b %.1f,%.1f r %.1f,%.1f z %.1f,%.1f  direct %s%s'
           % (base, outname, ff, epoch, val['b']['gx'], val['b']['gy'], val['r']['gx'], val['r']['gy'],
              val['z']['gx'], val['z']['gy'], used_direct,
              (' (guard %.2f, r %s %.2f)' % (gval, rmode, rval)) if direct else ''))
-    return outname
+    info.update({'out': outname, 'status': 'ok', 'expnum': int(_num(hdr, 'EXPOSURE')) if np.isfinite(_num(hdr, 'EXPOSURE')) else -1,
+                 'mjd': int(mjd), 'ff': ff, 'calib': epoch, 'direct': used_direct,
+                 'guard': round(gval, 3) if np.isfinite(gval) else -1., 'rmode': rmode})
+    for arm in 'brz':
+        info['%s_gx' % arm] = round(val[arm]['gx'], 3)
+        info['%s_gy' % arm] = round(val[arm]['gy'], 3)
+    return info
 
 
 
-def doit(files, model, outdir='.', calib='', direct=False, guard=1.5, rguard=1.5):
+_WORKER = {}
+
+
+def _init_worker(model, calib, direct, guard, rguard, version):
     '''
-    Description:
-        Apply the model to each CFrame in files
-
-    History:
-        261106 ksl Coding begun
+    Read the model and the epochs once per worker process
     '''
     coef, focus0, ranges = read_model(model)
-    if not calib:
-        calib = os.environ.get('LVM_MASTER_DIR', '') or \
-            os.path.join(os.environ.get('SAS_BASE_DIR', ''), 'sdsswork/lvm/sandbox/calib')
     try:
         epochs = load_epochs(default_epochs_file())
     except Exception:
         epochs = None
-    os.makedirs(outdir, exist_ok=True)
-    n = 0
+    _WORKER.update(coef=coef, focus0=focus0, ranges=ranges, calib=calib, epochs=epochs, direct=direct,
+                   guard=guard, rguard=rguard, model=model, version=version)
+
+
+def _work(job):
+    '''
+    Correct one file; job is (input, output name or '', outdir)
+    '''
+    fn, outname, outdir = job
+    w = _WORKER
+    try:
+        return apply_model(fn, w['coef'], w['focus0'], w['ranges'], outdir, w['calib'], w['epochs'], w['direct'],
+                           w['guard'], w['model'], w['rguard'], outname=outname, version=w['version'])
+    except Exception as err:
+        print('ApplyFlatModel: %s failed (%s)' % (fn, err))
+        return {'file': fn, 'out': '', 'status': 'error: %s' % str(err)[:80]}
+
+
+def write_summary(rows, summary):
+    '''
+    One row per exposure, fixed-width
+    '''
+    cols = ['status', 'expnum', 'mjd', 'ff', 'calib', 'direct', 'guard', 'rmode',
+            'b_gx', 'b_gy', 'r_gx', 'r_gy', 'z_gx', 'z_gy', 'file', 'out']
+    data = {c: [r.get(c, '' if c in ('status', 'rmode', 'file', 'out') else -999) for r in rows] for c in cols}
+    data['direct'] = [str(v) for v in data['direct']]
+    Table(data).write(summary, format='ascii.fixed_width_two_line', overwrite=True)
+
+
+def doit(files, model, outdir='.', calib='', direct=False, guard=1.5, rguard=1.5, outroot='', nproc=1,
+         redo=False, summary='ApplyFlatModel_summary.txt'):
+    '''
+    Description:
+        Apply the model to each CFrame in files, writing to outdir as
+        <name>.flatmodel.fits, or with outroot to the same tree layout
+        and names as the originals
+
+    Notes:
+        With outroot, files whose output exists are skipped unless redo,
+        so a stopped run can be restarted.  The summary is written at
+        the end, and every 500 files during a long run.
+
+    History:
+        261106 ksl Coding begun
+        261112 ksl outroot, nproc, redo, summary
+    '''
+    if not calib:
+        calib = os.environ.get('LVM_MASTER_DIR', '') or \
+            os.path.join(os.environ.get('SAS_BASE_DIR', ''), 'sdsswork/lvm/sandbox/calib')
+    version = code_version()
+    print('ApplyFlatModel: model %s, calib %s, lvm_ksl %s, direct %s' % (model, calib, version, direct))
+
+    rows, jobs = [], []
     for fn in files:
-        if apply_model(fn, coef, focus0, ranges, outdir, calib, epochs, direct, guard, model, rguard):
-            n += 1
-    print('ApplyFlatModel: corrected %d of %d files' % (n, len(files)))
+        if outroot:
+            outname = tree_path(fn, outroot)
+            if os.path.abspath(outname) == os.path.abspath(fn):
+                print('ApplyFlatModel: %s is under -outroot; it would be overwritten, skipped' % fn)
+                rows.append({'file': fn, 'out': outname, 'status': 'would_overwrite'})
+                continue
+            if os.path.exists(outname) and not redo:
+                rows.append({'file': fn, 'out': outname, 'status': 'done_before'})
+                continue
+        else:
+            outname = ''
+        if not os.path.isfile(fn):
+            rows.append({'file': fn, 'out': '', 'status': 'missing'})
+            continue
+        jobs.append((fn, outname, outdir))
+    if not outroot:
+        os.makedirs(outdir, exist_ok=True)
+    print('ApplyFlatModel: %d files to correct, %d skipped beforehand' % (len(jobs), len(rows)))
+
+    args = (model, calib, direct, guard, rguard, version)
+    if nproc > 1:
+        with multiprocessing.Pool(nproc, initializer=_init_worker, initargs=args) as pool:
+            for k, r in enumerate(pool.imap_unordered(_work, jobs, chunksize=4)):
+                rows.append(r)
+                if (k + 1) % 500 == 0:
+                    write_summary(rows, summary)
+    else:
+        _init_worker(*args)
+        for k, job in enumerate(jobs):
+            rows.append(_work(job))
+            if (k + 1) % 500 == 0:
+                write_summary(rows, summary)
+    write_summary(rows, summary)
+    n = sum(r['status'] == 'ok' for r in rows)
+    print('ApplyFlatModel: corrected %d of %d files; summary in %s' % (n, len(files), summary))
 
 
 def steer(argv):
@@ -379,6 +548,8 @@ def steer(argv):
     Parse the command line and run doit
     '''
     files, model, outdir, calib, direct, guard, rguard, listfile = [], '', '.', '', False, 1.5, 1.5, ''
+    outroot, drpall, base, mjd_range, nproc, redo, summary = '', '', '', None, 1, False, ''
+    part = None
     i = 1
     while i < len(argv):
         if argv[i] == '-h':
@@ -390,6 +561,9 @@ def steer(argv):
         elif argv[i] == '-outdir':
             i += 1
             outdir = argv[i]
+        elif argv[i] == '-outroot':
+            i += 1
+            outroot = argv[i]
         elif argv[i] == '-calib':
             i += 1
             calib = argv[i]
@@ -404,6 +578,33 @@ def steer(argv):
         elif argv[i] == '-list':
             i += 1
             listfile = argv[i]
+        elif argv[i] == '-drpall':
+            i += 1
+            drpall = argv[i]
+        elif argv[i] == '-base':
+            i += 1
+            base = argv[i]
+        elif argv[i] == '-mjd':
+            i += 1
+            lo, hi = argv[i].split('-')
+            mjd_range = (int(lo), int(hi))
+        elif argv[i] == '-np':
+            i += 1
+            nproc = int(argv[i])
+        elif argv[i] == '-part':
+            i += 1
+            try:
+                ip, npart = (int(v) for v in argv[i].split('/'))
+                assert 1 <= ip <= npart
+            except (ValueError, AssertionError):
+                print('ApplyFlatModel: -part needs I/N with 1 <= I <= N, not %s' % argv[i])
+                return
+            part = (ip, npart)
+        elif argv[i] == '-redo':
+            redo = True
+        elif argv[i] == '-summary':
+            i += 1
+            summary = argv[i]
         elif argv[i].startswith('-'):
             print('ApplyFlatModel: unknown option %s' % argv[i])
             print(_USAGE)
@@ -414,10 +615,24 @@ def steer(argv):
     if listfile:
         with open(listfile) as f:
             files += [ln.split()[0] for ln in f if ln.strip() and not ln.startswith('#')]
+    if drpall:
+        xtab = read_drpall(drpall, base=base)
+        if mjd_range is not None:
+            # the MJD is the directory of each file: .../<tilegrp>/<tileid>/<mjd>/lvmCFrame-<expnum>.fits
+            m = np.array([int(os.path.basename(os.path.dirname(str(p)))) for p in xtab['path']])
+            xtab = xtab[(m >= mjd_range[0]) & (m <= mjd_range[1])]
+        files += [str(p) for p in xtab['path']]
+        if not outroot:
+            outroot = os.path.join(os.environ.get('SAS_BASE_DIR', ''), DEFAULT_OUTROOT)
     if not files or not model:
         print(_USAGE)
         return
-    doit(files, model, outdir, calib, direct, guard, rguard)
+    if part is not None:
+        files = sorted(set(files))[part[0] - 1::part[1]]
+        print('ApplyFlatModel: part %d of %d: %d files' % (part[0], part[1], len(files)))
+    if not summary:
+        summary = 'ApplyFlatModel_summary%s.txt' % ('_%d_of_%d' % part if part else '')
+    doit(files, model, outdir, calib, direct, guard, rguard, outroot, nproc, redo, summary)
 
 
 if __name__ == '__main__':

@@ -13,7 +13,7 @@ Synopsis:
 
 Command line usage (if any):
 
-    usage: ApplyFlatModel.py [-h] -model coeffs.ecsv [-outdir DIR | -outroot DIR]
+    usage: ApplyFlatModel.py [-h] [-model coeffs.ecsv] [-outdir DIR | -outroot DIR]
                              [-calib DIR] [-direct] [-guard X] [-rguard X]
                              [-list FILE] [-drpall FILE] [-base DIR] [-mjd LO-HI]
                              [-np N] [-part I/N] [-redo] [-summary FILE] [cframe ...]
@@ -26,9 +26,10 @@ Command line usage (if any):
     Options::
 
         -h           print this help and exit
-        -model FILE  the model coefficients (flat_model_coeffs.ecsv, from
-                     FitFlatModel.py; the 1.3.2 model is
-                     data/flat_model_coeffs_1.3.2.ecsv); required
+        -model FILE  the model coefficients (an ecsv from FitFlatModel.py);
+                     a name not found as given is looked for in the lvm_ksl
+                     data directory (../data from this script).  Default:
+                     the 1.3.2 model, data/flat_model_coeffs_1.3.2.ecsv
         -outdir DIR  where the corrected copies go (default .), written as
                      <name>.flatmodel.fits
         -outroot DIR write the corrected copies under DIR with the same
@@ -117,8 +118,7 @@ Description::
 
     For a large run, e.g. of all of 1.3.2 at Utah:
 
-        ApplyFlatModel.py -model data/flat_model_coeffs_1.3.2.ecsv -direct \
-            -drpall drpall-1.3.2.h5 -np 8
+        ApplyFlatModel.py -direct -drpall drpall-1.3.2.fits -np 8
 
     reads the 1.3.2 CFrames where the drpall says they are and writes
     the corrected ones to redux/knox/<tilegrp>/<tileid>/<mjd>/.  To
@@ -156,7 +156,8 @@ History::
                mean, instead of the b+z mean alone; -rguard
     261112 ksl -drpall, -outroot (same tree layout as the originals,
                default redux/knox), -mjd, -np, -part, -redo, -summary;
-               original file and lvm_ksl commit in the header
+               original file and lvm_ksl commit in the header; -model
+               defaults to the 1.3.2 model in the lvm_ksl data directory
 
 '''
 
@@ -176,6 +177,20 @@ from SkyLinePlane import (plane_fit, line_flux, calib_epoch, LINES, HALF, SIDES,
 
 COMP = ['F1', 'F2', 'F3', 'gx', 'gy']
 DEFAULT_OUTROOT = 'sdsswork/lvm/spectro/redux/knox'   # under $SAS_BASE_DIR
+DATA_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'data')
+DEFAULT_MODEL = 'flat_model_coeffs_1.3.2.ecsv'
+
+
+def find_model(name=''):
+    '''
+    The model file: name as given if it exists, else name in the lvm_ksl
+    data directory; with no name, the 1.3.2 model there.  '' if not found
+    '''
+    name = name or DEFAULT_MODEL
+    for p in (name, os.path.join(DATA_DIR, os.path.basename(name))):
+        if os.path.isfile(p):
+            return os.path.abspath(p)
+    return ''
 
 
 def code_version():
@@ -624,9 +639,14 @@ def steer(argv):
         files += [str(p) for p in xtab['path']]
         if not outroot:
             outroot = os.path.join(os.environ.get('SAS_BASE_DIR', ''), DEFAULT_OUTROOT)
-    if not files or not model:
+    if not files:
         print(_USAGE)
         return
+    found = find_model(model)
+    if not found:
+        print('ApplyFlatModel: model %s not found (as given or in %s)' % (model or DEFAULT_MODEL, DATA_DIR))
+        return
+    model = found
     if part is not None:
         files = sorted(set(files))[part[0] - 1::part[1]]
         print('ApplyFlatModel: part %d of %d: %d files' % (part[0], part[1], len(files)))

@@ -17,6 +17,7 @@ Command line usage (if any):
                              [-calib DIR] [-direct] [-guard X] [-rguard X]
                              [-list FILE] [-drpall FILE] [-base DIR] [-mjd LO-HI]
                              [-np N] [-part I/N] [-redo] [-summary FILE] [cframe ...]
+           ApplyFlatModel.py -report summary.txt [summary.txt ...]
 
     Arguments::
 
@@ -53,7 +54,10 @@ Command line usage (if any):
         -redo        with -outroot, redo exposures whose output exists
                      (default: skip them, so a run can be restarted)
         -summary FILE one row per exposure: status, output, model planes,
-                     direct step (default ApplyFlatModel_summary.txt)
+                     direct step and the quality planes (default
+                     ApplyFlatModel_summary.txt)
+        -report      only print the quality report of the summary files
+                     given as arguments (e.g. those of all the -part jobs)
         -calib DIR   directory holding <epoch>/lvm-mfiberflat_twilight-<arm>.fits,
                      for the factors 1.3.2 applied (default
                      $LVM_MASTER_DIR, else $SAS_BASE_DIR/sdsswork/lvm/sandbox/calib)
@@ -115,6 +119,17 @@ Description::
         step (whether applied, its guard value and its planes) are
         recorded in the primary header, with the original file and the
         lvm_ksl commit
+    6.  quality: the planes of 5577 and of the summed held-out r OH and
+        z OH lines are measured before and after the correction, as
+        SkyLinePlane.py measures them (Sci fibers with fibstatus 0,
+        stars rejected by their continuum), and recorded as their
+        amplitudes in %/10 mm (FMQB0/FMQB1 for 5577 before/after,
+        FMQR0/FMQR1 for r OH, FMQZ0/FMQZ1 for z OH) and in the summary.
+        The held-out lines are never fitted by the direct step, so r OH
+        and z OH after the correction are the check; 5577 is fitted by
+        it.  A quality report (medians before and after, fraction below
+        1 %/10 mm, direct step rejected, worst exposures) ends each run,
+        and -report gives it for any set of summary files
 
     For a large run, e.g. of all of 1.3.2 at Utah:
 
@@ -157,7 +172,9 @@ History::
     261112 ksl -drpall, -outroot (same tree layout as the originals,
                default redux/knox), -mjd, -np, -part, -redo, -summary;
                original file and lvm_ksl commit in the header; -model
-               defaults to the 1.3.2 model in the lvm_ksl data directory
+               defaults to the 1.3.2 model in the lvm_ksl data directory;
+               quality planes before/after in the header and summary,
+               a quality report at the end of a run, and -report
 
 '''
 
@@ -215,6 +232,41 @@ def tree_path(filename, outroot):
     '''
     parts = os.path.normpath(os.path.abspath(filename)).split(os.sep)
     return os.path.join(outroot, *parts[-4:])
+
+
+QUALITY = ('5577', 'r_oh', 'z_oh')
+QKEY = {'5577': 'B', 'r_oh': 'R', 'z_oh': 'Z'}
+
+
+def quality(flux, wave, x, y, spec):
+    '''
+    The planes (gx, gy) in %/10 mm of 5577 and of the summed held-out r OH
+    and z OH lines in the Sci fibers given (fibers x wavelength), measured
+    as SkyLinePlane.measure does; (nan, nan) where the fit fails
+    '''
+    stars = {}
+    for arm in 'brz':
+        k0, k1 = _cols(wave, CONT[arm] - CONT_HALF, CONT[arm] + CONT_HALF)
+        with np.errstate(all='ignore'):
+            cont = np.nanmedian(flux[:, k0:k1].astype(float), axis=1)
+        ok = np.isfinite(cont)
+        qlo, qhi = np.percentile(cont[ok], STAR_Q)
+        stars[arm] = ~ok | (cont < qlo) | (cont > qhi)
+    with np.errstate(all='ignore'):
+        z = {'5577': np.where(stars['b'], np.nan,
+                              line_flux(flux, wave, (LINES['b'] - HALF, LINES['b'] + HALF), SIDES['b']))}
+        for name, members in OH_GROUPS.items():
+            z[name] = np.sum([np.where(stars[HOLDOUT[m][0]], np.nan, line_flux(flux, wave, HOLDOUT[m][1], HOLDOUT[m][2]))
+                              for m in members], axis=0)
+    out = {}
+    for name in QUALITY:
+        r = plane_fit(x, y, z[name], spec)
+        if r is None:
+            out[name] = (np.nan, np.nan)
+        else:
+            d = np.radians(r['dir'])
+            out[name] = (r['grad'] * np.cos(d), r['grad'] * np.sin(d))
+    return out
 
 
 def _usage_from_doc(doc):
@@ -363,6 +415,9 @@ def apply_model(filename, coef, focus0, ranges, outdir='.', calib='', epochs=Non
     spec = np.asarray(st['spectrographid'], int)[sci]
     wave = np.asarray(x['WAVE'].data, float)
     w = arm_weights(wave)
+    # quality fibers, as in SkyLinePlane.py: Sci with fibstatus 0, as positions within sci
+    qsel = np.where(np.asarray(st['fibstatus'])[sci] == 0)[0]
+    q_before = quality(np.asarray(x['FLUX'].data[sci][qsel], np.float32), wave, xp[qsel], yp[qsel], spec[qsel])
 
     kmod = {}
     for arm in 'brz':
@@ -425,6 +480,12 @@ def apply_model(filename, coef, focus0, ranges, outdir='.', calib='', epochs=Non
             hdr['FMD%sGY' % arm.upper()] = (round(r['gy'], 3) if r else -999., '%s residual plane y (%%/10mm)' % what)
         hdr['FMDRGRD'] = (round(rval, 3) if np.isfinite(rval) else -1., '|r OH - mean(b,z)| residual plane (%/10mm)')
         hdr['FMDRMODE'] = (rmode, 'r direct: oh+bz, bz (b+z mean only) or none')
+    q_after = quality(np.asarray(fs[qsel], np.float32), wave, xp[qsel], yp[qsel], spec[qsel])
+    for name in QUALITY:
+        for tag, q in (('0', q_before), ('1', q_after)):
+            a = float(np.hypot(*q[name]))
+            hdr['FMQ%s%s' % (QKEY[name], tag)] = (round(a, 3) if np.isfinite(a) else -1.,
+                                                  '%s plane %s correction (%%/10mm)' % (name, 'before' if tag == '0' else 'after'))
     hdr['FMODCODE'] = ((version or code_version())[:40], 'lvm_ksl commit of ApplyFlatModel.py')
     hdr['FMODORIG'] = (os.path.abspath(filename), 'original lvmCFrame')
     hdr.add_history('ApplyFlatModel: Sci FLUX/IVAR corrected with the large-scale flat model (ffactor epoch %d)%s'
@@ -451,6 +512,13 @@ def apply_model(filename, coef, focus0, ranges, outdir='.', calib='', epochs=Non
     for arm in 'brz':
         info['%s_gx' % arm] = round(val[arm]['gx'], 3)
         info['%s_gy' % arm] = round(val[arm]['gy'], 3)
+    for name in QUALITY:
+        k = QKEY[name].lower()
+        for tag, q in (('0', q_before), ('1', q_after)):
+            a = float(np.hypot(*q[name]))
+            info['q%s%s' % (k, tag)] = round(a, 3) if np.isfinite(a) else -999.
+        info['q%s1x' % k] = round(float(q_after[name][0]), 3) if np.isfinite(q_after[name][0]) else -999.
+        info['q%s1y' % k] = round(float(q_after[name][1]), 3) if np.isfinite(q_after[name][1]) else -999.
     return info
 
 
@@ -490,10 +558,70 @@ def write_summary(rows, summary):
     One row per exposure, fixed-width
     '''
     cols = ['status', 'expnum', 'mjd', 'ff', 'calib', 'direct', 'guard', 'rmode',
-            'b_gx', 'b_gy', 'r_gx', 'r_gy', 'z_gx', 'z_gy', 'file', 'out']
+            'b_gx', 'b_gy', 'r_gx', 'r_gy', 'z_gx', 'z_gy',
+            'qb0', 'qb1', 'qr0', 'qr1', 'qz0', 'qz1', 'qb1x', 'qb1y', 'qr1x', 'qr1y', 'qz1x', 'qz1y',
+            'file', 'out']
     data = {c: [r.get(c, '' if c in ('status', 'rmode', 'file', 'out') else -999) for r in rows] for c in cols}
     data['direct'] = [str(v) for v in data['direct']]
     Table(data).write(summary, format='ascii.fixed_width_two_line', overwrite=True)
+
+
+def quality_report(rows, nworst=10):
+    '''
+    Print the quality of the corrected exposures in rows (summary dicts or
+    table rows): median |plane| of 5577, r OH and z OH before and after,
+    the fraction below 1 %/10 mm, the direct steps rejected, and the
+    exposures with the largest held-out plane after the correction
+    '''
+    ok = [r for r in rows if str(r['status']) == 'ok']
+    status = {}
+    for r in rows:
+        status[str(r['status'])] = status.get(str(r['status']), 0) + 1
+    print('\nApplyFlatModel quality report: %d exposures; status %s' % (len(rows), status))
+    if not ok:
+        return
+
+    def col(k):
+        v = np.array([float(r[k]) for r in ok])
+        v[v <= -900] = np.nan
+        return v
+
+    print('  median |plane| %%/10mm (fraction < 1) [84th percentile], %d corrected exposures' % len(ok))
+    for tag, lab in (('0', 'before'), ('1', 'after ')):
+        txt = []
+        for name, k in (('5577', 'b'), ('r OH', 'r'), ('z OH', 'z')):
+            v = col('q%s%s' % (k, tag))
+            txt.append('%s %5.2f (%.2f) [%5.2f]' % (name, np.nanmedian(v), np.nanmean(v < 1), np.nanpercentile(v, 84)))
+        print('  %s  %s' % (lab, '   '.join(txt)))
+    print('  (5577 is fitted by the direct step; r OH and z OH are held out)')
+    direct = np.array([str(r['direct']) == 'True' for r in ok])
+    print('  direct step applied in %d of %d (%.1f%% rejected by the guard)' % (direct.sum(), len(ok), 100 * (1 - direct.mean())))
+    worst = np.fmax(col('qr1'), col('qz1'))
+    nbad = int(np.sum(worst > 1))
+    print('  %d exposures with r OH or z OH above 1 %%/10mm after the correction%s'
+          % (nbad, '; the largest:' if nbad else ''))
+    for i in np.argsort(-np.nan_to_num(worst, nan=-1))[:min(nworst, nbad)]:
+        r = ok[i]
+        print('    %6s  mjd %s  r OH %.2f  z OH %.2f  5577 %.2f  direct %s  guard %s'
+              % (r['expnum'], r['mjd'], col('qr1')[i], col('qz1')[i], col('qb1')[i], r['direct'], r['guard']))
+
+
+def report(summaries):
+    '''
+    The quality report of one or more summary files (e.g. of all -part jobs)
+    '''
+    rows = []
+    for f in summaries:
+        t = Table.read(f, format='ascii.fixed_width_two_line')
+        rows += [dict(zip(t.colnames, r)) for r in t]
+        print('ApplyFlatModel: %s, %d rows' % (f, len(t)))
+    seen, uniq = set(), []
+    for r in rows:   # a file may be listed in a later summary as done_before
+        key = str(r['file'])
+        if str(r['status']) == 'ok' or key not in seen:
+            uniq.append(r)
+        seen.add(key)
+    quality_report(uniq)
 
 
 def doit(files, model, outdir='.', calib='', direct=False, guard=1.5, rguard=1.5, outroot='', nproc=1,
@@ -556,6 +684,7 @@ def doit(files, model, outdir='.', calib='', direct=False, guard=1.5, rguard=1.5
     write_summary(rows, summary)
     n = sum(r['status'] == 'ok' for r in rows)
     print('ApplyFlatModel: corrected %d of %d files; summary in %s' % (n, len(files), summary))
+    quality_report(rows)
 
 
 def steer(argv):
@@ -564,7 +693,7 @@ def steer(argv):
     '''
     files, model, outdir, calib, direct, guard, rguard, listfile = [], '', '.', '', False, 1.5, 1.5, ''
     outroot, drpall, base, mjd_range, nproc, redo, summary = '', '', '', None, 1, False, ''
-    part = None
+    part, do_report = None, False
     i = 1
     while i < len(argv):
         if argv[i] == '-h':
@@ -617,6 +746,8 @@ def steer(argv):
             part = (ip, npart)
         elif argv[i] == '-redo':
             redo = True
+        elif argv[i] == '-report':
+            do_report = True
         elif argv[i] == '-summary':
             i += 1
             summary = argv[i]
@@ -627,6 +758,12 @@ def steer(argv):
         else:
             files.append(argv[i])
         i += 1
+    if do_report:
+        if not files:
+            print('ApplyFlatModel: -report needs one or more summary files')
+            return
+        report(files)
+        return
     if listfile:
         with open(listfile) as f:
             files += [ln.split()[0] for ln in f if ln.strip() and not ln.startswith('#')]

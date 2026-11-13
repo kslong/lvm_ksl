@@ -191,7 +191,9 @@ History::
     261106 ksl Coding begun
     261107 ksl r direct step from the r OH lines averaged with the b+z
                mean, instead of the b+z mean alone; -rguard
-    261113 ksl -skysub: the sky subtraction of the corrected CFrames
+    261113 ksl -skysub: the sky subtraction of the corrected CFrames;
+               a message instead of a traceback for an option without
+               its value
     261112 ksl -drpall, -outroot (same tree layout as the originals,
                default redux/knox), -mjd, -np, -part, -redo, -summary;
                original file and lvm_ksl commit in the header; -model
@@ -825,8 +827,13 @@ def steer(argv):
     files, model, outdir, calib, direct, guard, rguard, listfile = [], '', '.', '', False, 1.5, 1.5, ''
     outroot, drpall, base, mjd_range, nproc, redo, summary = '', '', '', None, 1, False, ''
     part, do_report, skysub = None, False, False
+    with_value = ('-model', '-outdir', '-outroot', '-calib', '-guard', '-rguard', '-list', '-drpall', '-base',
+                  '-mjd', '-np', '-part', '-summary')
     i = 1
     while i < len(argv):
+        if argv[i] in with_value and i + 1 >= len(argv):
+            print('ApplyFlatModel: %s needs a value (was the command line cut off?)' % argv[i])
+            return
         if argv[i] == '-h':
             print(_USAGE)
             return

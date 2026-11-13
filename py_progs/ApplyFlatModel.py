@@ -17,6 +17,8 @@ Command line usage (if any):
                              [-calib DIR] [-direct] [-guard X] [-rguard X]
                              [-list FILE] [-drpall FILE] [-base DIR] [-mjd LO-HI]
                              [-np N] [-part I/N] [-redo] [-summary FILE] [cframe ...]
+           ApplyFlatModel.py -skysub [-drpall FILE | cframe ...] [-outroot DIR] [-mjd LO-HI]
+                             [-np N] [-part I/N] [-redo] [-summary FILE]
            ApplyFlatModel.py -report summary.txt [summary.txt ...]
 
     Arguments::
@@ -72,6 +74,18 @@ Command line usage (if any):
                      the r OH lines to be used in r (default 1.5)
         -list FILE   read CFrame names from FILE (one per line), in
                      addition to those on the command line
+        -skysub      instead of correcting, redo the sky subtraction of
+                     corrected CFrames already written: the same files
+                     and options as the correction run (-drpall, -outroot,
+                     -mjd, -part, -np, -redo) select the corrected CFrames
+                     (<outroot>/.../lvmCFrame-<expnum>.fits, or the
+                     CFrames given when there is no -outroot), and an
+                     lvmSFrame-<expnum>.fits is written next to each,
+                     with lvmdrp's quick_sky_subtraction.  Needs lvmdrp
+                     (any version from 1.3.2).  The summary default is
+                     ApplyFlatModel_skysub_summary[_I_of_N].txt.  About
+                     40 s and 3.7 GB of memory per file, so choose -np
+                     by the memory of the node (e.g. 128 GB -> -np 30)
 
 Description::
 
@@ -131,6 +145,14 @@ Description::
         1 %/10 mm, direct step rejected, worst exposures) ends each run,
         and -report gives it for any set of summary files
 
+    Sky subtraction (-skysub): each corrected CFrame is given to lvmdrp's
+    quick_sky_subtraction, as in the DRP.  lvmdrp writes the sky table to
+    the ancillary directory of the reduction version it runs as, so each
+    worker runs as the version of the tree the CFrames are in (for
+    redux/knox, LVMDRP_VERSION=knox and LVM_SPECTRO_REDUX=redux) and
+    creates the ancillary and qa directories, which 1.3.2 does not.  The
+    drpall is not updated.
+
     For a large run, e.g. of all of 1.3.2 at Utah:
 
         ApplyFlatModel.py -direct -drpall drpall-1.3.2.fits -np 8
@@ -169,6 +191,7 @@ History::
     261106 ksl Coding begun
     261107 ksl r direct step from the r OH lines averaged with the b+z
                mean, instead of the b+z mean alone; -rguard
+    261113 ksl -skysub: the sky subtraction of the corrected CFrames
     261112 ksl -drpall, -outroot (same tree layout as the originals,
                default redux/knox), -mjd, -np, -part, -redo, -summary;
                original file and lvm_ksl commit in the header; -model
@@ -687,13 +710,121 @@ def doit(files, model, outdir='.', calib='', direct=False, guard=1.5, rguard=1.5
     quality_report(rows)
 
 
+def _init_skysub(version, redux):
+    '''
+    Run lvmdrp in this worker as reduction version `version` under `redux`,
+    so its sky tables go to <redux>/<version>/.../ancillary
+    '''
+    os.environ['LVMDRP_VERSION'] = version
+    os.environ['LVM_SPECTRO_REDUX'] = redux
+    from lvmdrp.functions.skyMethod import quick_sky_subtraction
+    from lvmdrp import path, __version__
+    # importing lvmdrp (sdss_access) resets LVM_SPECTRO_REDUX from its own tree; set it again
+    os.environ['LVM_SPECTRO_REDUX'] = redux
+    _WORKER.update(skysub=quick_sky_subtraction, path=path, drpver=__version__, tree=os.path.join(redux, version))
+
+
+def _skywork(job):
+    '''
+    Sky-subtract one corrected CFrame; job is (cframe, sframe)
+    '''
+    import time
+    cframe, sframe = job
+    w = _WORKER
+    row = {'cframe': cframe, 'sframe': sframe, 'status': 'ok', 'expnum': -999, 'mjd': -999, 'seconds': -999.}
+    t0 = time.time()
+    try:
+        hdr = fits.getheader(cframe)
+        row['expnum'], row['mjd'] = int(hdr['EXPOSURE']), int(hdr['SMJD'])
+        anc = w['path'].full('lvm_anc', mjd=row['mjd'], tileid=hdr['TILE_ID'], drpver=w['drpver'],
+                             kind='sky', camera='brz', imagetype='table', expnum=row['expnum'])
+        if not os.path.abspath(anc).startswith(w['tree'] + os.sep):
+            raise RuntimeError('lvmdrp would write the sky table outside %s: %s' % (w['tree'], anc))
+        os.makedirs(os.path.dirname(anc), exist_ok=True)
+        os.makedirs(os.path.join(os.path.dirname(sframe), 'qa'), exist_ok=True)
+        w['skysub'](in_cframe=cframe, out_sframe=sframe)
+    except Exception as err:
+        print('ApplyFlatModel: sky subtraction of %s failed (%s)' % (cframe, err))
+        row['status'] = 'error: %s' % str(err)[:80]
+    row['seconds'] = round(time.time() - t0, 1)
+    return row
+
+
+def write_skysub_summary(rows, summary):
+    '''
+    One row per CFrame of a -skysub run, fixed-width
+    '''
+    cols = ['status', 'expnum', 'mjd', 'seconds', 'cframe', 'sframe']
+    data = {c: [r.get(c, '' if c in ('status', 'cframe', 'sframe') else -999) for r in rows] for c in cols}
+    Table(data).write(summary, format='ascii.fixed_width_two_line', overwrite=True)
+
+
+def doit_skysub(files, outroot='', nproc=1, redo=False, summary='ApplyFlatModel_skysub_summary.txt'):
+    '''
+    Description:
+        Redo the sky subtraction of the corrected CFrames: for each file,
+        the corrected CFrame (under outroot, as the correction run wrote
+        it, or the file itself without outroot) is sky-subtracted into
+        lvmSFrame-<expnum>.fits in the same directory
+
+    Notes:
+        SFrames that exist are skipped unless redo.  The CFrames must all
+        be in one tree <redux>/<version>/<tilegrp>/<tileid>/<mjd>/, which
+        sets the version lvmdrp runs as.
+
+    History:
+        261113 ksl Coding begun
+    '''
+    rows, jobs = [], []
+    for fn in files:
+        cframe = tree_path(fn, outroot) if outroot else fn
+        sframe = os.path.join(os.path.dirname(cframe), os.path.basename(cframe).replace('lvmCFrame', 'lvmSFrame'))
+        if sframe == cframe:
+            rows.append({'cframe': cframe, 'sframe': '', 'status': 'not_a_cframe'})
+        elif not os.path.isfile(cframe):
+            rows.append({'cframe': cframe, 'sframe': sframe, 'status': 'missing'})
+        elif os.path.exists(sframe) and not redo:
+            rows.append({'cframe': cframe, 'sframe': sframe, 'status': 'done_before'})
+        else:
+            jobs.append((cframe, sframe))
+    print('ApplyFlatModel: %d CFrames to sky-subtract, %d skipped beforehand' % (len(jobs), len(rows)))
+    if jobs:
+        # <redux>/<version>/<tilegrp>/<tileid>/<mjd>/lvmCFrame-<expnum>.fits
+        trees = {os.path.dirname(os.path.abspath(c)).rsplit(os.sep, 3)[0] for c, _ in jobs}
+        if len(trees) > 1:
+            print('ApplyFlatModel: -skysub needs the CFrames in one reduction tree, not %s' % sorted(trees)[:3])
+            return
+        redux, version = os.path.split(trees.pop())
+        print('ApplyFlatModel: sky subtraction as lvmdrp version %s under %s' % (version, redux))
+        args = (version, redux)
+        if nproc > 1:
+            with multiprocessing.Pool(nproc, initializer=_init_skysub, initargs=args) as pool:
+                for k, r in enumerate(pool.imap_unordered(_skywork, jobs, chunksize=1)):
+                    rows.append(r)
+                    if (k + 1) % 500 == 0:
+                        write_skysub_summary(rows, summary)
+        else:
+            _init_skysub(*args)
+            for k, job in enumerate(jobs):
+                rows.append(_skywork(job))
+                if (k + 1) % 500 == 0:
+                    write_skysub_summary(rows, summary)
+    write_skysub_summary(rows, summary)
+    status = {}
+    for r in rows:
+        status[r['status']] = status.get(r['status'], 0) + 1
+    t = [r['seconds'] for r in rows if r['status'] == 'ok']
+    print('ApplyFlatModel: sky subtraction of %d files: %s%s; summary in %s'
+          % (len(rows), status, ', median %.0f s per file' % np.median(t) if t else '', summary))
+
+
 def steer(argv):
     '''
     Parse the command line and run doit
     '''
     files, model, outdir, calib, direct, guard, rguard, listfile = [], '', '.', '', False, 1.5, 1.5, ''
     outroot, drpall, base, mjd_range, nproc, redo, summary = '', '', '', None, 1, False, ''
-    part, do_report = None, False
+    part, do_report, skysub = None, False, False
     i = 1
     while i < len(argv):
         if argv[i] == '-h':
@@ -748,6 +879,8 @@ def steer(argv):
             redo = True
         elif argv[i] == '-report':
             do_report = True
+        elif argv[i] == '-skysub':
+            skysub = True
         elif argv[i] == '-summary':
             i += 1
             summary = argv[i]
@@ -778,6 +911,14 @@ def steer(argv):
             outroot = os.path.join(os.environ.get('SAS_BASE_DIR', ''), DEFAULT_OUTROOT)
     if not files:
         print(_USAGE)
+        return
+    if skysub:
+        if part is not None:
+            files = sorted(set(files))[part[0] - 1::part[1]]
+            print('ApplyFlatModel: part %d of %d: %d files' % (part[0], part[1], len(files)))
+        if not summary:
+            summary = 'ApplyFlatModel_skysub_summary%s.txt' % ('_%d_of_%d' % part if part else '')
+        doit_skysub(files, outroot, nproc, redo, summary)
         return
     found = find_model(model)
     if not found:
